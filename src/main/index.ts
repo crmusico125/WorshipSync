@@ -1,3 +1,5 @@
+import { runMigrations } from './db/migrate'
+import { seedIfEmpty } from './db/seed'
 import { app, BrowserWindow, ipcMain, shell, screen } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
@@ -115,6 +117,9 @@ ipcMain.on('window:closeProjection', () => {
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 
 app.whenReady().then(() => {
+  // Database first — before any windows open
+  runMigrations()
+  seedIfEmpty()
   electronApp.setAppUserModelId('com.worshipsync')
 
   app.on('browser-window-created', (_, window) => {

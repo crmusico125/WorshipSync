@@ -12,20 +12,23 @@
     "preview": "electron-vite preview",
     "lint": "eslint src --ext .ts,.tsx",
     "typecheck": "tsc --noEmit"
-  },  
+  },
   "dependencies": {
-    "better-sqlite3": "^11.9.1",
+    "better-sqlite3": "^11.10.0",
+    "drizzle-orm": "^0.45.2",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },
   "devDependencies": {
     "@electron-toolkit/utils": "^3.0.0",
-    "@types/better-sqlite3": "^7.6.8",
+    "@electron/rebuild": "^3.7.2",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20.11.20",
     "@types/react": "^18.3.28",
     "@types/react-dom": "^18.3.7",
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.17",
+    "drizzle-kit": "^0.31.10",
     "electron": "^28.2.3",
     "electron-vite": "^2.0.0",
     "postcss": "^8.4.35",

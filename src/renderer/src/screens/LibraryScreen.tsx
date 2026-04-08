@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
 import { useSongStore } from "../store/useSongStore";
-import type { Song } from "../../../../shared/types";
+import type { Song, Section } from "../../../../shared/types";
+
+interface SongWithSections extends Song {
+  sections: Section[];
+}
 
 const SECTION_TYPE_COLORS: Record<string, string> = {
   verse: "#4d8ef0",
@@ -49,6 +53,7 @@ export default function LibraryScreen() {
     setSearchQuery,
   } = useSongStore();
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
 
   useEffect(() => {
     loadSongs();
@@ -199,9 +204,41 @@ export default function LibraryScreen() {
                       ` · CCLI #${selectedSong.ccliNumber}`}
                   </div>
                 </div>
+                {/* Action buttons */}
+                <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                  <button
+                    className="btn"
+                    style={{ fontSize: 11, padding: "4px 10px" }}
+                    onClick={() => setShowEditModal(true)}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    className="btn"
+                    style={{
+                      fontSize: 11,
+                      padding: "4px 10px",
+                      color: "var(--accent-red)",
+                      borderColor: "var(--accent-red)",
+                    }}
+                    onClick={async () => {
+                      if (
+                        !confirm(
+                          `Delete "${selectedSong.title}"? This cannot be undone.`,
+                        )
+                      )
+                        return;
+                      await window.worshipsync.songs.delete(selectedSong.id);
+                      useSongStore.getState().clearSelection();
+                      loadSongs();
+                    }}
+                  >
+                    Delete
+                  </button>
+                </div>
               </div>
 
-              {/* Meta grid */}
+              {/* Meta grid — same as before */}
               <div
                 style={{
                   display: "grid",
@@ -235,7 +272,7 @@ export default function LibraryScreen() {
                 ))}
               </div>
 
-              {/* Sections */}
+              {/* Sections — same as before */}
               <div className="label" style={{ marginBottom: 6 }}>
                 Sections
               </div>
@@ -310,6 +347,17 @@ export default function LibraryScreen() {
           onSaved={() => {
             loadSongs();
             setShowAddModal(false);
+          }}
+        />
+      )}
+      {showEditModal && selectedSong && (
+        <EditSongModal
+          song={selectedSong}
+          onClose={() => setShowEditModal(false)}
+          onSaved={async () => {
+            setShowEditModal(false);
+            await loadSongs();
+            await selectSong(selectedSong.id);
           }}
         />
       )}
@@ -405,6 +453,21 @@ function SongRow({
   );
 }
 
+interface ParsedSection {
+  type:
+    | "verse"
+    | "chorus"
+    | "bridge"
+    | "pre-chorus"
+    | "outro"
+    | "intro"
+    | "tag"
+    | "interlude";
+  label: string;
+  lyrics: string;
+  orderIndex: number;
+}
+
 function AddSongModal({
   onClose,
   onSaved,
@@ -412,10 +475,42 @@ function AddSongModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const [step, setStep] = useState<"details" | "sections">("details");
   const [title, setTitle] = useState("");
   const [artist, setArtist] = useState("");
   const [key, setKey] = useState("");
+  const [tempo, setTempo] = useState<"slow" | "medium" | "fast" | "">("");
+  const [sections, setSections] = useState<ParsedSection[]>([
+    { type: "verse", label: "Verse 1", lyrics: "", orderIndex: 0 },
+    { type: "chorus", label: "Chorus", lyrics: "", orderIndex: 1 },
+  ]);
   const [saving, setSaving] = useState(false);
+
+  const addSection = () => {
+    setSections((prev) => [
+      ...prev,
+      {
+        type: "verse",
+        label: `Verse ${prev.filter((s) => s.type === "verse").length + 1}`,
+        lyrics: "",
+        orderIndex: prev.length,
+      },
+    ]);
+  };
+
+  const removeSection = (i: number) => {
+    setSections((prev) => prev.filter((_, j) => j !== i));
+  };
+
+  const updateSection = (
+    i: number,
+    field: keyof ParsedSection,
+    value: string,
+  ) => {
+    setSections((prev) =>
+      prev.map((s, j) => (j === i ? { ...s, [field]: value } : s)),
+    );
+  };
 
   const handleSave = async () => {
     if (!title.trim()) return;
@@ -424,8 +519,11 @@ function AddSongModal({
       title: title.trim(),
       artist: artist.trim(),
       key: key.trim() || null,
+      tempo: tempo || null,
       tags: "[]",
-      sections: [],
+      sections: sections
+        .filter((s) => s.lyrics.trim())
+        .map((s, i) => ({ ...s, orderIndex: i })),
     });
     setSaving(false);
     onSaved();
@@ -436,7 +534,7 @@ function AddSongModal({
       style={{
         position: "fixed",
         inset: 0,
-        background: "rgba(0,0,0,0.7)",
+        background: "rgba(0,0,0,0.75)",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -447,63 +545,609 @@ function AddSongModal({
         style={{
           background: "var(--surface-1)",
           border: "1px solid var(--border-default)",
-          borderRadius: 12,
-          padding: 24,
-          width: 400,
+          borderRadius: 14,
+          width: 540,
+          maxHeight: "85vh",
           display: "flex",
           flexDirection: "column",
-          gap: 12,
+          overflow: "hidden",
         }}
       >
-        <div style={{ fontSize: 15, fontWeight: 600 }}>Add new song</div>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <label className="label">Title</label>
-          <input
-            className="input"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Song title"
-            autoFocus
-          />
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <label className="label">Artist</label>
-          <input
-            className="input"
-            value={artist}
-            onChange={(e) => setArtist(e.target.value)}
-            placeholder="Artist or band"
-          />
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <label className="label">Key</label>
-          <input
-            className="input"
-            value={key}
-            onChange={(e) => setKey(e.target.value)}
-            placeholder="e.g. G, A, Bb"
-          />
-        </div>
-
+        {/* Header */}
         <div
           style={{
+            padding: "16px 20px",
+            borderBottom: "1px solid var(--border-subtle)",
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+          }}
+        >
+          <div style={{ flex: 1, fontSize: 14, fontWeight: 600 }}>
+            Add new song
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            {(["details", "sections"] as const).map((s) => (
+              <div
+                key={s}
+                style={{
+                  fontSize: 10,
+                  padding: "2px 8px",
+                  borderRadius: 20,
+                  fontWeight: 500,
+                  cursor: "pointer",
+                  background:
+                    step === s ? "var(--accent-blue-dim)" : "var(--surface-3)",
+                  color:
+                    step === s ? "var(--accent-blue)" : "var(--text-muted)",
+                  border: `1px solid ${step === s ? "var(--accent-blue)" : "transparent"}`,
+                }}
+                onClick={() => title.trim() && setStep(s)}
+              >
+                {s.charAt(0).toUpperCase() + s.slice(1)}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Body */}
+        <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
+          {step === "details" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <label className="label">Song title *</label>
+                <input
+                  className="input"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="e.g. Way Maker"
+                  autoFocus
+                />
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <label className="label">Artist / Band</label>
+                <input
+                  className="input"
+                  value={artist}
+                  onChange={(e) => setArtist(e.target.value)}
+                  placeholder="e.g. Sinach"
+                />
+              </div>
+              <div style={{ display: "flex", gap: 10 }}>
+                <div
+                  style={{
+                    flex: 1,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 4,
+                  }}
+                >
+                  <label className="label">Key</label>
+                  <input
+                    className="input"
+                    value={key}
+                    onChange={(e) => setKey(e.target.value)}
+                    placeholder="e.g. G, Bb"
+                  />
+                </div>
+                <div
+                  style={{
+                    flex: 1,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 4,
+                  }}
+                >
+                  <label className="label">Tempo</label>
+                  <select
+                    className="input"
+                    value={tempo}
+                    onChange={(e) => setTempo(e.target.value as typeof tempo)}
+                    style={{ appearance: "none" }}
+                  >
+                    <option value="">— select —</option>
+                    <option value="slow">Slow</option>
+                    <option value="medium">Medium</option>
+                    <option value="fast">Fast</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {step === "sections" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: "var(--text-muted)",
+                  marginBottom: 4,
+                }}
+              >
+                Add lyrics for each section. Empty sections won't be saved.
+              </div>
+              {sections.map((sec, i) => (
+                <div
+                  key={i}
+                  style={{
+                    border: "1px solid var(--border-default)",
+                    borderRadius: 8,
+                    overflow: "hidden",
+                    background: "var(--surface-2)",
+                  }}
+                >
+                  {/* Section header */}
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 8,
+                      padding: "8px 10px",
+                      background: "var(--surface-3)",
+                      alignItems: "center",
+                    }}
+                  >
+                    <select
+                      className="input"
+                      style={{ width: 140, padding: "3px 6px", fontSize: 11 }}
+                      value={sec.type}
+                      onChange={(e) => updateSection(i, "type", e.target.value)}
+                    >
+                      {[
+                        "verse",
+                        "chorus",
+                        "bridge",
+                        "pre-chorus",
+                        "intro",
+                        "outro",
+                        "tag",
+                        "interlude",
+                      ].map((t) => (
+                        <option key={t} value={t}>
+                          {t.charAt(0).toUpperCase() + t.slice(1)}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      className="input"
+                      style={{ flex: 1, padding: "3px 6px", fontSize: 11 }}
+                      value={sec.label}
+                      onChange={(e) =>
+                        updateSection(i, "label", e.target.value)
+                      }
+                      placeholder="Label e.g. Verse 1"
+                    />
+                    <button
+                      className="btn"
+                      style={{
+                        padding: "3px 8px",
+                        fontSize: 11,
+                        color: "var(--accent-red)",
+                      }}
+                      onClick={() => removeSection(i)}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  {/* Lyrics textarea */}
+                  <textarea
+                    className="input"
+                    style={{
+                      width: "100%",
+                      minHeight: 90,
+                      resize: "vertical",
+                      border: "none",
+                      borderRadius: 0,
+                      background: "transparent",
+                      fontSize: 12,
+                      lineHeight: 1.6,
+                      fontFamily: "var(--font-mono)",
+                      padding: "8px 10px",
+                    }}
+                    placeholder="Paste lyrics for this section..."
+                    value={sec.lyrics}
+                    onChange={(e) => updateSection(i, "lyrics", e.target.value)}
+                  />
+                </div>
+              ))}
+              <button
+                className="btn"
+                style={{ alignSelf: "flex-start", fontSize: 11 }}
+                onClick={addSection}
+              >
+                + Add section
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div
+          style={{
+            padding: "12px 20px",
+            borderTop: "1px solid var(--border-subtle)",
             display: "flex",
             gap: 8,
-            justifyContent: "flex-end",
-            marginTop: 4,
+            justifyContent: "space-between",
           }}
         >
           <button className="btn" onClick={onClose}>
             Cancel
           </button>
-          <button
-            className="btn btn-primary"
-            onClick={handleSave}
-            disabled={saving || !title.trim()}
-          >
-            {saving ? "Saving..." : "Save song"}
+          <div style={{ display: "flex", gap: 8 }}>
+            {step === "details" && (
+              <>
+                <button
+                  className="btn btn-success"
+                  onClick={handleSave}
+                  disabled={saving || !title.trim()}
+                >
+                  {saving ? "Saving..." : "Save without lyrics"}
+                </button>
+                <button
+                  className="btn btn-primary"
+                  onClick={() => setStep("sections")}
+                  disabled={!title.trim()}
+                >
+                  Add sections →
+                </button>
+              </>
+            )}
+            {step === "sections" && (
+              <>
+                <button className="btn" onClick={() => setStep("details")}>
+                  ← Back
+                </button>
+                <button
+                  className="btn btn-success"
+                  onClick={handleSave}
+                  disabled={saving || !title.trim()}
+                >
+                  {saving ? "Saving..." : "Save song"}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EditSongModal({
+  song,
+  onClose,
+  onSaved,
+}: {
+  song: SongWithSections;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [step, setStep] = useState<"details" | "sections">("details");
+  const [title, setTitle] = useState(song.title);
+  const [artist, setArtist] = useState(song.artist);
+  const [key, setKey] = useState(song.key ?? "");
+  const [tempo, setTempo] = useState<"slow" | "medium" | "fast" | "">(
+    song.tempo ?? "",
+  );
+  const [sections, setSections] = useState<ParsedSection[]>(
+    song.sections.map((s) => ({
+      type: s.type as ParsedSection["type"],
+      label: s.label,
+      lyrics: s.lyrics,
+      orderIndex: s.orderIndex,
+    })),
+  );
+  const [saving, setSaving] = useState(false);
+
+  const addSection = () => {
+    setSections((prev) => [
+      ...prev,
+      {
+        type: "verse",
+        label: `Verse ${prev.filter((s) => s.type === "verse").length + 1}`,
+        lyrics: "",
+        orderIndex: prev.length,
+      },
+    ]);
+  };
+
+  const removeSection = (i: number) => {
+    setSections((prev) => prev.filter((_, j) => j !== i));
+  };
+
+  const updateSection = (
+    i: number,
+    field: keyof ParsedSection,
+    value: string,
+  ) => {
+    setSections((prev) =>
+      prev.map((s, j) => (j === i ? { ...s, [field]: value } : s)),
+    );
+  };
+
+  const handleSave = async () => {
+    if (!title.trim()) return;
+    setSaving(true);
+
+    await window.worshipsync.songs.update(song.id, {
+      title: title.trim(),
+      artist: artist.trim(),
+      key: key.trim() || null,
+      tempo: tempo || null,
+    });
+
+    await window.worshipsync.songs.upsertSections(
+      song.id,
+      sections
+        .filter((s) => s.lyrics.trim())
+        .map((s, i) => ({ ...s, orderIndex: i })),
+    );
+
+    setSaving(false);
+    onSaved();
+  };
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.75)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        zIndex: 100,
+      }}
+    >
+      <div
+        style={{
+          background: "var(--surface-1)",
+          border: "1px solid var(--border-default)",
+          borderRadius: 14,
+          width: 540,
+          maxHeight: "85vh",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+        }}
+      >
+        {/* Header */}
+        <div
+          style={{
+            padding: "16px 20px",
+            borderBottom: "1px solid var(--border-subtle)",
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+          }}
+        >
+          <div style={{ flex: 1, fontSize: 14, fontWeight: 600 }}>
+            Edit song
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            {(["details", "sections"] as const).map((s) => (
+              <div
+                key={s}
+                style={{
+                  fontSize: 10,
+                  padding: "2px 8px",
+                  borderRadius: 20,
+                  fontWeight: 500,
+                  cursor: "pointer",
+                  background:
+                    step === s ? "var(--accent-blue-dim)" : "var(--surface-3)",
+                  color:
+                    step === s ? "var(--accent-blue)" : "var(--text-muted)",
+                  border: `1px solid ${step === s ? "var(--accent-blue)" : "transparent"}`,
+                }}
+                onClick={() => setStep(s)}
+              >
+                {s.charAt(0).toUpperCase() + s.slice(1)}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Body */}
+        <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
+          {step === "details" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <label className="label">Song title *</label>
+                <input
+                  className="input"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  autoFocus
+                />
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <label className="label">Artist / Band</label>
+                <input
+                  className="input"
+                  value={artist}
+                  onChange={(e) => setArtist(e.target.value)}
+                />
+              </div>
+              <div style={{ display: "flex", gap: 10 }}>
+                <div
+                  style={{
+                    flex: 1,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 4,
+                  }}
+                >
+                  <label className="label">Key</label>
+                  <input
+                    className="input"
+                    value={key}
+                    onChange={(e) => setKey(e.target.value)}
+                    placeholder="e.g. G, Bb"
+                  />
+                </div>
+                <div
+                  style={{
+                    flex: 1,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 4,
+                  }}
+                >
+                  <label className="label">Tempo</label>
+                  <select
+                    className="input"
+                    value={tempo}
+                    onChange={(e) => setTempo(e.target.value as typeof tempo)}
+                    style={{ appearance: "none" }}
+                  >
+                    <option value="">— select —</option>
+                    <option value="slow">Slow</option>
+                    <option value="medium">Medium</option>
+                    <option value="fast">Fast</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {step === "sections" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: "var(--text-muted)",
+                  marginBottom: 4,
+                }}
+              >
+                Edit lyrics for each section. Empty sections won't be saved.
+              </div>
+              {sections.map((sec, i) => (
+                <div
+                  key={i}
+                  style={{
+                    border: "1px solid var(--border-default)",
+                    borderRadius: 8,
+                    overflow: "hidden",
+                    background: "var(--surface-2)",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 8,
+                      padding: "8px 10px",
+                      background: "var(--surface-3)",
+                      alignItems: "center",
+                    }}
+                  >
+                    <select
+                      className="input"
+                      style={{ width: 140, padding: "3px 6px", fontSize: 11 }}
+                      value={sec.type}
+                      onChange={(e) => updateSection(i, "type", e.target.value)}
+                    >
+                      {[
+                        "verse",
+                        "chorus",
+                        "bridge",
+                        "pre-chorus",
+                        "intro",
+                        "outro",
+                        "tag",
+                        "interlude",
+                      ].map((t) => (
+                        <option key={t} value={t}>
+                          {t.charAt(0).toUpperCase() + t.slice(1)}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      className="input"
+                      style={{ flex: 1, padding: "3px 6px", fontSize: 11 }}
+                      value={sec.label}
+                      onChange={(e) =>
+                        updateSection(i, "label", e.target.value)
+                      }
+                    />
+                    <button
+                      className="btn"
+                      style={{
+                        padding: "3px 8px",
+                        fontSize: 11,
+                        color: "var(--accent-red)",
+                      }}
+                      onClick={() => removeSection(i)}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <textarea
+                    className="input"
+                    style={{
+                      width: "100%",
+                      minHeight: 100,
+                      resize: "vertical",
+                      border: "none",
+                      borderRadius: 0,
+                      background: "transparent",
+                      fontSize: 12,
+                      lineHeight: 1.6,
+                      fontFamily: "var(--font-mono)",
+                      padding: "8px 10px",
+                    }}
+                    value={sec.lyrics}
+                    onChange={(e) => updateSection(i, "lyrics", e.target.value)}
+                    placeholder="Paste lyrics for this section..."
+                  />
+                </div>
+              ))}
+              <button
+                className="btn"
+                style={{ alignSelf: "flex-start", fontSize: 11 }}
+                onClick={addSection}
+              >
+                + Add section
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div
+          style={{
+            padding: "12px 20px",
+            borderTop: "1px solid var(--border-subtle)",
+            display: "flex",
+            gap: 8,
+            justifyContent: "space-between",
+          }}
+        >
+          <button className="btn" onClick={onClose}>
+            Cancel
           </button>
+          <div style={{ display: "flex", gap: 8 }}>
+            {step === "details" && (
+              <button
+                className="btn btn-primary"
+                onClick={() => setStep("sections")}
+              >
+                Edit sections →
+              </button>
+            )}
+            {step === "sections" && (
+              <button className="btn" onClick={() => setStep("details")}>
+                ← Back
+              </button>
+            )}
+            <button
+              className="btn btn-success"
+              onClick={handleSave}
+              disabled={saving || !title.trim()}
+            >
+              {saving ? "Saving..." : "Save changes"}
+            </button>
+          </div>
         </div>
       </div>
     </div>

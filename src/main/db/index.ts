@@ -21,6 +21,8 @@ const sqlite = new Database(getDbPath())
 sqlite.pragma('journal_mode = WAL')
 sqlite.pragma('foreign_keys = ON')
 
+console.log('[db] database opened at:', getDbPath())
+
 // Drizzle ORM instance — typed queries against our schema
 export const db = drizzle(sqlite, { schema })
 

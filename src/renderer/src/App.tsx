@@ -15,14 +15,14 @@ export default function App() {
 
   const handleGoLive = () => {
     if (!projectionOpen) {
-      window.WorshipSync.window.openProjection();
+      window.worshipsync.window.openProjection();
       setProjectionOpen(true);
     }
     setCurrentScreen("live");
   };
 
   const handleCloseProjection = () => {
-    window.WorshipSync.window.closeProjection();
+    window.worshipsync.window.closeProjection();
     setProjectionOpen(false);
     setCurrentScreen("builder");
   };

@@ -1,11 +1,12 @@
-// Extends the global Window interface so TypeScript knows about
-// the API we expose via contextBridge in preload/index.ts
+import type { Song, Section, SlidePayload } from '../../../shared/types'
 
-import type { SlidePayload } from '../../../shared/types'
+interface SongWithSections extends Song {
+  sections: Section[]
+}
 
 declare global {
   interface Window {
-    WorshipSync: {
+    worshipsync: {
       slide: {
         show: (payload: SlidePayload) => void
         blank: (isBlank: boolean) => void
@@ -22,6 +23,15 @@ declare global {
       }
       projection: {
         ready: () => void
+      }
+      songs: {
+        getAll:         () => Promise<Song[]>
+        search:         (q: string) => Promise<Song[]>
+        getById:        (id: number) => Promise<SongWithSections | null>
+        create:         (data: unknown) => Promise<Song>
+        update:         (id: number, data: unknown) => Promise<Song>
+        delete:         (id: number) => Promise<boolean>
+        upsertSections: (songId: number, sections: unknown[]) => Promise<Section[]>
       }
     }
   }

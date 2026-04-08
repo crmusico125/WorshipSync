@@ -23,10 +23,10 @@ export default function ProjectionWindow() {
 
   useEffect(() => {
     // Signal to main process that projection is ready
-    window.WorshipSync.projection.ready();
+    window.worshipsync.projection.ready();
 
     // Listen for slide updates from control window
-    const cleanSlide = window.WorshipSync.slide.onShow((payload) => {
+    const cleanSlide = window.worshipsync.slide.onShow((payload) => {
       setPrevSlide(slide);
       setTransitioning(true);
       setTimeout(() => {
@@ -36,11 +36,11 @@ export default function ProjectionWindow() {
       }, 120);
     });
 
-    const cleanBlank = window.WorshipSync.slide.onBlank((isBlank) => {
+    const cleanBlank = window.worshipsync.slide.onBlank((isBlank) => {
       setDisplayState(isBlank ? "blank" : "slide");
     });
 
-    const cleanLogo = window.WorshipSync.slide.onLogo((show) => {
+    const cleanLogo = window.worshipsync.slide.onLogo((show) => {
       setDisplayState(show ? "logo" : "slide");
     });
 

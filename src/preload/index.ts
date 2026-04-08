@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
-contextBridge.exposeInMainWorld('WorshipSync', {
+contextBridge.exposeInMainWorld('worshipsync', {
 
   slide: {
     show: (payload: SlidePayload) => ipcRenderer.send('slide:show', payload),
@@ -33,7 +33,18 @@ contextBridge.exposeInMainWorld('WorshipSync', {
 
   projection: {
     ready: () => ipcRenderer.send('projection:ready')
-  }
+  },
+  
+  songs: {
+    getAll:   ()                => ipcRenderer.invoke('songs:getAll'),
+    search:   (q: string)      => ipcRenderer.invoke('songs:search', q),
+    getById:  (id: number)     => ipcRenderer.invoke('songs:getById', id),
+    create:   (data: unknown)  => ipcRenderer.invoke('songs:create', data),
+    update:   (id: number, data: unknown) => ipcRenderer.invoke('songs:update', id, data),
+    delete:   (id: number)     => ipcRenderer.invoke('songs:delete', id),
+    upsertSections: (songId: number, sections: unknown[]) =>
+        ipcRenderer.invoke('sections:upsert', songId, sections)
+  },
 })
 
 interface SlidePayload {

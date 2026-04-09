@@ -1,6 +1,6 @@
 import { db } from './db/index'
-import { songs, sections } from './db/schema'
-import { eq, like, or } from 'drizzle-orm'
+import { songs, sections, serviceDates, lineupItems } from './db/schema'
+import { asc, desc, eq, like, or } from 'drizzle-orm'
 import { runMigrations } from './db/migrate'
 import { seedIfEmpty } from './db/seed'
 import { app, BrowserWindow, ipcMain, shell, screen } from 'electron'
@@ -183,6 +183,120 @@ ipcMain.handle('sections:upsert', (_e, songId: number, sectionData: {
     ).run()
   }
   return db.select().from(sections).where(eq(sections.songId, songId)).orderBy(sections.orderIndex).all()
+})// ── Service date IPC handlers ─────────────────────────────────────────────────
+
+ipcMain.handle('services:getAll', () => {
+  return db.select().from(serviceDates)
+    .orderBy(asc(serviceDates.date))
+    .all()
+})
+
+ipcMain.handle('services:getByDate', (_e, date: string) => {
+  return db.select().from(serviceDates)
+    .where(eq(serviceDates.date, date))
+    .get() ?? null
+})
+
+ipcMain.handle('services:create', (_e, data: {
+  date: string
+  label: string
+  status: 'empty' | 'in-progress' | 'ready'
+  notes?: string
+}) => {
+  const [created] = db.insert(serviceDates).values(data).returning().all()
+  return created
+})
+
+ipcMain.handle('services:updateStatus', (_e, id: number, status: 'empty' | 'in-progress' | 'ready') => {
+  db.update(serviceDates)
+    .set({ status, updatedAt: new Date().toISOString() })
+    .where(eq(serviceDates.id, id))
+    .run()
+  return db.select().from(serviceDates).where(eq(serviceDates.id, id)).get()
+})
+
+ipcMain.handle('services:delete', (_e, id: number) => {
+  db.delete(serviceDates).where(eq(serviceDates.id, id)).run()
+  return true
+})
+
+// ── Lineup IPC handlers ───────────────────────────────────────────────────────
+
+ipcMain.handle('lineup:getForService', (_e, serviceDateId: number) => {
+  const items = db.select().from(lineupItems)
+    .where(eq(lineupItems.serviceDateId, serviceDateId))
+    .orderBy(asc(lineupItems.orderIndex))
+    .all()
+
+  // Join with song + sections data
+  return items.map(item => {
+    const song = db.select().from(songs)
+      .where(eq(songs.id, item.songId))
+      .get()
+    const songSections = db.select().from(sections)
+      .where(eq(sections.songId, item.songId))
+      .orderBy(asc(sections.orderIndex))
+      .all()
+    return { ...item, song: { ...song, sections: songSections } }
+  })
+})
+
+ipcMain.handle('lineup:addSong', (_e, serviceDateId: number, songId: number) => {
+  // Get current max order index
+  const existing = db.select().from(lineupItems)
+    .where(eq(lineupItems.serviceDateId, serviceDateId))
+    .all()
+  const orderIndex = existing.length
+
+  // Default selected sections = all section ids for this song
+  const songSections = db.select().from(sections)
+    .where(eq(sections.songId, songId))
+    .orderBy(asc(sections.orderIndex))
+    .all()
+  const selectedSections = JSON.stringify(songSections.map(s => s.id))
+
+  const [item] = db.insert(lineupItems).values({
+    serviceDateId,
+    songId,
+    orderIndex,
+    selectedSections
+  }).returning().all()
+
+  return item
+})
+
+ipcMain.handle('lineup:removeSong', (_e, lineupItemId: number) => {
+  db.delete(lineupItems).where(eq(lineupItems.id, lineupItemId)).run()
+  return true
+})
+
+ipcMain.handle('lineup:reorder', (_e, serviceDateId: number, orderedIds: number[]) => {
+  for (let i = 0; i < orderedIds.length; i++) {
+    db.update(lineupItems)
+      .set({ orderIndex: i })
+      .where(eq(lineupItems.id, orderedIds[i]))
+      .run()
+  }
+  return true
+})
+
+ipcMain.handle('lineup:toggleSection', (_e, lineupItemId: number, sectionId: number, included: boolean) => {
+  const item = db.select().from(lineupItems)
+    .where(eq(lineupItems.id, lineupItemId))
+    .get()
+  if (!item) return null
+
+  const current: number[] = JSON.parse(item.selectedSections || '[]')
+  const updated = included
+    ? [...new Set([...current, sectionId])]
+    : current.filter(id => id !== sectionId)
+
+  db.update(lineupItems)
+    .set({ selectedSections: JSON.stringify(updated) })
+    .where(eq(lineupItems.id, lineupItemId))
+    .run()
+
+  return updated
 })
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────

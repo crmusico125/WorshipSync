@@ -12,6 +12,7 @@ import LiveScreen from "./screens/LiveScreen";
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<AppScreen>("planner");
   const [projectionOpen, setProjectionOpen] = useState(false);
+  const [activeServiceId, setActiveServiceId] = useState<number | null>(null);
 
   const handleGoLive = () => {
     if (!projectionOpen) {
@@ -27,20 +28,9 @@ export default function App() {
     setCurrentScreen("builder");
   };
 
-  const screens: Record<AppScreen, React.ReactNode> = {
-    planner: (
-      <PlannerScreen onOpenBuilder={() => setCurrentScreen("builder")} />
-    ),
-    builder: <BuilderScreen onGoLive={handleGoLive} />,
-    library: <LibraryScreen />,
-    themes: <ThemesScreen />,
-    analytics: <AnalyticsScreen />,
-    live: (
-      <LiveScreen
-        onClose={handleCloseProjection}
-        projectionOpen={projectionOpen}
-      />
-    ),
+  const handleOpenBuilder = (serviceId: number) => {
+    setActiveServiceId(serviceId);
+    setCurrentScreen("builder");
   };
 
   return (
@@ -54,7 +44,24 @@ export default function App() {
       <div className="main-content">
         <TopBar screen={currentScreen} projectionOpen={projectionOpen} />
         <div style={{ flex: 1, overflow: "hidden" }}>
-          {screens[currentScreen]}
+          {currentScreen === "planner" && (
+            <PlannerScreen onOpenBuilder={handleOpenBuilder} />
+          )}
+          {currentScreen === "builder" && (
+            <BuilderScreen
+              serviceId={activeServiceId}
+              onGoLive={handleGoLive}
+            />
+          )}
+          {currentScreen === "library" && <LibraryScreen />}
+          {currentScreen === "themes" && <ThemesScreen />}
+          {currentScreen === "analytics" && <AnalyticsScreen />}
+          {currentScreen === "live" && (
+            <LiveScreen
+              onClose={handleCloseProjection}
+              projectionOpen={projectionOpen}
+            />
+          )}
         </div>
       </div>
     </div>

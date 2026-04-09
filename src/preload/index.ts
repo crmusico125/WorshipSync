@@ -74,6 +74,12 @@ contextBridge.exposeInMainWorld('worshipsync', {
     getServiceHistory: ()                                         => ipcRenderer.invoke('analytics:getServiceHistory'),
     recordUsage:      (songId: number, serviceDateId: number)    => ipcRenderer.invoke('analytics:recordUsage', songId, serviceDateId),
   },
+  backgrounds: {
+    getDir:      ()               => ipcRenderer.invoke('backgrounds:getDir'),
+    pickImage:   ()               => ipcRenderer.invoke('backgrounds:pickImage'),
+    setBackground: (songId: number, path: string | null) =>
+      ipcRenderer.invoke('songs:setBackground', songId, path)
+  },
 })
 
 interface SlidePayload {

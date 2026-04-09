@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { SlidePayload } from "../../../../shared/types";
 
 type DisplayState = "slide" | "blank" | "logo";
@@ -15,25 +15,79 @@ const DEFAULT_THEME = {
   maxLinesPerSlide: 2,
 };
 
+function BackgroundLayer({
+  backgroundPath,
+  opacity,
+}: {
+  backgroundPath: string | null | undefined;
+  opacity: number;
+}) {
+  if (!backgroundPath) return null;
+
+  if (backgroundPath.startsWith("color:")) {
+    return (
+      <div
+        style={{
+          position: "absolute",
+          inset: 0,
+          background: backgroundPath.replace("color:", ""),
+          opacity,
+          transition: "opacity 0.15s ease",
+        }}
+      />
+    );
+  }
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        backgroundImage: `url("file://${encodeURI(backgroundPath)}")`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+        opacity,
+        transition: "opacity 0.15s ease",
+      }}
+    />
+  );
+}
+
 export default function ProjectionWindow() {
   const [slide, setSlide] = useState<SlidePayload | null>(null);
-  const [displayState, setDisplayState] = useState<DisplayState>("blank");
   const [prevSlide, setPrevSlide] = useState<SlidePayload | null>(null);
-  const [transitioning, setTransitioning] = useState(false);
+  const [displayState, setDisplayState] = useState<DisplayState>("blank");
+  const [textVisible, setTextVisible] = useState(true);
+  const [bgTransition, setBgTransition] = useState(false);
+  const transitionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    // Signal to main process that projection is ready
     window.worshipsync.projection.ready();
 
-    // Listen for slide updates from control window
     const cleanSlide = window.worshipsync.slide.onShow((payload) => {
-      setPrevSlide(slide);
-      setTransitioning(true);
-      setTimeout(() => {
+      const bgChanged = payload.backgroundPath !== slide?.backgroundPath;
+
+      if (bgChanged) {
+        // Keep prev background visible, fade in new one
+        setPrevSlide(slide);
+        setBgTransition(true);
+      }
+
+      // Fade text out briefly
+      setTextVisible(false);
+
+      if (transitionTimer.current) clearTimeout(transitionTimer.current);
+      transitionTimer.current = setTimeout(() => {
         setSlide(payload);
         setDisplayState("slide");
-        setTransitioning(false);
-      }, 120);
+        setTextVisible(true);
+        if (bgChanged) {
+          setTimeout(() => {
+            setPrevSlide(null);
+            setBgTransition(false);
+          }, 300);
+        }
+      }, 80);
     });
 
     const cleanBlank = window.worshipsync.slide.onBlank((isBlank) => {
@@ -48,6 +102,7 @@ export default function ProjectionWindow() {
       cleanSlide();
       cleanBlank();
       cleanLogo();
+      if (transitionTimer.current) clearTimeout(transitionTimer.current);
     };
   }, [slide]);
 
@@ -74,19 +129,17 @@ export default function ProjectionWindow() {
         alignItems: "stretch",
       }}
     >
-      {/* Background image */}
-      {slide?.backgroundPath && displayState === "slide" && (
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            backgroundImage: `url(${slide.backgroundPath})`,
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-            transition: "opacity 0.3s ease",
-            opacity: transitioning ? 0 : 1,
-          }}
+      {/* Previous background — fades out during song change */}
+      {bgTransition && prevSlide?.backgroundPath && (
+        <BackgroundLayer
+          backgroundPath={prevSlide.backgroundPath}
+          opacity={bgTransition ? 0 : 1}
         />
+      )}
+
+      {/* Current background — always mounted, no flicker */}
+      {displayState === "slide" && (
+        <BackgroundLayer backgroundPath={slide?.backgroundPath} opacity={1} />
       )}
 
       {/* Dark overlay */}
@@ -141,8 +194,8 @@ export default function ProjectionWindow() {
             flexDirection: "column",
             padding: "8% 10%",
             ...textPositionStyle,
-            opacity: transitioning ? 0 : 1,
-            transition: "opacity 0.12s ease",
+            opacity: textVisible ? 1 : 0,
+            transition: "opacity 0.08s ease",
           }}
         >
           <div
@@ -164,7 +217,7 @@ export default function ProjectionWindow() {
         </div>
       )}
 
-      {/* Slide counter — subtle bottom right, visible to operator from a distance */}
+      {/* Slide counter */}
       {displayState === "slide" && slide && (
         <div
           style={{

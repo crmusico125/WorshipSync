@@ -108,6 +108,11 @@ declare global {
         getServiceHistory: () => Promise<ServiceDate[]>
         recordUsage:       (songId: number, serviceDateId: number) => Promise<unknown>
       }
+      backgrounds: {
+        getDir:        () => Promise<string>
+        pickImage:     () => Promise<string | null>
+        setBackground: (songId: number, path: string | null) => Promise<Song>
+      }
     }
   }
 }

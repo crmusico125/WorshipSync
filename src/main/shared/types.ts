@@ -207,3 +207,25 @@ export interface AddSongToLineupPayload {
   songId: number
   sortOrder?: number
 }
+
+export interface SlideTheme {
+  fontFamily: string
+  fontSize: number
+  fontWeight: string
+  textColor: string
+  textAlign: 'left' | 'center' | 'right'
+  textPosition: 'top' | 'middle' | 'bottom'
+  overlayOpacity: number
+  textShadowOpacity: number
+  maxLinesPerSlide: number
+}
+
+export interface SlidePayload {
+  lines: string[]
+  songTitle: string
+  sectionLabel: string
+  slideIndex: number
+  totalSlides: number
+  backgroundPath?: string
+  theme?: SlideTheme
+}

@@ -1,11 +1,12 @@
+import { app, BrowserWindow, ipcMain, shell, screen, dialog } from 'electron'
+import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import { join, extname } from 'path'
+import { copyFileSync, mkdirSync, existsSync } from 'fs'
 import { db } from './db/index'
 import { songs, sections, serviceDates, lineupItems, themes, songUsage } from './db/schema'
 import { asc, desc, eq, like, or } from 'drizzle-orm'
 import { runMigrations } from './db/migrate'
 import { seedIfEmpty } from './db/seed'
-import { app, BrowserWindow, ipcMain, shell, screen } from 'electron'
-import { join } from 'path'
-import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 
 let controlWindow: BrowserWindow | null = null
 let projectionWindow: BrowserWindow | null = null
@@ -23,7 +24,8 @@ function createControlWindow(): void {
       preload: join(__dirname, '../preload/index.mjs'),
       sandbox: false,
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      webSecurity: false  // ← allows file:// image loading
     },
     show: false
   })
@@ -64,7 +66,8 @@ function createProjectionWindow(): void {
       preload: join(__dirname, '../preload/index.mjs'),
       sandbox: false,
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      webSecurity: false  // ← allows file:// image loading
     },
     show: false
   })
@@ -384,6 +387,42 @@ ipcMain.handle('analytics:recordUsage', (_e, songId: number, serviceDateId: numb
     usedAt: new Date().toISOString()
   }).returning().all()
   return created
+})
+
+// ── Background / file IPC handlers ───────────────────────────────────────────
+
+ipcMain.handle('backgrounds:getDir', () => {
+  const dir = join(app.getPath('userData'), 'backgrounds')
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+  return dir
+})
+
+ipcMain.handle('backgrounds:pickImage', async () => {
+  const result = await dialog.showOpenDialog({
+    title: 'Choose background image',
+    filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp'] }],
+    properties: ['openFile']
+  })
+  if (result.canceled || result.filePaths.length === 0) return null
+
+  const srcPath = result.filePaths[0]
+  const dir = join(app.getPath('userData'), 'backgrounds')
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+
+  const ext = extname(srcPath)
+  const filename = `bg_${Date.now()}${ext}`
+  const destPath = join(dir, filename)
+  copyFileSync(srcPath, destPath)
+
+  return destPath
+})
+
+ipcMain.handle('songs:setBackground', (_e, songId: number, backgroundPath: string | null) => {
+  db.update(songs)
+    .set({ backgroundPath, updatedAt: new Date().toISOString() })
+    .where(eq(songs.id, songId))
+    .run()
+  return db.select().from(songs).where(eq(songs.id, songId)).get()
 })
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────────

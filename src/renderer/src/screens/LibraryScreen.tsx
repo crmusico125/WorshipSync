@@ -1,3 +1,4 @@
+import BackgroundPicker from "../components/BackgroundPicker";
 import { useEffect, useState } from "react";
 import { useSongStore } from "../store/useSongStore";
 import type { Song, Section } from "../../../../shared/types";
@@ -320,6 +321,22 @@ export default function LibraryScreen() {
                   </div>
                 ))}
               </div>
+            </div>
+
+            {/* Background */}
+            <div className="card">
+              <div className="label" style={{ marginBottom: 10 }}>
+                Background
+              </div>
+              <BackgroundPicker
+                songId={selectedSong.id}
+                songTitle={selectedSong.title}
+                currentBackground={selectedSong.backgroundPath}
+                onChanged={async () => {
+                  await loadSongs();
+                  await selectSong(selectedSong.id);
+                }}
+              />
             </div>
           </>
         ) : (

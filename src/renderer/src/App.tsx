@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import type { AppScreen } from "../../../../shared/types";
 import Sidebar from "./components/layout/Sidebar";
 import TopBar from "./components/layout/TopBar";
@@ -8,30 +8,45 @@ import LibraryScreen from "./screens/LibraryScreen";
 import ThemesScreen from "./screens/ThemesScreen";
 import AnalyticsScreen from "./screens/AnalyticsScreen";
 import LiveScreen from "./screens/LiveScreen";
+import { useServiceStore } from "./store/useServiceStore";
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<AppScreen>("planner");
   const [projectionOpen, setProjectionOpen] = useState(false);
   const [activeServiceId, setActiveServiceId] = useState<number | null>(null);
 
-  const handleGoLive = () => {
+  const handleGoLive = useCallback(async () => {
+    const { selectedService, loadLineup } = useServiceStore.getState();
+    if (selectedService) {
+      await loadLineup(selectedService.id);
+    }
     if (!projectionOpen) {
       window.worshipsync.window.openProjection();
       setProjectionOpen(true);
     }
     setCurrentScreen("live");
-  };
+  }, [projectionOpen]);
 
-  const handleCloseProjection = () => {
+  // Also reload when navigating to live via sidebar
+  useEffect(() => {
+    if (currentScreen === "live") {
+      const { selectedService, loadLineup } = useServiceStore.getState();
+      if (selectedService) {
+        loadLineup(selectedService.id);
+      }
+    }
+  }, [currentScreen]);
+
+  const handleCloseProjection = useCallback(() => {
     window.worshipsync.window.closeProjection();
     setProjectionOpen(false);
     setCurrentScreen("builder");
-  };
+  }, []);
 
-  const handleOpenBuilder = (serviceId: number) => {
+  const handleOpenBuilder = useCallback((serviceId: number) => {
     setActiveServiceId(serviceId);
     setCurrentScreen("builder");
-  };
+  }, []);
 
   return (
     <div className="app-shell">

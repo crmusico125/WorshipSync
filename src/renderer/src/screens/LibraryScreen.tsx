@@ -55,9 +55,13 @@ export default function LibraryScreen() {
   } = useSongStore();
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [themeList, setThemeList] = useState<
+    { id: number; name: string; type: string }[]
+  >([]);
 
   useEffect(() => {
     loadSongs();
+    window.worshipsync.themes.getAll().then((t: any) => setThemeList(t));
   }, []);
 
   const grouped = searchQuery ? null : groupAlphabetically(songs);
@@ -320,6 +324,45 @@ export default function LibraryScreen() {
                     </div>
                   </div>
                 ))}
+              </div>
+            </div>
+
+            {/* Theme */}
+            <div className="card">
+              <div className="label" style={{ marginBottom: 8 }}>
+                Slide theme
+              </div>
+              <select
+                className="input"
+                value={selectedSong.themeId ?? ""}
+                onChange={async (e) => {
+                  const themeId = e.target.value
+                    ? parseInt(e.target.value)
+                    : null;
+                  await window.worshipsync.songs.update(selectedSong.id, {
+                    themeId,
+                  });
+                  await loadSongs();
+                  await selectSong(selectedSong.id);
+                }}
+                style={{ appearance: "none" }}
+              >
+                <option value="">— Use default theme —</option>
+                {themeList.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name} ({t.type})
+                  </option>
+                ))}
+              </select>
+              <div
+                style={{
+                  fontSize: 10,
+                  color: "var(--text-muted)",
+                  marginTop: 6,
+                  lineHeight: 1.5,
+                }}
+              >
+                Per-song theme overrides the global default for this song only.
               </div>
             </div>
 

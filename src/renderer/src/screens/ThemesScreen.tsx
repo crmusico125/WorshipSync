@@ -106,6 +106,20 @@ export default function ThemesScreen() {
     }
   };
 
+  const handleSetDefault = async () => {
+    if (!selectedTheme) return;
+    // Clear all existing defaults first
+    for (const t of themeList) {
+      if (t.isDefault) {
+        await window.worshipsync.themes.update(t.id, { isDefault: false });
+      }
+    }
+    await window.worshipsync.themes.update(selectedTheme.id, {
+      isDefault: true,
+    });
+    await loadThemes();
+  };
+
   const handleSave = async () => {
     if (!selectedTheme) return;
     setSaving(true);
@@ -284,6 +298,15 @@ export default function ThemesScreen() {
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
+            {!selectedTheme?.isDefault && (
+              <button
+                className="btn"
+                style={{ fontSize: 11 }}
+                onClick={handleSetDefault}
+              >
+                Set as default
+              </button>
+            )}
             <button
               className="btn btn-success"
               onClick={handleSave}
@@ -291,11 +314,11 @@ export default function ThemesScreen() {
             >
               {saving ? "Saving..." : "Save theme"}
             </button>
-            {!selectedTheme.isDefault && (
+            {!selectedTheme?.isDefault && (
               <button
                 className="btn"
                 style={{ color: "var(--accent-red)", fontSize: 11 }}
-                onClick={() => handleDelete(selectedTheme)}
+                onClick={() => handleDelete(selectedTheme!)}
               >
                 Delete
               </button>

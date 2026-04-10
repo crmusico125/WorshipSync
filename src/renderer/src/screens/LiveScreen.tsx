@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useServiceStore } from "../store/useServiceStore";
 
 interface Slide {
@@ -26,7 +26,20 @@ interface LiveSong {
   artist: string;
   key: string | null;
   backgroundPath: string | null;
+  themeId: number | null;
   sections: SectionWithSlides[];
+}
+
+interface ResolvedThemeStyle {
+  fontFamily: string;
+  fontSize: number;
+  fontWeight: string;
+  textColor: string;
+  textAlign: "left" | "center" | "right";
+  textPosition: "top" | "middle" | "bottom";
+  overlayOpacity: number;
+  textShadowOpacity: number;
+  maxLinesPerSlide: number;
 }
 
 function buildSlides(
@@ -59,6 +72,18 @@ function buildSlides(
   return slides;
 }
 
+const DEFAULT_THEME_STYLE: ResolvedThemeStyle = {
+  fontFamily: "Montserrat, sans-serif",
+  fontSize: 48,
+  fontWeight: "600",
+  textColor: "#ffffff",
+  textAlign: "center",
+  textPosition: "middle",
+  overlayOpacity: 45,
+  textShadowOpacity: 40,
+  maxLinesPerSlide: 2,
+};
+
 interface Props {
   onClose: () => void;
   projectionOpen: boolean;
@@ -76,10 +101,20 @@ export default function LiveScreen({ onClose, projectionOpen }: Props) {
   const [defaultThemeBackground, setDefaultThemeBackground] = useState<
     string | null
   >(null);
+  const [themeCache, setThemeCache] = useState<Record<number, any>>({});
+  const [defaultTheme, setDefaultTheme] = useState<any>(null);
 
+  // ── Load themes ─────────────────────────────────────────────────────────────
   useEffect(() => {
-    // Load default theme background on mount
+    // Reload lineup to pick up any theme/background changes made in Library
+    const { selectedService, loadLineup } = useServiceStore.getState();
+    if (selectedService) {
+      loadLineup(selectedService.id);
+    }
+
+    // Load default theme
     window.worshipsync.themes.getDefault().then((theme: any) => {
+      setDefaultTheme(theme);
       if (theme?.settings) {
         try {
           const settings = JSON.parse(theme.settings);
@@ -87,9 +122,18 @@ export default function LiveScreen({ onClose, projectionOpen }: Props) {
         } catch {}
       }
     });
-  }, []);
 
-  // Build live songs from lineup
+    // Load ALL themes into cache — covers both default and per-song themes
+    window.worshipsync.themes.getAll().then((all: any[]) => {
+      const cache: Record<number, any> = {};
+      all.forEach((t) => {
+        cache[t.id] = t;
+      });
+      setThemeCache(cache);
+    });
+  }, [lineup]);
+
+  // ── Build live songs ─────────────────────────────────────────────────────────
   useEffect(() => {
     const built: LiveSong[] = lineup.map((item) => {
       const selectedIds: number[] = JSON.parse(item.selectedSections || "[]");
@@ -107,13 +151,66 @@ export default function LiveScreen({ onClose, projectionOpen }: Props) {
         artist: item.song.artist,
         key: item.song.key,
         backgroundPath: item.song.backgroundPath,
+        themeId: item.song.themeId,
         sections: activeSections,
       };
     });
     setLiveSongs(built);
   }, [lineup]);
 
-  // Send current slide to projection window
+  // ── Resolve theme style for a song ──────────────────────────────────────────
+  const resolveThemeStyle = useCallback(
+    (song: LiveSong): ResolvedThemeStyle => {
+      const songTheme = song.themeId ? themeCache[song.themeId] : null;
+      const activeTheme = songTheme ?? defaultTheme;
+      if (!activeTheme?.settings) return DEFAULT_THEME_STYLE;
+      try {
+        const s = JSON.parse(activeTheme.settings);
+        return {
+          fontFamily: s.fontFamily ?? DEFAULT_THEME_STYLE.fontFamily,
+          fontSize: s.fontSize ?? DEFAULT_THEME_STYLE.fontSize,
+          fontWeight: s.fontWeight ?? DEFAULT_THEME_STYLE.fontWeight,
+          textColor: s.textColor ?? DEFAULT_THEME_STYLE.textColor,
+          textAlign: s.textAlign ?? DEFAULT_THEME_STYLE.textAlign,
+          textPosition: s.textPosition ?? DEFAULT_THEME_STYLE.textPosition,
+          overlayOpacity:
+            s.overlayOpacity ?? DEFAULT_THEME_STYLE.overlayOpacity,
+          textShadowOpacity:
+            s.textShadowOpacity ?? DEFAULT_THEME_STYLE.textShadowOpacity,
+          maxLinesPerSlide:
+            s.maxLinesPerSlide ?? DEFAULT_THEME_STYLE.maxLinesPerSlide,
+        };
+      } catch {
+        return DEFAULT_THEME_STYLE;
+      }
+    },
+    [themeCache, defaultTheme],
+  );
+
+  // ── Resolve background for a song ───────────────────────────────────────────
+  const resolveBackground = useCallback(
+    (song: LiveSong): string | undefined => {
+      const songTheme = song.themeId ? themeCache[song.themeId] : null;
+      const songThemeBg = songTheme
+        ? (() => {
+            try {
+              return JSON.parse(songTheme.settings).backgroundPath ?? null;
+            } catch {
+              return null;
+            }
+          })()
+        : null;
+      return (
+        song.backgroundPath ??
+        songThemeBg ??
+        defaultThemeBackground ??
+        undefined
+      );
+    },
+    [themeCache, defaultThemeBackground],
+  );
+
+  // ── Send current slide to projection ────────────────────────────────────────
   const sendCurrentSlide = useCallback(
     (songIdx: number, secIdx: number, slideIdx: number, songs: LiveSong[]) => {
       if (!songs[songIdx]?.sections[secIdx]) return;
@@ -121,23 +218,34 @@ export default function LiveScreen({ onClose, projectionOpen }: Props) {
       const slide = section.slides[slideIdx];
       if (!slide) return;
 
-      // Per-song background takes priority, falls back to theme background
-      const backgroundPath =
-        songs[songIdx].backgroundPath ?? defaultThemeBackground ?? undefined;
+      const song = songs[songIdx];
+      const style = resolveThemeStyle(song);
+      const backgroundPath = resolveBackground(song);
 
       window.worshipsync.slide.show({
         lines: slide.lines,
-        songTitle: songs[songIdx].title,
+        songTitle: song.title,
         sectionLabel: section.label,
         slideIndex: slideIdx,
         totalSlides: section.slides.length,
         backgroundPath,
+        theme: {
+          fontFamily: style.fontFamily,
+          fontSize: style.fontSize,
+          fontWeight: style.fontWeight,
+          textColor: style.textColor,
+          textAlign: style.textAlign,
+          textPosition: style.textPosition,
+          overlayOpacity: style.overlayOpacity,
+          textShadowOpacity: style.textShadowOpacity,
+          maxLinesPerSlide: style.maxLinesPerSlide,
+        },
       });
     },
-    [defaultThemeBackground],
+    [resolveThemeStyle, resolveBackground],
   );
 
-  // Navigation
+  // ── Navigation ───────────────────────────────────────────────────────────────
   const goToSlide = useCallback(
     (songIdx: number, secIdx: number, slideIdx: number) => {
       const songs = liveSongs;
@@ -147,7 +255,6 @@ export default function LiveScreen({ onClose, projectionOpen }: Props) {
         0,
         Math.min(slideIdx, section.slides.length - 1),
       );
-
       setCurrentSongIndex(songIdx);
       setCurrentSectionIndex(secIdx);
       setCurrentSlideIndex(clampedSlide);
@@ -163,7 +270,6 @@ export default function LiveScreen({ onClose, projectionOpen }: Props) {
     if (!song) return;
     const section = song.sections[currentSectionIndex];
     if (!section) return;
-
     if (currentSlideIndex < section.slides.length - 1) {
       goToSlide(currentSongIndex, currentSectionIndex, currentSlideIndex + 1);
     } else if (currentSectionIndex < song.sections.length - 1) {
@@ -230,7 +336,7 @@ export default function LiveScreen({ onClose, projectionOpen }: Props) {
     if (chorusIdx !== -1) goToSlide(currentSongIndex, chorusIdx, 0);
   }, [liveSongs, currentSongIndex, goToSlide]);
 
-  // Keyboard shortcuts
+  // ── Keyboard shortcuts ───────────────────────────────────────────────────────
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (
@@ -282,16 +388,26 @@ export default function LiveScreen({ onClose, projectionOpen }: Props) {
     liveSongs,
   ]);
 
-  // Send first slide when songs are loaded
+  // ── Send first slide on load ─────────────────────────────────────────────────
   useEffect(() => {
     if (liveSongs.length > 0 && projectionOpen) {
       sendCurrentSlide(0, 0, 0, liveSongs);
     }
   }, [liveSongs, projectionOpen]);
 
+  // ── Derived state ────────────────────────────────────────────────────────────
   const currentSong = liveSongs[currentSongIndex];
   const currentSection = currentSong?.sections[currentSectionIndex];
   const currentSlide = currentSection?.slides[currentSlideIndex];
+
+  // Resolve current song's theme style for the operator preview
+  const currentThemeStyle = currentSong
+    ? resolveThemeStyle(currentSong)
+    : DEFAULT_THEME_STYLE;
+
+  const currentBg = currentSong ? resolveBackground(currentSong) : undefined;
+
+  const overlayAlpha = (currentThemeStyle.overlayOpacity / 100).toFixed(2);
 
   const SECTION_COLORS: Record<string, string> = {
     verse: "#4d8ef0",
@@ -304,6 +420,7 @@ export default function LiveScreen({ onClose, projectionOpen }: Props) {
     interlude: "#888",
   };
 
+  // ── Empty states ─────────────────────────────────────────────────────────────
   if (!selectedService) {
     return (
       <div
@@ -354,9 +471,10 @@ export default function LiveScreen({ onClose, projectionOpen }: Props) {
     );
   }
 
+  // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <div style={{ display: "flex", height: "100%", overflow: "hidden" }}>
-      {/* ── Left col: song list + section pads ───────────────────────────── */}
+      {/* ── Left col: song list + section pads ─────────────────────────── */}
       <div
         style={{
           width: 220,
@@ -397,20 +515,17 @@ export default function LiveScreen({ onClose, projectionOpen }: Props) {
             <button
               className="btn btn-success"
               style={{ fontSize: 10, padding: "2px 8px", marginLeft: "auto" }}
-              onClick={() => {
-                window.worshipsync.window.openProjection();
-              }}
+              onClick={() => window.worshipsync.window.openProjection()}
             >
               Open
             </button>
           )}
         </div>
 
-        {/* Song list */}
+        {/* Song list + section pads */}
         <div style={{ flex: 1, overflowY: "auto", padding: "8px 8px" }}>
           {liveSongs.map((song, songIdx) => (
             <div key={song.lineupItemId} style={{ marginBottom: 8 }}>
-              {/* Song header */}
               <div
                 onClick={() => goToSlide(songIdx, 0, 0)}
                 style={{
@@ -451,13 +566,11 @@ export default function LiveScreen({ onClose, projectionOpen }: Props) {
                 </div>
               </div>
 
-              {/* Section pads — only show for current song */}
               {currentSongIndex === songIdx &&
                 song.sections.map((sec, secIdx) => {
                   const isCurrentSec = currentSectionIndex === secIdx;
                   const firstLine = sec.lyrics.split("\n")[0] || sec.label;
                   const isPlayed = secIdx < currentSectionIndex;
-
                   return (
                     <div
                       key={sec.id}
@@ -504,10 +617,10 @@ export default function LiveScreen({ onClose, projectionOpen }: Props) {
                       <div
                         style={{
                           fontSize: 10,
+                          lineHeight: 1.4,
                           color: isCurrentSec
                             ? "var(--accent-blue)"
                             : "var(--text-secondary)",
-                          lineHeight: 1.4,
                           whiteSpace: "nowrap",
                           overflow: "hidden",
                           textOverflow: "ellipsis",
@@ -523,7 +636,7 @@ export default function LiveScreen({ onClose, projectionOpen }: Props) {
         </div>
       </div>
 
-      {/* ── Center: live preview + controls ──────────────────────────────── */}
+      {/* ── Center: live preview + controls ────────────────────────────── */}
       <div
         style={{
           flex: 1,
@@ -532,7 +645,6 @@ export default function LiveScreen({ onClose, projectionOpen }: Props) {
           overflow: "hidden",
         }}
       >
-        {/* Live preview */}
         <div
           style={{
             flex: 1,
@@ -548,45 +660,49 @@ export default function LiveScreen({ onClose, projectionOpen }: Props) {
             style={{
               flex: 1,
               borderRadius: 10,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexDirection: "column",
-              gap: 6,
-              padding: 24,
               position: "relative",
               border: "1px solid var(--border-subtle)",
               overflow: "hidden",
               background: "#03030a",
+              display: "flex",
+              alignItems:
+                currentThemeStyle.textPosition === "top"
+                  ? "flex-start"
+                  : currentThemeStyle.textPosition === "bottom"
+                    ? "flex-end"
+                    : "center",
+              justifyContent: "center",
+              padding: "5%",
             }}
           >
             {/* Background layer */}
-            {(() => {
-              const bg = currentSong?.backgroundPath ?? defaultThemeBackground;
-              if (!bg || isBlank || isLogo) return null;
-              if (bg.startsWith("color:")) {
+            {currentBg &&
+              !isBlank &&
+              !isLogo &&
+              (() => {
+                if (currentBg.startsWith("color:")) {
+                  return (
+                    <div
+                      style={{
+                        position: "absolute",
+                        inset: 0,
+                        background: currentBg.replace("color:", ""),
+                      }}
+                    />
+                  );
+                }
                 return (
                   <div
                     style={{
                       position: "absolute",
                       inset: 0,
-                      background: bg.replace("color:", ""),
+                      backgroundImage: `url("file://${encodeURI(currentBg)}")`,
+                      backgroundSize: "cover",
+                      backgroundPosition: "center",
                     }}
                   />
                 );
-              }
-              return (
-                <div
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    backgroundImage: `url("file://${encodeURI(bg)}")`,
-                    backgroundSize: "cover",
-                    backgroundPosition: "center",
-                  }}
-                />
-              );
-            })()}
+              })()}
 
             {/* Dark overlay */}
             {!isBlank && !isLogo && (
@@ -594,18 +710,18 @@ export default function LiveScreen({ onClose, projectionOpen }: Props) {
                 style={{
                   position: "absolute",
                   inset: 0,
-                  background: "rgba(0,0,0,0.45)",
+                  background: `rgba(0,0,0,${overlayAlpha})`,
                 }}
               />
             )}
 
+            {/* Blank */}
             {isBlank && (
               <div
                 style={{
                   position: "absolute",
                   inset: 0,
                   background: "#000",
-                  borderRadius: 10,
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -616,13 +732,14 @@ export default function LiveScreen({ onClose, projectionOpen }: Props) {
                 </span>
               </div>
             )}
+
+            {/* Logo */}
             {isLogo && (
               <div
                 style={{
                   position: "absolute",
                   inset: 0,
                   background: "#000",
-                  borderRadius: 10,
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -639,30 +756,37 @@ export default function LiveScreen({ onClose, projectionOpen }: Props) {
                 </span>
               </div>
             )}
+
+            {/* Lyrics — themed */}
             {!isBlank && !isLogo && currentSlide && (
               <>
                 <div
                   style={{
                     position: "relative",
                     zIndex: 1,
-                    color: "#fff",
-                    fontSize: 18,
-                    fontWeight: 600,
-                    textAlign: "center",
+                    fontFamily: currentThemeStyle.fontFamily,
+                    // Scale font down proportionally for the preview box
+                    fontSize: Math.round(currentThemeStyle.fontSize * 0.32),
+                    fontWeight: currentThemeStyle.fontWeight,
+                    color: currentThemeStyle.textColor,
+                    textAlign: currentThemeStyle.textAlign,
                     lineHeight: 1.5,
+                    textShadow: `0 1px 6px rgba(0,0,0,${(currentThemeStyle.textShadowOpacity / 100).toFixed(2)})`,
+                    width: "100%",
                   }}
                 >
                   {currentSlide.lines.map((line, i) => (
-                    <div key={i}>{line}</div>
+                    <div key={i}>{line || "\u00A0"}</div>
                   ))}
                 </div>
                 <div
                   style={{
-                    position: "relative",
+                    position: "absolute",
+                    bottom: 8,
+                    right: 12,
                     zIndex: 1,
                     color: "rgba(255,255,255,0.25)",
                     fontSize: 10,
-                    marginTop: 8,
                   }}
                 >
                   {currentSong?.title} · {currentSection?.label} ·{" "}
@@ -688,7 +812,6 @@ export default function LiveScreen({ onClose, projectionOpen }: Props) {
               </div>
               <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>
                 {(() => {
-                  // Calculate next slide text
                   const nextSlideIdx = currentSlideIndex + 1;
                   if (nextSlideIdx < (currentSection?.slides.length ?? 0)) {
                     return currentSection?.slides[nextSlideIdx].lines.join(
@@ -744,9 +867,7 @@ export default function LiveScreen({ onClose, projectionOpen }: Props) {
           >
             ↩ Chorus
           </button>
-
           <div style={{ flex: 1 }} />
-
           <button
             className="btn"
             style={{ fontSize: 13, padding: "5px 14px" }}
@@ -764,7 +885,7 @@ export default function LiveScreen({ onClose, projectionOpen }: Props) {
         </div>
       </div>
 
-      {/* ── Right col: keyboard shortcuts ────────────────────────────────── */}
+      {/* ── Right col: keyboard shortcuts ──────────────────────────────── */}
       <div
         style={{
           width: 160,

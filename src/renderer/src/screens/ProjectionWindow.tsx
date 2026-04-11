@@ -15,79 +15,17 @@ const DEFAULT_THEME = {
   maxLinesPerSlide: 2,
 };
 
-function BackgroundLayer({
-  backgroundPath,
-  opacity,
-}: {
-  backgroundPath: string | null | undefined;
-  opacity: number;
-}) {
-  if (!backgroundPath) return null;
-
-  if (backgroundPath.startsWith("color:")) {
-    return (
-      <div
-        style={{
-          position: "absolute",
-          inset: 0,
-          background: backgroundPath.replace("color:", ""),
-          opacity,
-          transition: "opacity 0.15s ease",
-        }}
-      />
-    );
-  }
-
-  return (
-    <div
-      style={{
-        position: "absolute",
-        inset: 0,
-        backgroundImage: `url("file://${encodeURI(backgroundPath)}")`,
-        backgroundSize: "cover",
-        backgroundPosition: "center",
-        opacity,
-        transition: "opacity 0.15s ease",
-      }}
-    />
-  );
-}
-
 export default function ProjectionWindow() {
   const [slide, setSlide] = useState<SlidePayload | null>(null);
-  const [prevSlide, setPrevSlide] = useState<SlidePayload | null>(null);
   const [displayState, setDisplayState] = useState<DisplayState>("blank");
-  const [textVisible, setTextVisible] = useState(true);
-  const [bgTransition, setBgTransition] = useState(false);
-  const transitionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cleanupRef = useRef<(() => void)[]>([]);
 
   useEffect(() => {
     window.worshipsync.projection.ready();
 
     const cleanSlide = window.worshipsync.slide.onShow((payload) => {
-      const bgChanged = payload.backgroundPath !== slide?.backgroundPath;
-
-      if (bgChanged) {
-        // Keep prev background visible, fade in new one
-        setPrevSlide(slide);
-        setBgTransition(true);
-      }
-
-      // Fade text out briefly
-      setTextVisible(false);
-
-      if (transitionTimer.current) clearTimeout(transitionTimer.current);
-      transitionTimer.current = setTimeout(() => {
-        setSlide(payload);
-        setDisplayState("slide");
-        setTextVisible(true);
-        if (bgChanged) {
-          setTimeout(() => {
-            setPrevSlide(null);
-            setBgTransition(false);
-          }, 300);
-        }
-      }, 80);
+      setSlide(payload);
+      setDisplayState("slide");
     });
 
     const cleanBlank = window.worshipsync.slide.onBlank((isBlank) => {
@@ -98,24 +36,25 @@ export default function ProjectionWindow() {
       setDisplayState(show ? "logo" : "slide");
     });
 
+    cleanupRef.current = [cleanSlide, cleanBlank, cleanLogo];
+
     return () => {
-      cleanSlide();
-      cleanBlank();
-      cleanLogo();
-      if (transitionTimer.current) clearTimeout(transitionTimer.current);
+      cleanupRef.current.forEach((fn) => fn());
     };
-  }, [slide]);
+  }, []);
 
   const theme = slide?.theme ?? DEFAULT_THEME;
   const overlayAlpha = (theme.overlayOpacity / 100).toFixed(2);
   const shadowOpacity = (theme.textShadowOpacity / 100).toFixed(2);
 
-  const textPositionStyle: React.CSSProperties =
+  const alignItems =
     theme.textPosition === "top"
-      ? { justifyContent: "flex-start", paddingTop: "10%" }
+      ? "flex-start"
       : theme.textPosition === "bottom"
-        ? { justifyContent: "flex-end", paddingBottom: "10%" }
-        : { justifyContent: "center" };
+        ? "flex-end"
+        : "center";
+
+  const backgroundPath = slide?.backgroundPath;
 
   return (
     <div
@@ -125,21 +64,31 @@ export default function ProjectionWindow() {
         background: "#000",
         position: "relative",
         overflow: "hidden",
-        display: "flex",
-        alignItems: "stretch",
       }}
     >
-      {/* Previous background — fades out during song change */}
-      {bgTransition && prevSlide?.backgroundPath && (
-        <BackgroundLayer
-          backgroundPath={prevSlide.backgroundPath}
-          opacity={bgTransition ? 0 : 1}
-        />
-      )}
-
-      {/* Current background — always mounted, no flicker */}
-      {displayState === "slide" && (
-        <BackgroundLayer backgroundPath={slide?.backgroundPath} opacity={1} />
+      {/* Background */}
+      {displayState === "slide" && backgroundPath && (
+        backgroundPath.startsWith("color:") ? (
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              zIndex: 1,
+              background: backgroundPath.replace("color:", ""),
+            }}
+          />
+        ) : (
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              zIndex: 1,
+              backgroundImage: `url("file://${encodeURI(backgroundPath)}")`,
+              backgroundSize: "cover",
+              backgroundPosition: "center",
+            }}
+          />
+        )
       )}
 
       {/* Dark overlay */}
@@ -148,6 +97,7 @@ export default function ProjectionWindow() {
           style={{
             position: "absolute",
             inset: 0,
+            zIndex: 2,
             background: `rgba(0,0,0,${overlayAlpha})`,
           }}
         />
@@ -155,7 +105,7 @@ export default function ProjectionWindow() {
 
       {/* Blank screen */}
       {displayState === "blank" && (
-        <div style={{ position: "absolute", inset: 0, background: "#000" }} />
+        <div style={{ position: "absolute", inset: 0, zIndex: 10, background: "#000" }} />
       )}
 
       {/* Logo screen */}
@@ -164,6 +114,7 @@ export default function ProjectionWindow() {
           style={{
             position: "absolute",
             inset: 0,
+            zIndex: 10,
             background: "#000",
             display: "flex",
             alignItems: "center",
@@ -184,18 +135,18 @@ export default function ProjectionWindow() {
         </div>
       )}
 
-      {/* Lyric content */}
+      {/* Lyrics */}
       {displayState === "slide" && slide && (
         <div
           style={{
             position: "absolute",
             inset: 0,
+            zIndex: 3,
             display: "flex",
             flexDirection: "column",
+            alignItems: "center",
+            justifyContent: alignItems,
             padding: "8% 10%",
-            ...textPositionStyle,
-            opacity: textVisible ? 1 : 0,
-            transition: "opacity 0.08s ease",
           }}
         >
           <div
@@ -207,11 +158,11 @@ export default function ProjectionWindow() {
               textAlign: theme.textAlign,
               lineHeight: 1.4,
               textShadow: `0 2px 12px rgba(0,0,0,${shadowOpacity}), 0 1px 3px rgba(0,0,0,${shadowOpacity})`,
-              maxWidth: "100%",
+              width: "100%",
             }}
           >
             {slide.lines.map((line, i) => (
-              <div key={i}>{line}</div>
+              <div key={i}>{line || "\u00A0"}</div>
             ))}
           </div>
         </div>
@@ -224,6 +175,7 @@ export default function ProjectionWindow() {
             position: "absolute",
             bottom: 16,
             right: 20,
+            zIndex: 3,
             fontSize: 11,
             color: "rgba(255,255,255,0.15)",
             fontFamily: "monospace",

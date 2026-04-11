@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useServiceStore } from "../store/useServiceStore";
 
 interface Slide {
@@ -104,9 +104,9 @@ export default function LiveScreen({ onClose, projectionOpen }: Props) {
   const [themeCache, setThemeCache] = useState<Record<number, any>>({});
   const [defaultTheme, setDefaultTheme] = useState<any>(null);
 
-  // ── Load themes ─────────────────────────────────────────────────────────────
+  // ── Load lineup + themes on mount ───────────────────────────────────────────
   useEffect(() => {
-    // Reload lineup to pick up any theme/background changes made in Library
+    // Reload lineup once on mount to pick up any changes made in Library
     const { selectedService, loadLineup } = useServiceStore.getState();
     if (selectedService) {
       loadLineup(selectedService.id);
@@ -123,7 +123,7 @@ export default function LiveScreen({ onClose, projectionOpen }: Props) {
       }
     });
 
-    // Load ALL themes into cache — covers both default and per-song themes
+    // Load ALL themes into cache
     window.worshipsync.themes.getAll().then((all: any[]) => {
       const cache: Record<number, any> = {};
       all.forEach((t) => {
@@ -131,19 +131,21 @@ export default function LiveScreen({ onClose, projectionOpen }: Props) {
       });
       setThemeCache(cache);
     });
-  }, [lineup]);
+  }, []);
 
   // ── Build live songs ─────────────────────────────────────────────────────────
   useEffect(() => {
     const built: LiveSong[] = lineup.map((item) => {
       const selectedIds: number[] = JSON.parse(item.selectedSections || "[]");
-      const activeSections = item.song.sections
-        .filter((s) => selectedIds.includes(s.id))
-        .map((s) => ({
-          ...s,
-          lineupItemId: item.id,
-          slides: buildSlides(s.lyrics, s.label, s.id, item.id),
-        }));
+      const filtered = item.song.sections.filter((s) => selectedIds.includes(s.id));
+      // Fall back to all sections if selectedIds is empty or contains stale IDs
+      // (sections:upsert deletes+reinserts with new auto-increment IDs)
+      const sectionsToUse = filtered.length > 0 ? filtered : item.song.sections;
+      const activeSections = sectionsToUse.map((s) => ({
+        ...s,
+        lineupItemId: item.id,
+        slides: buildSlides(s.lyrics, s.label, s.id, item.id),
+      }));
       return {
         lineupItemId: item.id,
         songId: item.song.id,
@@ -388,12 +390,14 @@ export default function LiveScreen({ onClose, projectionOpen }: Props) {
     liveSongs,
   ]);
 
-  // ── Send first slide on load ─────────────────────────────────────────────────
+  // ── Send first slide on load (once) ─────────────────────────────────────────
+  const initialSlideSent = useRef(false);
   useEffect(() => {
-    if (liveSongs.length > 0 && projectionOpen) {
+    if (liveSongs.length > 0 && projectionOpen && !initialSlideSent.current) {
+      initialSlideSent.current = true;
       sendCurrentSlide(0, 0, 0, liveSongs);
     }
-  }, [liveSongs, projectionOpen]);
+  }, [liveSongs, projectionOpen, sendCurrentSlide]);
 
   // ── Derived state ────────────────────────────────────────────────────────────
   const currentSong = liveSongs[currentSongIndex];

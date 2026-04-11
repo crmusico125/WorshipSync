@@ -573,65 +573,99 @@ export default function LiveScreen({ onClose, projectionOpen }: Props) {
               {currentSongIndex === songIdx &&
                 song.sections.map((sec, secIdx) => {
                   const isCurrentSec = currentSectionIndex === secIdx;
-                  const firstLine = sec.lyrics.split("\n")[0] || sec.label;
                   const isPlayed = secIdx < currentSectionIndex;
+                  const sectionColor = SECTION_COLORS[sec.type] ?? "var(--text-muted)";
                   return (
-                    <div
-                      key={sec.id}
-                      onClick={() => goToSlide(songIdx, secIdx, 0)}
-                      style={{
-                        padding: "6px 9px",
-                        borderRadius: 6,
-                        marginBottom: 3,
-                        cursor: "pointer",
-                        marginLeft: 8,
-                        border: `1px solid ${isCurrentSec ? "rgba(77,142,240,0.4)" : "var(--border-subtle)"}`,
-                        background: isCurrentSec
-                          ? "var(--accent-blue-dim)"
-                          : "var(--surface-1)",
-                        opacity: isPlayed ? 0.45 : 1,
-                        transition: "all 0.1s",
-                      }}
-                    >
+                    <div key={sec.id} style={{ marginBottom: 4, marginLeft: 8 }}>
+                      {/* Section label header */}
                       <div
+                        onClick={() => goToSlide(songIdx, secIdx, 0)}
                         style={{
-                          fontSize: 9,
-                          fontWeight: 700,
-                          textTransform: "uppercase",
-                          letterSpacing: "0.05em",
-                          marginBottom: 2,
-                          color: isCurrentSec
-                            ? "var(--accent-blue)"
-                            : (SECTION_COLORS[sec.type] ?? "var(--text-muted)"),
+                          padding: "4px 9px",
+                          borderRadius: "6px 6px 0 0",
+                          cursor: "pointer",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 5,
+                          background: isCurrentSec ? "var(--accent-blue-dim)" : "var(--surface-2)",
+                          border: `1px solid ${isCurrentSec ? "rgba(77,142,240,0.4)" : "var(--border-subtle)"}`,
+                          borderBottom: "none",
+                          opacity: isPlayed ? 0.45 : 1,
                         }}
                       >
-                        {sec.label}
+                        <span
+                          style={{
+                            fontSize: 9,
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            letterSpacing: "0.05em",
+                            color: isCurrentSec ? "var(--accent-blue)" : sectionColor,
+                          }}
+                        >
+                          {sec.label}
+                        </span>
                         {isCurrentSec && (
-                          <span
-                            style={{
-                              marginLeft: 5,
-                              fontSize: 8,
-                              color: "var(--accent-green)",
-                            }}
-                          >
+                          <span style={{ fontSize: 8, color: "var(--accent-green)", marginLeft: "auto" }}>
                             ● LIVE
                           </span>
                         )}
                       </div>
-                      <div
-                        style={{
-                          fontSize: 10,
-                          lineHeight: 1.4,
-                          color: isCurrentSec
-                            ? "var(--accent-blue)"
-                            : "var(--text-secondary)",
-                          whiteSpace: "nowrap",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                        }}
-                      >
-                        {firstLine}
-                      </div>
+
+                      {/* Individual slide rows */}
+                      {sec.slides.map((slide, slideIdx) => {
+                        const isActiveslide = isCurrentSec && currentSlideIndex === slideIdx;
+                        const slidePreview = slide.lines.filter(Boolean).join(" / ") || "—";
+                        return (
+                          <div
+                            key={slideIdx}
+                            onClick={() => goToSlide(songIdx, secIdx, slideIdx)}
+                            style={{
+                              padding: "5px 9px 5px 22px",
+                              cursor: "pointer",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 6,
+                              background: isActiveslide
+                                ? "rgba(77,142,240,0.18)"
+                                : "var(--surface-1)",
+                              border: `1px solid ${isCurrentSec ? "rgba(77,142,240,0.4)" : "var(--border-subtle)"}`,
+                              borderTop: "1px solid var(--border-subtle)",
+                              borderRadius: slideIdx === sec.slides.length - 1 ? "0 0 6px 6px" : 0,
+                              opacity: isPlayed ? 0.45 : 1,
+                              transition: "background 0.1s",
+                            }}
+                          >
+                            <span
+                              style={{
+                                fontSize: 8,
+                                fontFamily: "var(--font-mono)",
+                                color: isActiveslide ? "var(--accent-blue)" : "var(--text-muted)",
+                                flexShrink: 0,
+                                minWidth: 14,
+                              }}
+                            >
+                              {slideIdx + 1}
+                            </span>
+                            <span
+                              style={{
+                                fontSize: 10,
+                                lineHeight: 1.3,
+                                color: isActiveslide ? "var(--accent-blue)" : "var(--text-secondary)",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                                flex: 1,
+                                fontWeight: isActiveslide ? 600 : 400,
+                              }}
+                            >
+                              {slidePreview}
+                            </span>
+                            {isActiveslide && (
+                              <span style={{ fontSize: 8, color: "var(--accent-blue)", flexShrink: 0 }}>▶</span>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   );
                 })}

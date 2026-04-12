@@ -4,14 +4,13 @@ Church worship presentation app — a free, open-source alternative to EasyWorsh
 
 ## Features
 
-- 📖 Song library with section-based lyrics (verse, chorus, bridge...)
-- 🗓️ Drag-and-drop weekly service lineup builder
-- 🖥️ Live dual-screen presenter — operator panel + audience display
-- 🎬 Image, video, and Bible verse support
-- 🎨 Slide theming with global, seasonal, and per-song themes
-- 📊 Song usage history and analytics
-- 🤖 AI-powered song suggestions, lyric import, Bible verse search
-- 🎛️ Elgato Stream Deck integration
+- **Song library** — section-based lyrics (verse, chorus, bridge, etc.) with inline creation and section editor
+- **Service planner** — weekly lineup builder with drag-and-drop reordering, today detection, and quick launch
+- **Live presenter** — dual-screen operator panel + audience display with blank, logo, and slide controls
+- **Slide theming** — global, seasonal, and per-song themes with custom backgrounds (images or solid colors)
+- **Per-song backgrounds** — assign different backgrounds to each song in a lineup
+- **Data backup** — export/import all app data (songs, services, backgrounds) as a `.worshipsync` file for moving to another machine
+- **Analytics** — song usage history and frequency tracking
 
 ## Tech stack
 
@@ -19,12 +18,10 @@ Church worship presentation app — a free, open-source alternative to EasyWorsh
 | ------------- | ------------------------------------- | ------------------------------- |
 | Desktop shell | Electron                              | Cross-platform, two-window IPC  |
 | UI            | React + Vite + TypeScript             | Fast dev, type safety           |
-| Styling       | Tailwind CSS                          | Utility-first, consistent       |
+| Styling       | Tailwind CSS + CSS variables          | Utility-first, consistent       |
 | State         | Zustand                               | Lightweight, no boilerplate     |
 | Database      | SQLite + better-sqlite3 + Drizzle ORM | Local, offline, fast            |
-| Packaging     | Electron Forge                        | .exe / .dmg / .deb              |
-| CI            | GitHub Actions                        | Auto-build on push              |
-| AI            | Anthropic Claude API                  | Song suggestions, lyric parsing |
+| Packaging     | electron-builder                      | DMG (macOS), NSIS installer (Windows) |
 
 ## Getting started
 
@@ -35,24 +32,49 @@ npm install
 # Run in development (opens both windows)
 npm run dev
 
-# Build for production
-npm run build
-
-# Package as installer
-npm run make
+# Type-check and lint
+npm run typecheck
+npm run lint
 ```
+
+## Packaging
+
+### macOS (DMG)
+
+```bash
+npm run dist:mac
+```
+
+Outputs to `release/`:
+- `WorshipSync-x.x.x-arm64.dmg` — Apple Silicon (M1/M2/M3)
+- `WorshipSync-x.x.x.dmg` — Intel
+
+> **First launch on another Mac:** macOS will show an "unidentified developer" warning because the app is not notarized. Right-click the app → **Open** → **Open** to bypass it once.
+
+### Windows (NSIS installer)
+
+```bash
+npm run dist:win
+```
+
+Outputs a standard `.exe` installer to `release/`.
+
+## Moving data to another machine
+
+1. Open WorshipSync → **Settings** tab
+2. Click **Export backup** — saves a `.worshipsync` file containing all songs, services, themes, and background images
+3. On the new machine, open WorshipSync → **Settings** → **Import backup** and select the file
 
 ## Project structure
 
 ```
 src/
 ├── main/           # Electron main process (Node.js)
-│   └── index.ts   # Window creation, IPC handlers, lifecycle
-├── preload/        # Secure contextBridge API exposed to renderer
-│   └── index.ts
-├── shared/         # Types used across both processes
-│   └── types.ts
-└── renderer/       # React UI (runs in Chromium)
+│   ├── index.ts    # Window creation, IPC handlers
+│   └── db/         # SQLite schema, migrations, Drizzle ORM
+├── preload/        # contextBridge API exposed to renderer
+├── shared/         # Types shared across processes
+└── renderer/       # React UI (Chromium)
     ├── index.html          # Control window entry
     ├── projection.html     # Projection window entry
     └── src/
@@ -60,25 +82,10 @@ src/
         ├── projection.tsx           # Projection React root
         ├── screens/                 # One file per screen
         ├── components/              # Shared UI components
-        ├── store/                   # Zustand state (Commit 2+)
-        ├── db/                      # Database layer (Commit 2)
+        ├── store/                   # Zustand stores
         └── styles/
             └── globals.css
 ```
-
-## Commit roadmap
-
-| Commit   | What ships                                                             |
-| -------- | ---------------------------------------------------------------------- |
-| **1** ✅ | Project scaffold — Electron dual-window, React, TypeScript, IPC bridge |
-| **2**    | Database schema — SQLite + Drizzle, seed data                          |
-| **3**    | Song library UI — browse, search, song detail                          |
-| **4**    | Song CRUD + AI lyric import                                            |
-| **5**    | Service builder — calendar, lineup, section toggles                    |
-| **6**    | Live presenter — operator panel, projection, keyboard shortcuts        |
-| **7**    | Stream Deck integration — Elgato SDK, auto-layout from lineup          |
-| **8**    | Themes + Analytics                                                     |
-| **9**    | AI features — song suggester, rotation advisor, Bible verse search     |
 
 ## Environment variables
 

@@ -11,7 +11,45 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "lint": "eslint src --ext .ts,.tsx",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "dist": "npm run build && electron-builder",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:win": "npm run build && electron-builder --win"
+  },
+  "build": {
+    "appId": "com.worshipsync.app",
+    "productName": "WorshipSync",
+    "directories": {
+      "buildResources": "resources",
+      "output": "release"
+    },
+    "files": [
+      "out/**/*",
+      "!out/**/*.map"
+    ],
+    "mac": {
+      "category": "public.app-category.music",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ]
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "npmRebuild": true
   },
   "dependencies": {
     "better-sqlite3": "^11.10.0",
@@ -31,6 +69,7 @@
     "autoprefixer": "^10.4.17",
     "drizzle-kit": "^0.31.10",
     "electron": "^28.2.3",
+    "electron-builder": "^26.8.1",
     "electron-vite": "^2.0.0",
     "postcss": "^8.4.35",
     "tailwindcss": "^3.4.1",

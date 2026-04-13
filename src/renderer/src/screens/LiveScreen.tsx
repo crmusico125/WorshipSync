@@ -1046,6 +1046,11 @@ export default function LiveScreen({ onClose, projectionOpen }: Props) {
             style={{ width: "100%", fontSize: 11 }}
             onClick={() => {
               window.worshipsync.slide.blank(true);
+              if (selectedService) {
+                liveSongs.forEach((song) => {
+                  window.worshipsync.analytics.recordUsage(song.songId, selectedService.id);
+                });
+              }
               onClose();
             }}
           >

@@ -7,6 +7,75 @@ interface Props {
   onGoLive: () => void;
 }
 
+// ── Lyrics paste parser ───────────────────────────────────────────────────────
+
+const SECTION_TYPE_MAP: Record<string, string> = {
+  verse: "verse",
+  chorus: "chorus",
+  bridge: "bridge",
+  "pre-chorus": "pre-chorus",
+  prechorus: "pre-chorus",
+  "pre chorus": "pre-chorus",
+  intro: "intro",
+  outro: "outro",
+  tag: "tag",
+  interlude: "interlude",
+}
+
+const SECTION_BASE_LABELS: Record<string, string> = {
+  verse: "Verse",
+  chorus: "Chorus",
+  bridge: "Bridge",
+  "pre-chorus": "Pre-Chorus",
+  intro: "Intro",
+  outro: "Outro",
+  tag: "Tag",
+  interlude: "Interlude",
+}
+
+function parseLyricsText(raw: string): { title: string; sections: DraftSection[] } {
+  const lines = raw.split("\n")
+  let i = 0
+  while (i < lines.length && !lines[i].trim()) i++
+
+  let title = ""
+  if (i < lines.length) {
+    title = lines[i].trim().replace(/\s+lyrics\s*$/i, "").trim()
+    i++
+  }
+
+  const parsedSections: DraftSection[] = []
+  const typeCounts: Record<string, number> = {}
+  let currentType: string | null = null
+  let currentLyrics: string[] = []
+
+  const flush = () => {
+    if (!currentType) return
+    const lyrics = currentLyrics.join("\n").trimEnd()
+    const count = (typeCounts[currentType] ?? 0) + 1
+    typeCounts[currentType] = count
+    const base = SECTION_BASE_LABELS[currentType] ?? currentType
+    const label = count > 1 ? `${base} ${count}` : base
+    parsedSections.push({ tempId: makeTempId(), type: currentType, label, lyrics })
+    currentLyrics = []
+  }
+
+  for (; i < lines.length; i++) {
+    const trimmed = lines[i].trim()
+    const headerMatch = trimmed.match(/^\[(.+?)\]$/)
+    if (headerMatch) {
+      flush()
+      const rawType = headerMatch[1].toLowerCase().trim()
+      currentType = SECTION_TYPE_MAP[rawType] ?? "verse"
+    } else if (currentType !== null) {
+      currentLyrics.push(lines[i])
+    }
+  }
+  flush()
+
+  return { title, sections: parsedSections }
+}
+
 const SECTION_TYPES = [
   "verse",
   "chorus",
@@ -431,6 +500,163 @@ function InlineSectionEditor({ songId, initialSections, onSaved, onCancel }: Sec
   );
 }
 
+// ── Paste lyrics form ─────────────────────────────────────────────────────────
+
+interface PasteLyricsProps {
+  onCreated: (songId: number) => void
+  onCancel: () => void
+}
+
+function PasteLyricsForm({ onCreated, onCancel }: PasteLyricsProps) {
+  const [raw, setRaw] = useState("")
+  const [title, setTitle] = useState("")
+  const [sections, setSections] = useState<DraftSection[]>([])
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!raw.trim()) { setTitle(""); setSections([]); return }
+    const result = parseLyricsText(raw)
+    setTitle(result.title)
+    setSections(result.sections)
+  }, [raw])
+
+  const save = async () => {
+    if (!title.trim() || sections.length === 0) return
+    setSaving(true)
+    try {
+      const song = await window.worshipsync.songs.create({
+        title: title.trim(),
+        artist: "",
+        tags: "[]",
+        sections: sections.map((s, i) => ({
+          type: s.type,
+          label: s.label,
+          lyrics: s.lyrics,
+          orderIndex: i,
+        })),
+      })
+      onCreated((song as any).id)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const hasSections = sections.length > 0
+  const hasInput = raw.trim().length > 0
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+      <div style={{ flex: 1, overflowY: "auto", padding: "10px 12px", display: "flex", flexDirection: "column", gap: 10 }}>
+        <div>
+          <div className="label" style={{ marginBottom: 4 }}>Paste song lyrics</div>
+          <textarea
+            className="input"
+            autoFocus
+            style={{
+              width: "100%",
+              minHeight: 160,
+              resize: "vertical",
+              fontSize: 11,
+              lineHeight: 1.6,
+              fontFamily: "var(--font-mono)",
+            }}
+            placeholder={`For All You've Done Lyrics\n[Verse]\nMy Saviour, Redeemer\nLifted me from the miry clay\n\n[Chorus]\nAnd You lived, You died...`}
+            value={raw}
+            onChange={(e) => setRaw(e.target.value)}
+          />
+        </div>
+
+        {hasInput && !hasSections && (
+          <div style={{ fontSize: 11, color: "var(--text-muted)", textAlign: "center", padding: "4px 0" }}>
+            No sections detected — make sure headers are in [Brackets]
+          </div>
+        )}
+
+        {hasSections && (
+          <>
+            <div>
+              <div className="label" style={{ marginBottom: 4 }}>Title</div>
+              <input
+                className="input"
+                style={{ width: "100%" }}
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Song title"
+              />
+            </div>
+
+            <div>
+              <div className="label" style={{ marginBottom: 6 }}>
+                Parsed sections ({sections.length})
+              </div>
+              {sections.map((sec) => (
+                <div
+                  key={sec.tempId}
+                  style={{
+                    marginBottom: 6,
+                    border: "1px solid var(--border-subtle)",
+                    borderRadius: 7,
+                    overflow: "hidden",
+                  }}
+                >
+                  <div
+                    style={{
+                      padding: "4px 8px",
+                      background: "var(--surface-2)",
+                      borderBottom: "1px solid var(--border-subtle)",
+                      fontSize: 10,
+                      fontWeight: 700,
+                      color: "var(--accent-blue)",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.05em",
+                    }}
+                  >
+                    {sec.label}
+                  </div>
+                  <div
+                    style={{
+                      padding: "6px 8px",
+                      fontSize: 11,
+                      lineHeight: 1.5,
+                      color: "var(--text-secondary)",
+                      fontFamily: "var(--font-mono)",
+                      whiteSpace: "pre-wrap",
+                    }}
+                  >
+                    {sec.lyrics || <span style={{ color: "var(--text-muted)", fontStyle: "italic" }}>empty</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+
+      <div
+        style={{
+          padding: "10px 12px",
+          borderTop: "1px solid var(--border-subtle)",
+          display: "flex",
+          gap: 8,
+          flexShrink: 0,
+        }}
+      >
+        <button className="btn" style={{ flex: 1, fontSize: 11 }} onClick={onCancel}>
+          Cancel
+        </button>
+        <button
+          className="btn btn-primary"
+          style={{ flex: 2, fontSize: 11, fontWeight: 600 }}
+          disabled={!title.trim() || !hasSections || saving}
+          onClick={save}
+        >
+          {saving ? "Creating…" : "Create & add to lineup"}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ── Main screen ───────────────────────────────────────────────────────────────
 
 export default function BuilderScreen({ serviceId, onGoLive }: Props) {
@@ -450,7 +676,7 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
 
   const [songSearch, setSongSearch] = useState("");
   const [showSongPicker, setShowSongPicker] = useState(false);
-  const [pickerMode, setPickerMode] = useState<"search" | "create">("search");
+  const [pickerMode, setPickerMode] = useState<"search" | "create" | "paste">("search");
   const [editingItemId, setEditingItemId] = useState<number | null>(null);
 
   useEffect(() => {
@@ -852,6 +1078,19 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
               >
                 + New song
               </button>
+              <button
+                className="btn"
+                style={{
+                  flex: 1,
+                  fontSize: 11,
+                  background: pickerMode === "paste" ? "var(--accent-blue-dim)" : undefined,
+                  color: pickerMode === "paste" ? "var(--accent-blue)" : undefined,
+                  border: pickerMode === "paste" ? "1px solid var(--accent-blue)" : undefined,
+                }}
+                onClick={() => setPickerMode("paste")}
+              >
+                Paste lyrics
+              </button>
             </div>
             {pickerMode === "search" && (
               <input
@@ -866,7 +1105,9 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
           </div>
 
           {/* Panel body */}
-          {pickerMode === "search" ? (
+          {pickerMode === "paste" ? (
+            <PasteLyricsForm onCreated={handleCreated} onCancel={closePicker} />
+          ) : pickerMode === "search" ? (
             <div style={{ flex: 1, overflowY: "auto", padding: "8px 10px" }}>
               {filteredSongs.length === 0 ? (
                 <div
@@ -910,7 +1151,7 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
             </div>
           ) : (
             <QuickCreateForm onCreated={handleCreated} onCancel={closePicker} />
-          )}
+          ) }
         </div>
       )}
     </div>

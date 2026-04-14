@@ -88,11 +88,12 @@ declare global {
         upsertSections: (songId: number, sections: unknown[]) => Promise<Section[]>
       }
       services: {
-        getAll:       () => Promise<ServiceDate[]>
-        getByDate:    (date: string) => Promise<ServiceDate | null>
-        create:       (data: unknown) => Promise<ServiceDate>
-        updateStatus: (id: number, status: string) => Promise<ServiceDate>
-        delete:       (id: number) => Promise<boolean>
+        getAll:           () => Promise<ServiceDate[]>
+        getAllWithCounts:  () => Promise<(ServiceDate & { itemCount: number })[]>
+        getByDate:        (date: string) => Promise<ServiceDate | null>
+        create:           (data: unknown) => Promise<ServiceDate>
+        updateStatus:     (id: number, status: string) => Promise<ServiceDate>
+        delete:           (id: number) => Promise<boolean>
       }
       lineup: {
         getForService:  (serviceDateId: number) => Promise<LineupItemWithSong[]>

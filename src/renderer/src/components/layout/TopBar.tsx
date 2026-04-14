@@ -3,6 +3,7 @@ import type { AppScreen } from "../../../../../shared/types";
 
 const TITLES: Record<AppScreen, string> = {
   planner: "Service planner",
+  lineups: "Manage Lineups",
   builder: "Service builder",
   library: "Song library",
   themes: "Themes",

@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import type { AppScreen } from "../../../../shared/types";
+import type { AppScreen } from "../../../shared/types";
 import Sidebar from "./components/layout/Sidebar";
 import TopBar from "./components/layout/TopBar";
 import PlannerScreen from "./screens/PlannerScreen";
@@ -9,6 +9,7 @@ import ThemesScreen from "./screens/ThemesScreen";
 import AnalyticsScreen from "./screens/AnalyticsScreen";
 import LiveScreen from "./screens/LiveScreen";
 import SettingsScreen from "./screens/SettingsScreen";
+import ManageLineupsScreen from "./screens/ManageLineupsScreen";
 import { useServiceStore } from "./store/useServiceStore";
 
 export default function App() {
@@ -102,6 +103,12 @@ export default function App() {
           {currentScreen === "themes" && <ThemesScreen />}
           {currentScreen === "analytics" && <AnalyticsScreen />}
           {currentScreen === "settings" && <SettingsScreen />}
+          {currentScreen === "lineups" && (
+            <ManageLineupsScreen
+              onOpenBuilder={handleOpenBuilder}
+              onGoLive={handleGoLive}
+            />
+          )}
           {currentScreen === "live" && (
             <LiveScreen
               onClose={handleCloseProjection}

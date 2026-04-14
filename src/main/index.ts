@@ -4,7 +4,7 @@ import { join, extname, basename } from 'path'
 import { copyFileSync, mkdirSync, existsSync, readdirSync, unlinkSync, readFileSync, writeFileSync } from 'fs'
 import { db } from './db/index'
 import { songs, sections, serviceDates, lineupItems, themes, songUsage } from './db/schema'
-import { asc, desc, eq, like, or } from 'drizzle-orm'
+import { asc, desc, eq, like, or, count } from 'drizzle-orm'
 import { runMigrations } from './db/migrate'
 import { seedIfEmpty } from './db/seed'
 
@@ -222,6 +222,15 @@ ipcMain.handle('services:updateStatus', (_e, id: number, status: 'empty' | 'in-p
 ipcMain.handle('services:delete', (_e, id: number) => {
   db.delete(serviceDates).where(eq(serviceDates.id, id)).run()
   return true
+})
+
+ipcMain.handle('services:getAllWithCounts', () => {
+  const all = db.select().from(serviceDates).orderBy(desc(serviceDates.date)).all()
+  return all.map(service => {
+    const row = db.select({ count: count() }).from(lineupItems)
+      .where(eq(lineupItems.serviceDateId, service.id)).get()
+    return { ...service, itemCount: row?.count ?? 0 }
+  })
 })
 
 // ── Lineup IPC handlers ───────────────────────────────────────────────────────

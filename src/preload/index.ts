@@ -51,6 +51,7 @@ contextBridge.exposeInMainWorld('worshipsync', {
     create:        (data: unknown)                             => ipcRenderer.invoke('services:create', data),
     updateStatus:  (id: number, status: string)               => ipcRenderer.invoke('services:updateStatus', id, status),
     delete:        (id: number)                               => ipcRenderer.invoke('services:delete', id),
+    getAllWithCounts: ()                                       => ipcRenderer.invoke('services:getAllWithCounts'),
     },
 
   lineup: {

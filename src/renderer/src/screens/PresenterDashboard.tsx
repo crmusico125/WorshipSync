@@ -423,8 +423,11 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
                   return (
                     <button
                       key={i}
-                      onClick={() => sendSlide(selectedSongIdx, i)}
-                      className={`rounded-lg overflow-hidden border-2 transition-all text-left ${
+                      onClick={(e) => {
+                        e.currentTarget.blur()
+                        sendSlide(selectedSongIdx, i)
+                      }}
+                      className={`rounded-lg overflow-hidden border-2 transition-all text-left focus:outline-none focus-visible:outline-none ${
                         isActive
                           ? "border-red-500 ring-2 ring-red-500/30 scale-[1.02]"
                           : "border-border hover:border-primary/50"

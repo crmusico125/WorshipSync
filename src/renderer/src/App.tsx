@@ -1,7 +1,6 @@
-import { useEffect, useState, useCallback } from "react"
+import React, { useEffect, useState, useCallback } from "react"
 import type { AppScreen } from "../../../shared/types"
 import Sidebar from "./components/layout/Sidebar"
-import TopBar from "./components/layout/TopBar"
 import PlannerScreen from "./screens/PlannerScreen"
 import BuilderScreen from "./screens/BuilderScreen"
 import LibraryScreen from "./screens/LibraryScreen"
@@ -67,7 +66,15 @@ export default function App() {
         canGoLive={canGoLive}
       />
       <div className="flex-1 flex flex-col min-w-0">
-        <TopBar screen={currentScreen} projectionOpen={projectionOpen} />
+        {/* Draggable title bar region */}
+        <div
+          className="h-8 shrink-0 bg-card border-b border-border flex items-center px-4"
+          style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
+        >
+          <span className="text-[11px] font-medium text-muted-foreground">
+            {currentScreen === "presenter" ? "" : currentScreen.charAt(0).toUpperCase() + currentScreen.slice(1)}
+          </span>
+        </div>
         <div className="flex-1 overflow-hidden">
           {currentScreen === "planner" && (
             <PlannerScreen

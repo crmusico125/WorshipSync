@@ -40,10 +40,10 @@ export default function SettingsScreen() {
         </p>
 
         {/* ── Data backup card ────────────────────────────────────────── */}
-        <section className="rounded-lg border border-border bg-card p-5">
+        <section className="rounded-2xl border border-border bg-card shadow-elevation-1 p-5">
           <div className="flex items-start gap-3 mb-4">
-            <div className="h-8 w-8 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
-              <Database className="h-4 w-4 text-primary" />
+            <div className="h-10 w-10 rounded-xl bg-primary/15 flex items-center justify-center shrink-0">
+              <Database className="h-5 w-5 text-primary" />
             </div>
             <div className="min-w-0 flex-1">
               <h2 className="text-sm font-semibold text-foreground">Data backup</h2>

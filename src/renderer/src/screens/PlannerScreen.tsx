@@ -228,19 +228,19 @@ function NextServiceHero({
   const progress = (completedCount / checks.length) * 100
 
   return (
-    <section className="rounded-xl border border-border bg-card overflow-hidden">
+    <section className="rounded-2xl border border-border bg-card shadow-elevation-1 overflow-hidden">
       {/* Banner strip */}
       <div
-        className={`px-6 py-2 flex items-center gap-2 text-xs font-semibold ${
+        className={`px-6 py-2.5 flex items-center gap-2 text-xs font-semibold ${
           isToday
-            ? "bg-red-500/10 text-red-400 border-b border-red-500/20"
+            ? "bg-green-500/10 text-green-400 border-b border-green-500/20"
             : isSoon
               ? "bg-amber-500/10 text-amber-400 border-b border-amber-500/20"
               : "bg-primary/5 text-primary border-b border-primary/10"
         }`}
       >
-        <div className={`h-1.5 w-1.5 rounded-full ${
-          isToday ? "bg-red-500 animate-pulse" : isSoon ? "bg-amber-500" : "bg-primary"
+        <div className={`h-2 w-2 rounded-full ${
+          isToday ? "bg-green-500 animate-pulse" : isSoon ? "bg-amber-500" : "bg-primary"
         }`} />
         {isToday ? "TODAY'S SERVICE" : "NEXT UP"}
         <span className="ml-auto font-normal text-muted-foreground">
@@ -266,7 +266,7 @@ function NextServiceHero({
                 <Button variant="outline" size="sm" className="gap-1.5" onClick={onPrepare}>
                   Review lineup
                 </Button>
-                <Button size="sm" className="gap-1.5 bg-red-600 hover:bg-red-700 text-white" onClick={onGoLive}>
+                <Button size="sm" className="gap-1.5 bg-green-600 hover:bg-green-700 text-white" onClick={onGoLive}>
                   <Sparkles className="h-3.5 w-3.5" /> Go Live
                 </Button>
               </>
@@ -351,11 +351,11 @@ function ServiceRow({
 
   return (
     <div
-      className="group flex items-center gap-3 px-4 py-3 rounded-lg border border-border hover:border-primary/30 hover:bg-accent/30 transition-colors cursor-pointer"
+      className="group flex items-center gap-3 px-4 py-3 rounded-xl border border-border hover:border-primary/30 hover:bg-accent/40 transition-all cursor-pointer"
       onClick={onOpen}
     >
       {/* Date chip */}
-      <div className="h-11 w-11 shrink-0 rounded-md bg-muted flex flex-col items-center justify-center text-center">
+      <div className="h-11 w-11 shrink-0 rounded-xl bg-secondary flex flex-col items-center justify-center text-center">
         <span className="text-[9px] uppercase font-bold text-muted-foreground leading-none">
           {new Date(service.date + "T00:00:00").toLocaleDateString("en-US", { month: "short" })}
         </span>
@@ -435,7 +435,7 @@ function EmptyState({
   return (
     <div className="h-full flex items-center justify-center bg-background text-foreground">
       <div className="text-center max-w-md px-6">
-        <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
+        <div className="h-16 w-16 rounded-2xl bg-primary/15 flex items-center justify-center mx-auto mb-4">
           <Calendar className="h-8 w-8 text-primary" />
         </div>
         <h1 className="text-xl font-bold mb-2">Welcome to WorshipSync</h1>

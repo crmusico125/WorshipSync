@@ -13,25 +13,31 @@ export default {
         mono: ['JetBrains Mono', 'monospace'],
       },
       colors: {
-        // App-specific design tokens
+        // App tokens
         surface: {
-          DEFAULT: '#0f0f13',
-          raised: '#1a1a20',
-          overlay: '#24242c',
+          DEFAULT: 'hsl(210 28% 5%)',
+          raised: 'hsl(204 20% 8%)',
+          overlay: 'hsl(204 20% 12%)',
         },
         success: {
-          DEFAULT: '#22c55e',
-          muted: 'rgba(34,197,94,0.15)',
+          DEFAULT: 'hsl(var(--success))',
+          muted: 'hsl(var(--success) / 0.14)',
         },
         warning: {
-          DEFAULT: '#f59e0b',
-          muted: 'rgba(245,158,11,0.15)',
+          DEFAULT: '#ffb020',
+          muted: 'rgba(255,176,32,0.14)',
         },
         danger: {
-          DEFAULT: '#ef4444',
-          muted: 'rgba(239,68,68,0.15)',
+          DEFAULT: 'hsl(var(--destructive))',
+          muted: 'hsl(var(--destructive) / 0.14)',
         },
-        // shadcn/ui tokens (HSL CSS variables)
+        sidebar: {
+          DEFAULT: 'hsl(var(--sidebar))',
+          foreground: 'hsl(var(--sidebar-foreground))',
+          primary: 'hsl(var(--sidebar-primary))',
+          'primary-foreground': 'hsl(var(--sidebar-primary-foreground))',
+        },
+        // shadcn tokens
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',
         ring: 'hsl(var(--ring))',
@@ -70,6 +76,7 @@ export default {
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)',
+        xl: 'calc(var(--radius) + 4px)',
         '2xl': '1rem',
         '3xl': '1.5rem',
       },

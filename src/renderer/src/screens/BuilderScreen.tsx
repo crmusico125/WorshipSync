@@ -154,12 +154,6 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
     () => currentItem ? JSON.parse(currentItem.selectedSections || "[]") : [],
     [currentItem],
   )
-  const slides = useMemo(
-    () => currentSong ? buildSlides(currentSong.sections, selectedSectionIds) : [],
-    [currentSong, selectedSectionIds],
-  )
-  const currentSlide = slides[previewSlideIdx] ?? null
-
   const effectiveTheme: ThemeStyle = useMemo(() => {
     const t = (currentSong?.themeId ? themeCache[currentSong.themeId] : null) ?? defaultTheme
     let base = DEFAULT_THEME
@@ -168,6 +162,12 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
     }
     return { ...base, ...themeOverrides }
   }, [currentSong, themeCache, defaultTheme, themeOverrides])
+
+  const slides = useMemo(
+    () => currentSong ? buildSlides(currentSong.sections, selectedSectionIds, effectiveTheme.maxLinesPerSlide) : [],
+    [currentSong, selectedSectionIds, effectiveTheme.maxLinesPerSlide],
+  )
+  const currentSlide = slides[previewSlideIdx] ?? null
 
   const effectiveBg: string | null = useMemo(() => {
     if (bgOverride !== undefined) return bgOverride
@@ -342,7 +342,11 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
               lineup.map((item, i) => {
                 const isSelected = selectedSongIdx === i
                 const itemSelectedIds: number[] = JSON.parse(item.selectedSections || "[]")
-                const slideCount = buildSlides(item.song.sections, itemSelectedIds).length
+                let itemMaxLines = DEFAULT_THEME.maxLinesPerSlide
+                if (item.song.themeId && themeCache[item.song.themeId]?.settings) {
+                  try { itemMaxLines = JSON.parse(themeCache[item.song.themeId].settings).maxLinesPerSlide ?? itemMaxLines } catch {}
+                }
+                const slideCount = buildSlides(item.song.sections, itemSelectedIds, itemMaxLines).length
                 return (
                   <div
                     key={item.id}

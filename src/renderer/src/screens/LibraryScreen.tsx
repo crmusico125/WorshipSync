@@ -137,14 +137,14 @@ function textToSections(text: string): { type: string; label: string; lyrics: st
   return result
 }
 
-function buildSlides(lyricsText: string) {
+function buildSlides(lyricsText: string, maxLines = DEFAULT_SETTINGS.maxLinesPerSlide) {
   const sections = textToSections(lyricsText)
   const result: { label: string; type: string; abbr: string; lines: string[] }[] = []
   for (const sec of sections) {
     const lines = sec.lyrics.split("\n").filter(Boolean)
     const chunks: string[][] = []
-    for (let i = 0; i < lines.length; i += 4) {
-      chunks.push(lines.slice(i, i + 4))
+    for (let i = 0; i < lines.length; i += maxLines) {
+      chunks.push(lines.slice(i, i + maxLines))
     }
     if (chunks.length === 0) continue
     const abbr = SECTION_ABBREV[sec.type] ?? sec.type.charAt(0).toUpperCase()
@@ -328,7 +328,26 @@ function SongDetailView({
   onDelete: () => void
 }) {
   const lyricsText = useMemo(() => sectionsToText(song.sections), [song.sections])
-  const slides = useMemo(() => buildSlides(lyricsText), [lyricsText])
+
+  // Load per-song theme settings
+  const [songTheme, setSongTheme] = useState<ThemeSettings>({ ...DEFAULT_SETTINGS, backgroundPath: song.backgroundPath ?? null })
+  useEffect(() => {
+    if (song.themeId) {
+      window.worshipsync.themes.getAll().then((all: any[]) => {
+        const t = all.find((th: any) => th.id === song.themeId)
+        if (t?.settings) {
+          try {
+            const parsed = JSON.parse(t.settings)
+            setSongTheme({ ...DEFAULT_SETTINGS, ...parsed, backgroundPath: song.backgroundPath ?? parsed.backgroundPath ?? null })
+          } catch {}
+        }
+      })
+    } else {
+      setSongTheme({ ...DEFAULT_SETTINGS, backgroundPath: song.backgroundPath ?? null })
+    }
+  }, [song.id, song.themeId, song.backgroundPath])
+
+  const slides = useMemo(() => buildSlides(lyricsText, songTheme.maxLinesPerSlide), [lyricsText, songTheme.maxLinesPerSlide])
 
   return (
     <>
@@ -394,16 +413,16 @@ function SongDetailView({
       </div>
 
       {/* ── Right: slide preview ─────────────────────────────────────── */}
-      <SlidePreviewPanel slides={slides} backgroundPath={song.backgroundPath} />
+      <SlidePreviewPanel slides={slides} style={songTheme} />
     </>
   )
 }
 
 // ── Slide Preview Panel (used by detail view) ───────────────────────────
 
-function SlidePreviewPanel({ slides, backgroundPath }: {
+function SlidePreviewPanel({ slides, style }: {
   slides: { label: string; type: string; abbr: string; lines: string[] }[]
-  backgroundPath?: string | null
+  style?: Partial<ThemeSettings>
 }) {
   return (
     <div className="w-[300px] shrink-0 flex flex-col bg-background overflow-hidden border-l border-border">
@@ -429,7 +448,7 @@ function SlidePreviewPanel({ slides, backgroundPath }: {
                   {slide.label}
                 </span>
               </div>
-              <SlideThumb lines={slide.lines} backgroundPath={backgroundPath} />
+              <SlideThumb lines={slide.lines} style={style} />
             </div>
           ))
         )}
@@ -479,8 +498,31 @@ function SongFormScreen({
   const [lyricsText, setLyricsText] = useState(
     song ? sectionsToText(song.sections) : "",
   )
-  const [backgroundPath, setBackgroundPath] = useState<string | null>(song?.backgroundPath ?? null)
+  const [styleSettings, setStyleSettings] = useState<ThemeSettings>({
+    ...DEFAULT_SETTINGS,
+    backgroundPath: song?.backgroundPath ?? null,
+  })
+  const [existingThemeId] = useState<number | null>(song?.themeId ?? null)
   const [saving, setSaving] = useState(false)
+
+  // Load existing per-song theme settings on mount
+  useEffect(() => {
+    if (song?.themeId) {
+      window.worshipsync.themes.getAll().then((allThemes: any[]) => {
+        const t = allThemes.find((th: any) => th.id === song.themeId)
+        if (t?.settings) {
+          try {
+            const parsed = JSON.parse(t.settings)
+            setStyleSettings((prev) => ({
+              ...prev,
+              ...parsed,
+              backgroundPath: song.backgroundPath ?? parsed.backgroundPath ?? null,
+            }))
+          } catch {}
+        }
+      })
+    }
+  }, [])
 
   const insertTag = useCallback((tag: string) => {
     setLyricsText((prev) => {
@@ -489,28 +531,52 @@ function SongFormScreen({
     })
   }, [])
 
-  const slides = useMemo(() => buildSlides(lyricsText), [lyricsText])
+  const slides = useMemo(() => buildSlides(lyricsText, styleSettings.maxLinesPerSlide), [lyricsText, styleSettings.maxLinesPerSlide])
 
   const handleSave = async () => {
     if (!title.trim()) return
     setSaving(true)
 
     const parsed = textToSections(lyricsText)
+    const themeSettingsJson = JSON.stringify(styleSettings)
 
     let savedId: number | undefined
 
     if (isEdit && song) {
+      // Update or create per-song theme
+      let themeId = existingThemeId
+      if (themeId) {
+        await window.worshipsync.themes.update(themeId, { settings: themeSettingsJson })
+      } else {
+        const created = await window.worshipsync.themes.create({
+          name: `Song: ${title.trim()}`,
+          type: "per-song",
+          isDefault: false,
+          settings: themeSettingsJson,
+        }) as { id: number }
+        themeId = created.id
+      }
+
       await window.worshipsync.songs.update(song.id, {
         title: title.trim(),
         artist: artist.trim(),
         key: key.trim() || null,
         tempo: tempo || null,
         ccliNumber: ccli.trim() || null,
-        backgroundPath,
+        backgroundPath: styleSettings.backgroundPath,
+        themeId,
       })
       await window.worshipsync.songs.upsertSections(song.id, parsed)
       savedId = song.id
     } else {
+      // Create per-song theme first
+      const createdTheme = await window.worshipsync.themes.create({
+        name: `Song: ${title.trim()}`,
+        type: "per-song",
+        isDefault: false,
+        settings: themeSettingsJson,
+      }) as { id: number }
+
       const created = await window.worshipsync.songs.create({
         title: title.trim(),
         artist: artist.trim(),
@@ -520,9 +586,13 @@ function SongFormScreen({
         sections: parsed,
       }) as { id: number } | undefined
       savedId = created?.id
-      // Set background on newly created song
-      if (savedId && backgroundPath) {
-        await window.worshipsync.backgrounds.setBackground(savedId, backgroundPath)
+
+      if (savedId) {
+        // Link theme and set background on newly created song
+        await window.worshipsync.songs.update(savedId, {
+          themeId: createdTheme.id,
+          backgroundPath: styleSettings.backgroundPath,
+        })
       }
     }
 
@@ -684,7 +754,7 @@ function SongFormScreen({
                         {slide.label}
                       </span>
                     </div>
-                    <SlideThumb lines={slide.lines} backgroundPath={backgroundPath} />
+                    <SlideThumb lines={slide.lines} style={styleSettings} />
                   </div>
                 ))}
               </div>
@@ -694,8 +764,8 @@ function SongFormScreen({
 
         {/* Right: Presentation Style */}
         <PresentationStylePanel
-          backgroundPath={backgroundPath}
-          onBackgroundChange={setBackgroundPath}
+          settings={styleSettings}
+          onSettingsChange={setStyleSettings}
         />
       </div>
     </div>
@@ -704,13 +774,24 @@ function SongFormScreen({
 
 // ── Slide Thumbnail (shared) ────────────────────────────────────────────
 
-function SlideThumb({ lines, backgroundPath, small }: {
+function SlideThumb({ lines, backgroundPath, small, style }: {
   lines: string[]
   backgroundPath?: string | null
   small?: boolean
+  style?: Partial<ThemeSettings>
 }) {
-  const isColor = backgroundPath?.startsWith("color:")
-  const isImage = backgroundPath && !isColor
+  const bg = backgroundPath ?? style?.backgroundPath
+  const isColor = bg?.startsWith("color:")
+  const isImage = bg && !isColor
+
+  const textColor = style?.textColor ?? DEFAULT_SETTINGS.textColor
+  const textAlign = style?.textAlign ?? DEFAULT_SETTINGS.textAlign
+  const textPosition = style?.textPosition ?? DEFAULT_SETTINGS.textPosition
+  const overlayOpacity = style?.overlayOpacity ?? DEFAULT_SETTINGS.overlayOpacity
+  const textShadowOpacity = style?.textShadowOpacity ?? DEFAULT_SETTINGS.textShadowOpacity
+  const fontFamily = style?.fontFamily ?? DEFAULT_SETTINGS.fontFamily
+
+  const positionClass = textPosition === "top" ? "items-start" : textPosition === "bottom" ? "items-end" : "items-center"
 
   return (
     <div className="relative w-full border border-border rounded-lg overflow-hidden bg-black"
@@ -718,7 +799,7 @@ function SlideThumb({ lines, backgroundPath, small }: {
     >
       {isImage && (
         <img
-          src={`file://${backgroundPath}`}
+          src={`file://${bg}`}
           className="absolute inset-0 w-full h-full object-cover"
           alt=""
         />
@@ -726,13 +807,20 @@ function SlideThumb({ lines, backgroundPath, small }: {
       {isColor && (
         <div
           className="absolute inset-0"
-          style={{ background: backgroundPath!.replace("color:", "") }}
+          style={{ background: bg!.replace("color:", "") }}
         />
       )}
-      <div className="absolute inset-0 bg-black/40" />
-      <div className="absolute inset-0 flex items-center justify-center p-2">
-        <span className={`text-white text-center font-bold leading-relaxed ${small ? "text-[10px]" : "text-xs"}`}
-          style={{ textShadow: "0 2px 6px rgba(0,0,0,0.9)" }}
+      <div className="absolute inset-0" style={{ background: `rgba(0,0,0,${overlayOpacity / 100})` }} />
+      <div className={`absolute inset-0 flex ${positionClass} justify-center p-2`}>
+        <span className={`font-semibold leading-snug ${small ? "text-[8px]" : "text-[9px]"}`}
+          style={{
+            color: textColor,
+            textAlign,
+            textShadow: `0 1px 4px rgba(0,0,0,${textShadowOpacity / 100})`,
+            fontFamily,
+            display: "block",
+            width: "100%",
+          }}
         >
           {lines.map((line, li) => (
             <span key={li}>
@@ -748,10 +836,14 @@ function SlideThumb({ lines, backgroundPath, small }: {
 
 // ── Presentation Style Panel (right column in form screen) ──────────────
 
-function PresentationStylePanel({ backgroundPath, onBackgroundChange }: {
-  backgroundPath: string | null
-  onBackgroundChange: (bg: string | null) => void
+function PresentationStylePanel({ settings, onSettingsChange }: {
+  settings: ThemeSettings
+  onSettingsChange: (s: ThemeSettings) => void
 }) {
+  const update = <K extends keyof ThemeSettings>(key: K, value: ThemeSettings[K]) => {
+    onSettingsChange({ ...settings, [key]: value })
+  }
+
   return (
     <div className="w-[388px] shrink-0 flex flex-col border-l border-border bg-card overflow-y-auto">
       <div className="p-5 flex flex-col gap-5">
@@ -766,16 +858,16 @@ function PresentationStylePanel({ backgroundPath, onBackgroundChange }: {
         {/* Background picker */}
         <StyleCard title="Background">
           <BackgroundPickerPanel
-            currentBackground={backgroundPath}
+            currentBackground={settings.backgroundPath}
             previewLabel=""
-            onSelect={onBackgroundChange}
+            onSelect={(bg) => update("backgroundPath", bg)}
           />
         </StyleCard>
 
         {/* Typography */}
         <StyleCard title="Typography">
           <Field label="Font Family">
-            <Select defaultValue={DEFAULT_SETTINGS.fontFamily}>
+            <Select value={settings.fontFamily} onChange={(e) => update("fontFamily", e.target.value)}>
               {FONT_OPTIONS.map((f) => (
                 <option key={f} value={f}>{f.split(",")[0]}</option>
               ))}
@@ -787,21 +879,24 @@ function PresentationStylePanel({ backgroundPath, onBackgroundChange }: {
                 <button
                   key={c.hex}
                   title={c.label}
-                  className="w-7 h-7 rounded-full border-2 border-border"
+                  className={`w-7 h-7 rounded-full border-2 transition-all ${
+                    settings.textColor === c.hex ? "border-primary scale-110" : "border-border"
+                  }`}
                   style={{ background: c.hex }}
+                  onClick={() => update("textColor", c.hex)}
                 />
               ))}
             </div>
           </Field>
           <Field label="Text Align">
-            <Select defaultValue={DEFAULT_SETTINGS.textAlign}>
+            <Select value={settings.textAlign} onChange={(e) => update("textAlign", e.target.value as ThemeSettings["textAlign"])}>
               <option value="left">Left</option>
               <option value="center">Center</option>
               <option value="right">Right</option>
             </Select>
           </Field>
           <Field label="Text Position">
-            <Select defaultValue={DEFAULT_SETTINGS.textPosition}>
+            <Select value={settings.textPosition} onChange={(e) => update("textPosition", e.target.value as ThemeSettings["textPosition"])}>
               <option value="top">Top</option>
               <option value="middle">Middle</option>
               <option value="bottom">Bottom</option>
@@ -811,26 +906,28 @@ function PresentationStylePanel({ backgroundPath, onBackgroundChange }: {
 
         {/* Text Effects */}
         <StyleCard title="Text Effects">
-          <Field label="Overlay Opacity">
+          <Field label={`Overlay Opacity (${settings.overlayOpacity}%)`}>
             <input
               type="range"
               min={0}
               max={100}
-              defaultValue={DEFAULT_SETTINGS.overlayOpacity}
+              value={settings.overlayOpacity}
+              onChange={(e) => update("overlayOpacity", Number(e.target.value))}
               className="w-full accent-primary"
             />
           </Field>
-          <Field label="Text Shadow">
+          <Field label={`Text Shadow (${settings.textShadowOpacity}%)`}>
             <input
               type="range"
               min={0}
               max={100}
-              defaultValue={DEFAULT_SETTINGS.textShadowOpacity}
+              value={settings.textShadowOpacity}
+              onChange={(e) => update("textShadowOpacity", Number(e.target.value))}
               className="w-full accent-primary"
             />
           </Field>
           <Field label="Max Lines Per Slide">
-            <Select defaultValue={String(DEFAULT_SETTINGS.maxLinesPerSlide)}>
+            <Select value={String(settings.maxLinesPerSlide)} onChange={(e) => update("maxLinesPerSlide", Number(e.target.value))}>
               <option value="2">2 lines</option>
               <option value="3">3 lines</option>
               <option value="4">4 lines</option>

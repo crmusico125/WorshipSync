@@ -146,6 +146,17 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
       const filtered = selectedIds.length > 0
         ? item.song.sections.filter(s => selectedIds.includes(s.id))
         : item.song.sections
+
+      // Resolve per-song maxLinesPerSlide from theme
+      let maxLines = DEFAULT_THEME.maxLinesPerSlide
+      const songThemeId = item.song.themeId
+      if (songThemeId && themeCache[songThemeId]?.settings) {
+        try {
+          const parsed = JSON.parse(themeCache[songThemeId].settings)
+          if (parsed.maxLinesPerSlide) maxLines = parsed.maxLinesPerSlide
+        } catch {}
+      }
+
       return {
         lineupItemId: item.id,
         songId: item.song.id,
@@ -155,11 +166,11 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
         ccliNumber: item.song.ccliNumber ?? null,
         backgroundPath: item.song.backgroundPath ?? null,
         themeId: item.song.themeId ?? null,
-        slides: buildSlidesForSong(filtered),
+        slides: buildSlidesForSong(filtered, maxLines),
       }
     })
     setLiveSongs(built)
-  }, [lineup])
+  }, [lineup, themeCache])
 
   // ── Theme + background resolution ────────────────────────────────────────
   const resolveTheme = useCallback((song: LiveSong): ThemeStyle => {
@@ -572,10 +583,13 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
               )}
               {currentSlide && !isBlank ? (
                 <span
-                  className="relative z-10 text-center font-bold text-lg leading-relaxed whitespace-pre-wrap"
+                  className="relative z-10 text-center font-bold text-xs leading-relaxed whitespace-pre-wrap"
                   style={{
                     color: effectiveTheme.textColor,
                     fontFamily: effectiveTheme.fontFamily,
+                    textAlign: effectiveTheme.textAlign,
+                    textShadow: `0 1px 4px rgba(0,0,0,${effectiveTheme.textShadowOpacity / 100})`,
+                    width: "100%",
                   }}
                 >
                   {currentSlide.lines.join("\n")}
@@ -649,7 +663,7 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
                 {effectiveBg && nextUp.slide.sectionType !== "blank" && (
                   <>
                     <img src={`file://${effectiveBg}`} className="absolute inset-0 w-full h-full object-cover" alt="" />
-                    <div className="absolute inset-0 bg-black/50" />
+                    <div className="absolute inset-0" style={{ background: `rgba(0,0,0,${effectiveTheme.overlayOpacity / 100})` }} />
                   </>
                 )}
                 <span
@@ -657,6 +671,9 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
                   style={{
                     color: effectiveTheme.textColor,
                     fontFamily: effectiveTheme.fontFamily,
+                    textAlign: effectiveTheme.textAlign,
+                    textShadow: `0 1px 4px rgba(0,0,0,${effectiveTheme.textShadowOpacity / 100})`,
+                    width: "100%",
                   }}
                 >
                   {nextUp.slide.lines.join("\n") || " "}

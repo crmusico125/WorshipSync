@@ -1,7 +1,7 @@
 import React from "react"
 import type { AppScreen } from "../../../../../shared/types"
 import {
-  Calendar, Wrench, Palette, MonitorPlay, BarChart3, Settings, Church, Music,
+  Calendar, Wrench, Palette, MonitorPlay, BarChart3, Settings, Church, Music, Image,
 } from "lucide-react"
 
 interface Props {
@@ -23,6 +23,7 @@ const NAV_TOP: NavItem[] = [
   { id: "planner",   icon: Calendar,    label: "Planner" },
   { id: "builder",   icon: Wrench,      label: "Builder" },
   { id: "library",   icon: Music,       label: "Library" },
+  { id: "media",     icon: Image,       label: "Media" },
   { id: "themes",    icon: Palette,     label: "Themes" },
   { id: "analytics", icon: BarChart3,   label: "Analytics" },
 ]

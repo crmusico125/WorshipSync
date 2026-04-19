@@ -5,6 +5,7 @@ const TITLES: Record<AppScreen, string> = {
   planner: "Planner",
   builder: "Service Builder",
   library: "Song Library",
+  media: "Media Library",
   themes: "Themes",
   analytics: "Analytics",
   settings: "Settings",

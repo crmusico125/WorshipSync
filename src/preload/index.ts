@@ -85,6 +85,7 @@ contextBridge.exposeInMainWorld('worshipsync', {
       ipcRenderer.invoke('songs:setBackground', songId, path),
     listImages: () => ipcRenderer.invoke('backgrounds:listImages'),
     getUsageCount: (imagePath: string) => ipcRenderer.invoke('backgrounds:getUsageCount', imagePath),
+    getUsingSongs: (imagePath: string) => ipcRenderer.invoke('backgrounds:getUsingSongs', imagePath),
     deleteImage:   (imagePath: string) => ipcRenderer.invoke('backgrounds:deleteImage', imagePath),
   },
   appState: {

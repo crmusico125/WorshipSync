@@ -2,6 +2,7 @@ export type AppScreen =
   | "planner"
   | "builder"
   | "library"
+  | "media"
   | "themes"
   | "analytics"
   | "settings"

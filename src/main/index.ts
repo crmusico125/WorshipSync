@@ -464,6 +464,13 @@ ipcMain.handle('backgrounds:getUsageCount', (_e, imagePath: string) => {
   return usingSongs.length
 })
 
+ipcMain.handle('backgrounds:getUsingSongs', (_e, imagePath: string) => {
+  return db.select({ id: songs.id, title: songs.title, artist: songs.artist })
+    .from(songs)
+    .all()
+    .filter(s => s.backgroundPath === imagePath)
+})
+
 ipcMain.handle('backgrounds:deleteImage', (_e, imagePath: string) => {
   try {
     // Clear from any songs using it

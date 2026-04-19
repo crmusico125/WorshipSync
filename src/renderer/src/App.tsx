@@ -4,6 +4,7 @@ import Sidebar from "./components/layout/Sidebar"
 import PlannerScreen from "./screens/PlannerScreen"
 import BuilderScreen from "./screens/BuilderScreen"
 import LibraryScreen from "./screens/LibraryScreen"
+import MediaLibraryScreen from "./screens/MediaLibraryScreen"
 import ThemesScreen from "./screens/ThemesScreen"
 import AnalyticsScreen from "./screens/AnalyticsScreen"
 import SettingsScreen from "./screens/SettingsScreen"
@@ -89,6 +90,7 @@ export default function App() {
             />
           )}
           {currentScreen === "library" && <LibraryScreen />}
+          {currentScreen === "media" && <MediaLibraryScreen />}
           {currentScreen === "themes" && <ThemesScreen />}
           {currentScreen === "analytics" && <AnalyticsScreen />}
           {currentScreen === "settings" && <SettingsScreen />}

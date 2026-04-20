@@ -204,6 +204,17 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
     for (const id of songIds) await addSongToLineup(id)
   }
 
+  const handleAddScripture = async (title: string, text: string) => {
+    const song = await window.worshipsync.songs.create({
+      title,
+      artist: "Scripture",
+      tags: "",
+      sections: [{ type: "verse", label: "Scripture", lyrics: text, orderIndex: 0 }],
+    })
+    await loadSongs()
+    await addSongToLineup(song.id)
+  }
+
   const handleLyricsSave = async (newLyrics: string) => {
     if (!currentSong) return
     const typeMap: Record<string, string> = {
@@ -632,6 +643,7 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
           onClose={() => setShowLibrary(false)}
           onAdd={handleLibraryAdd}
           onAddCountdown={addCountdownToLineup}
+          onAddScripture={handleAddScripture}
           excludeIds={lineup.filter(item => item.songId != null).map(item => item.songId!)}
         />
       )}

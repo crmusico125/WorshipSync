@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { BookOpen } from "lucide-react"
+import ScriptureBrowser from "./ScriptureBrowser"
 
 interface SongRow {
   id: number
@@ -35,10 +35,11 @@ interface Props {
   onClose: () => void
   onAdd: (songIds: number[]) => void
   onAddCountdown?: () => void
+  onAddScripture?: (title: string, text: string) => void
   excludeIds?: number[]
 }
 
-export default function LibraryModal({ onClose, onAdd, onAddCountdown, excludeIds = [] }: Props) {
+export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScripture, excludeIds = [] }: Props) {
   const [tab, setTab] = useState("songs")
   const [songs, setSongs] = useState<SongRow[]>([])
   const [selectedIds, setSelectedIds] = useState<number[]>([])
@@ -121,7 +122,11 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, excludeId
                 ref={searchRef}
                 autoFocus
                 className="pl-9"
-                placeholder="Search songs, scriptures, media..."
+                placeholder={
+                  tab === "scriptures"
+                    ? "Type a reference… e.g. John 3:16, Psalm 23, Romans 8:28-39"
+                    : "Search songs, scriptures, media..."
+                }
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -261,11 +266,18 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, excludeId
                     </button>
                   </div>
                 </div>
+              ) : tab === "scriptures" ? (
+                <ScriptureBrowser
+                  search={search}
+                  onAddScripture={(title, text) => {
+                    onAddScripture?.(title, text)
+                    onClose()
+                  }}
+                />
               ) : (
                 <div className="flex-1 flex flex-col items-center justify-center gap-3 text-muted-foreground">
-                  {tab === "scriptures" && <BookOpen className="h-8 w-8 opacity-30" />}
                   <p className="text-sm">
-                    {tab === "scriptures" ? "Scripture search coming soon" : tab === "media" ? "Media library coming soon" : "Presentations coming soon"}
+                    {tab === "media" ? "Media library coming soon" : "Presentations coming soon"}
                   </p>
                 </div>
               )}

@@ -319,6 +319,16 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
     for (const id of songIds) await addSongToLineup(id)
   }
 
+  const handleAddScripture = async (title: string, text: string) => {
+    const song = await window.worshipsync.songs.create({
+      title,
+      artist: "Scripture",
+      tags: "",
+      sections: [{ type: "verse", label: "Scripture", lyrics: text, orderIndex: 0 }],
+    })
+    await addSongToLineup(song.id)
+  }
+
   // ── Countdown ───────────────────────────────────────────────────────────
   const getTargetTime = useCallback(() => {
     // Build today's service time in the configured timezone
@@ -844,6 +854,7 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
           onClose={() => setShowLibrary(false)}
           onAdd={handleLibraryAdd}
           onAddCountdown={addCountdownToLineup}
+          onAddScripture={handleAddScripture}
           excludeIds={liveSongs.filter(s => s.itemType === 'song').map(s => s.songId)}
         />
       )}

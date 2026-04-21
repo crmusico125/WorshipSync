@@ -25,6 +25,8 @@ export default function ProjectionWindow() {
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
   const lyricsTextRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const pendingVideoAction = useRef<'play' | 'pause' | 'stop' | null>(null);
 
   useEffect(() => {
     window.worshipsync.projection.ready();
@@ -55,7 +57,24 @@ export default function ProjectionWindow() {
       }
     });
 
-    cleanupRef.current = [cleanSlide, cleanBlank, cleanLogo, cleanCountdown];
+    const cleanVideo = window.worshipsync.slide.onVideoControl((action) => {
+      const vid = videoRef.current;
+      if (!vid) {
+        // Video element not mounted yet — store for when it mounts
+        pendingVideoAction.current = action;
+        return;
+      }
+      pendingVideoAction.current = null;
+      if (action === 'play') vid.play();
+      else if (action === 'pause') vid.pause();
+      else if (action === 'stop') {
+        vid.pause();
+        vid.currentTime = 0;
+        setDisplayState("blank");
+      }
+    });
+
+    cleanupRef.current = [cleanSlide, cleanBlank, cleanLogo, cleanCountdown, cleanVideo];
 
     return () => {
       cleanupRef.current.forEach((fn) => fn());
@@ -92,6 +111,28 @@ export default function ProjectionWindow() {
       }
     };
   }, [displayState, countdownTarget]);
+
+  // Apply pending video action once the video element mounts
+  useEffect(() => {
+    if (displayState === "slide" && slide?.backgroundPath && pendingVideoAction.current) {
+      if (/\.(mp4|webm|mov)$/i.test(slide.backgroundPath)) {
+        requestAnimationFrame(() => {
+          const vid = videoRef.current;
+          if (vid && pendingVideoAction.current) {
+            const action = pendingVideoAction.current;
+            pendingVideoAction.current = null;
+            if (action === 'play') vid.play();
+            else if (action === 'pause') vid.pause();
+            else if (action === 'stop') {
+              vid.pause();
+              vid.currentTime = 0;
+              setDisplayState("blank");
+            }
+          }
+        });
+      }
+    }
+  }, [displayState, slide]);
 
   const theme = slide?.theme ?? DEFAULT_THEME;
   const overlayAlpha = (theme.overlayOpacity / 100).toFixed(2);
@@ -151,6 +192,22 @@ export default function ProjectionWindow() {
               zIndex: 1,
               background: backgroundPath.replace("color:", ""),
             }}
+          />
+        ) : /\.(mp4|webm|mov)$/i.test(backgroundPath) ? (
+          <video
+            ref={videoRef}
+            key={backgroundPath}
+            loop
+            playsInline
+            style={{
+              position: "absolute",
+              inset: 0,
+              zIndex: 1,
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
+            }}
+            src={`file://${encodeURI(backgroundPath)}`}
           />
         ) : (
           <div

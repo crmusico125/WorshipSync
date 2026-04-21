@@ -69,7 +69,15 @@ function buildSlides(
     : sections
   for (const sec of filtered) {
     const lines = sec.lyrics.split("\n").filter(l => l.trim())
-    if (lines.length === 0) continue
+    if (lines.length === 0) {
+      slides.push({
+        lines: [""],
+        sectionLabel: sec.label,
+        sectionType: sec.type,
+        sectionId: sec.id,
+      })
+      continue
+    }
     for (let i = 0; i < lines.length; i += maxLines) {
       slides.push({
         lines: lines.slice(i, i + maxLines),
@@ -225,6 +233,20 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
     await addSongToLineup(song.id)
   }
 
+  const handleAddMedia = async (path: string) => {
+    const filename = path.split("/").pop() ?? "Media"
+    const isVideo = /\.(mp4|webm|mov)$/i.test(path)
+    const song = await window.worshipsync.songs.create({
+      title: isVideo ? `Video: ${filename}` : `Image: ${filename}`,
+      artist: "Media",
+      tags: "",
+      sections: [{ type: "interlude" as const, label: isVideo ? "Video" : "Image", lyrics: " ", orderIndex: 0 }],
+    })
+    await window.worshipsync.backgrounds.setBackground(song.id, path)
+    await loadSongs()
+    await addSongToLineup(song.id)
+  }
+
   const handleLyricsSave = async (newLyrics: string) => {
     if (!currentSong) return
     const typeMap: Record<string, string> = {
@@ -363,6 +385,8 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
               lineup.map((item, i) => {
                 const isSelected = selectedSongIdx === i
                 const isCountdown = item.itemType === 'countdown'
+                const isScripture = item.song?.artist === 'Scripture'
+                const isMedia = item.song?.artist === 'Media'
                 let slideCount = 0
                 if (!isCountdown && item.song) {
                   const itemSelectedIds: number[] = JSON.parse(item.selectedSections || "[]")
@@ -397,7 +421,11 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
                         <p className="text-[10px] text-muted-foreground truncate mt-0.5">
                           {isCountdown
                             ? "Pre-Service Countdown"
-                            : `${item.song?.artist || "Unknown"}${item.song?.key ? ` · ${item.song.key}` : ""} · ${slideCount} slides`
+                            : isScripture
+                              ? `Scripture · ${slideCount} slides`
+                              : isMedia
+                                ? "Media"
+                                : `${item.song?.artist || "Unknown"}${item.song?.key ? ` · ${item.song.key}` : ""} · ${slideCount} slides`
                           }
                         </p>
                       </div>
@@ -654,6 +682,7 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
           onAdd={handleLibraryAdd}
           onAddCountdown={addCountdownToLineup}
           onAddScripture={handleAddScripture}
+          onAddMedia={handleAddMedia}
           excludeIds={lineup.filter(item => item.songId != null).map(item => item.songId!)}
         />
       )}

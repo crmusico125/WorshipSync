@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useCallback } from "react"
 import {
-  Search, Upload, Trash2, Image as ImageIcon, X, Check, FolderOpen, Plus, Info, Music,
+  Search, Upload, Trash2, Image as ImageIcon, X, Check, FolderOpen, Plus, Info, Music, Play,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -266,13 +266,29 @@ function MediaCard({
       }`}
       style={{ aspectRatio: "16/9" }}
     >
-      <div
-        className="absolute inset-0 bg-cover bg-center"
-        style={{ backgroundImage: `url("file://${encodeURI(item.path)}")` }}
-      />
+      {/\.(mp4|webm|mov)$/i.test(item.path) ? (
+        <video
+          src={`file://${encodeURI(item.path)}`}
+          className="absolute inset-0 w-full h-full object-cover"
+          muted
+          preload="metadata"
+        />
+      ) : (
+        <div
+          className="absolute inset-0 bg-cover bg-center"
+          style={{ backgroundImage: `url("file://${encodeURI(item.path)}")` }}
+        />
+      )}
 
       {/* Hover overlay */}
       <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
+
+      {/* Video badge */}
+      {/\.(mp4|webm|mov)$/i.test(item.path) && (
+        <div className="absolute bottom-2 right-2 h-6 w-6 rounded-full bg-black/60 flex items-center justify-center">
+          <Play className="h-3 w-3 text-white fill-white" />
+        </div>
+      )}
 
       {/* Selected check */}
       {selected && (
@@ -325,11 +341,19 @@ function MediaDetailPanel({
           className="relative rounded-lg overflow-hidden border border-border"
           style={{ aspectRatio: "16/9" }}
         >
-          <img
-            src={`file://${item.path}`}
-            className="absolute inset-0 w-full h-full object-cover"
-            alt=""
-          />
+          {/\.(mp4|webm|mov)$/i.test(item.path) ? (
+            <video
+              src={`file://${item.path}`}
+              className="absolute inset-0 w-full h-full object-cover"
+              muted autoPlay loop playsInline
+            />
+          ) : (
+            <img
+              src={`file://${item.path}`}
+              className="absolute inset-0 w-full h-full object-cover"
+              alt=""
+            />
+          )}
         </div>
       </div>
 

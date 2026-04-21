@@ -131,6 +131,12 @@ ipcMain.on('slide:countdown', (_event, data: { targetTime: string; running: bool
   }
 })
 
+ipcMain.on('slide:videoControl', (_event, action: 'play' | 'pause' | 'stop') => {
+  if (projectionWindow && !projectionWindow.isDestroyed()) {
+    projectionWindow.webContents.send('slide:videoControl', action)
+  }
+})
+
 ipcMain.on('projection:ready', () => {
   controlWindow?.webContents.send('projection:ready')
 })
@@ -476,8 +482,12 @@ ipcMain.handle('backgrounds:getDir', () => {
 
 ipcMain.handle('backgrounds:pickImage', async () => {
   const result = await dialog.showOpenDialog({
-    title: 'Choose background image',
-    filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp'] }],
+    title: 'Choose background image or video',
+    filters: [
+      { name: 'All Media', extensions: ['jpg', 'jpeg', 'png', 'webp', 'mp4', 'webm', 'mov'] },
+      { name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp'] },
+      { name: 'Videos', extensions: ['mp4', 'webm', 'mov'] },
+    ],
     properties: ['openFile']
   })
   if (result.canceled || result.filePaths.length === 0) return null
@@ -486,10 +496,15 @@ ipcMain.handle('backgrounds:pickImage', async () => {
   const dir = join(app.getPath('userData'), 'backgrounds')
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
 
-  const ext = extname(srcPath)
+  const ext = extname(srcPath).toLowerCase()
   const filename = `bg_${Date.now()}${ext}`
   const destPath = join(dir, filename)
-  copyFileSync(srcPath, destPath)
+  try {
+    copyFileSync(srcPath, destPath)
+  } catch (e) {
+    console.error('[backgrounds] copy failed:', e)
+    return null
+  }
 
   return destPath
 })
@@ -498,7 +513,7 @@ ipcMain.handle('backgrounds:listImages', () => {
   const dir = join(app.getPath('userData'), 'backgrounds')
   if (!existsSync(dir)) return []
   return readdirSync(dir)
-    .filter(f => /\.(jpg|jpeg|png|webp)$/i.test(f))
+    .filter(f => /\.(jpg|jpeg|png|webp|mp4|webm|mov)$/i.test(f))
     .map(f => join(dir, f))
 })
 
@@ -622,7 +637,7 @@ ipcMain.handle('data:export', async () => {
   // Read background images as base64
   const backgrounds: { filename: string; data: string }[] = []
   if (existsSync(bgDir)) {
-    for (const f of readdirSync(bgDir).filter(f => /\.(jpg|jpeg|png|webp)$/i.test(f))) {
+    for (const f of readdirSync(bgDir).filter(f => /\.(jpg|jpeg|png|webp|mp4|webm|mov)$/i.test(f))) {
       backgrounds.push({ filename: f, data: readFileSync(join(bgDir, f)).toString('base64') })
     }
   }

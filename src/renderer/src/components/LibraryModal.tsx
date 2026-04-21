@@ -1,5 +1,5 @@
-import { useState, useEffect, useRef } from "react"
-import { Search, Music2, Timer } from "lucide-react"
+import { useState, useEffect, useRef, useCallback, useMemo } from "react"
+import { Search, Music2, Timer, Upload, Trash2, Check, Image as ImageIcon, Play } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
@@ -36,10 +36,11 @@ interface Props {
   onAdd: (songIds: number[]) => void
   onAddCountdown?: () => void
   onAddScripture?: (title: string, verses: ScriptureVerse[], ref: { book: string; chapter: number; translation: string }) => void
+  onAddMedia?: (path: string) => void
   excludeIds?: number[]
 }
 
-export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScripture, excludeIds = [] }: Props) {
+export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScripture, onAddMedia, excludeIds = [] }: Props) {
   const [tab, setTab] = useState("songs")
   const [songs, setSongs] = useState<SongRow[]>([])
   const [selectedIds, setSelectedIds] = useState<number[]>([])
@@ -90,6 +91,60 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScri
     onClose()
   }
 
+  // ── Media state ──────────────────────────────────────────────────────────
+  const [mediaImages, setMediaImages] = useState<{ path: string; filename: string; usageCount: number }[]>([])
+  const [mediaLoading, setMediaLoading] = useState(false)
+  const [mediaSelected, setMediaSelected] = useState<string | null>(null)
+  const [mediaUploading, setMediaUploading] = useState(false)
+  const [mediaUsingSongs, setMediaUsingSongs] = useState<{ id: number; title: string; artist: string }[]>([])
+
+  const loadMediaImages = useCallback(async () => {
+    setMediaLoading(true)
+    try {
+      const paths: string[] = await window.worshipsync.backgrounds.listImages()
+      const items = await Promise.all(
+        paths.map(async (p) => ({
+          path: p,
+          filename: p.split("/").pop() ?? p,
+          usageCount: await window.worshipsync.backgrounds.getUsageCount(p),
+        }))
+      )
+      setMediaImages(items)
+    } catch { setMediaImages([]) }
+    setMediaLoading(false)
+  }, [])
+
+  useEffect(() => { if (tab === "media") loadMediaImages() }, [tab, loadMediaImages])
+
+  useEffect(() => {
+    if (!mediaSelected) { setMediaUsingSongs([]); return }
+    window.worshipsync.backgrounds.getUsingSongs(mediaSelected).then(setMediaUsingSongs).catch(() => setMediaUsingSongs([]))
+  }, [mediaSelected])
+
+  const filteredMedia = useMemo(() => {
+    if (!search.trim()) return mediaImages
+    const q = search.toLowerCase()
+    return mediaImages.filter((i) => i.filename.toLowerCase().includes(q))
+  }, [mediaImages, search])
+
+  const handleMediaUpload = async () => {
+    setMediaUploading(true)
+    try {
+      const path = await window.worshipsync.backgrounds.pickImage()
+      if (path) { await loadMediaImages(); setMediaSelected(path) }
+    } finally { setMediaUploading(false) }
+  }
+
+  const handleMediaDelete = async (item: { path: string; usageCount: number }) => {
+    const msg = item.usageCount > 0
+      ? `This image is used by ${item.usageCount} song${item.usageCount > 1 ? "s" : ""}. Deleting will remove it from those songs too. Continue?`
+      : "Delete this image from the library?"
+    if (!confirm(msg)) return
+    await window.worshipsync.backgrounds.deleteImage(item.path)
+    if (mediaSelected === item.path) setMediaSelected(null)
+    await loadMediaImages()
+  }
+
   const selectionLabel =
     selectedIds.length === 0
       ? "No items selected"
@@ -125,7 +180,9 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScri
                 placeholder={
                   tab === "scriptures"
                     ? "Type a reference… e.g. John 3:16, Psalm 23, Romans 8:28-39"
-                    : "Search songs, scriptures, media..."
+                    : tab === "media"
+                      ? "Search images by filename..."
+                      : "Search songs, scriptures, media..."
                 }
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -274,11 +331,139 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScri
                     onClose()
                   }}
                 />
+              ) : tab === "media" ? (
+                <div className="flex-1 flex min-h-0 overflow-hidden">
+                  {/* Media grid */}
+                  <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                    <div className="px-4 py-2.5 border-b border-border flex items-center justify-between shrink-0">
+                      <span className="text-xs text-muted-foreground">
+                        {filteredMedia.length} {filteredMedia.length === 1 ? "image" : "images"}
+                      </span>
+                      <Button size="sm" variant="outline" className="gap-1.5 h-7 text-xs" onClick={handleMediaUpload} disabled={mediaUploading}>
+                        <Upload className="h-3 w-3" />
+                        {mediaUploading ? "Uploading..." : "Upload"}
+                      </Button>
+                    </div>
+                    <ScrollArea className="flex-1">
+                      {mediaLoading ? (
+                        <p className="py-12 text-center text-xs text-muted-foreground">Loading...</p>
+                      ) : filteredMedia.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-16 gap-3">
+                          <ImageIcon className="h-10 w-10 text-muted-foreground/30" />
+                          <p className="text-sm text-muted-foreground">
+                            {search ? "No images match your search" : "No images uploaded yet"}
+                          </p>
+                          {!search && (
+                            <Button size="sm" className="gap-1.5" onClick={handleMediaUpload}>
+                              <Upload className="h-3.5 w-3.5" /> Upload Image
+                            </Button>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="p-4 grid grid-cols-3 gap-3">
+                          {filteredMedia.map((item) => {
+                            const isSel = mediaSelected === item.path
+                            const isVideo = /\.(mp4|webm|mov)$/i.test(item.path)
+                            return (
+                              <button
+                                key={item.path}
+                                onClick={() => setMediaSelected(isSel ? null : item.path)}
+                                className={`group relative rounded-lg overflow-hidden border-2 transition-all cursor-pointer ${
+                                  isSel ? "border-primary ring-2 ring-primary/25" : "border-border hover:border-muted-foreground/40"
+                                }`}
+                                style={{ aspectRatio: "16/9" }}
+                              >
+                                {isVideo ? (
+                                  <video
+                                    src={`file://${encodeURI(item.path)}`}
+                                    className="absolute inset-0 w-full h-full object-cover"
+                                    muted
+                                    preload="metadata"
+                                  />
+                                ) : (
+                                  <div
+                                    className="absolute inset-0 bg-cover bg-center"
+                                    style={{ backgroundImage: `url("file://${encodeURI(item.path)}")` }}
+                                  />
+                                )}
+                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
+                                {isVideo && (
+                                  <div className="absolute bottom-1.5 right-1.5 h-5 w-5 rounded-full bg-black/60 flex items-center justify-center">
+                                    <Play className="h-2.5 w-2.5 text-white fill-white" />
+                                  </div>
+                                )}
+                                {isSel && (
+                                  <div className="absolute top-1.5 right-1.5 h-5 w-5 rounded-full bg-primary flex items-center justify-center">
+                                    <Check className="h-3 w-3 text-primary-foreground" />
+                                  </div>
+                                )}
+                                {item.usageCount > 0 && (
+                                  <div className="absolute top-1.5 left-1.5 bg-black/60 text-white text-[9px] font-semibold px-1.5 py-0.5 rounded">
+                                    {item.usageCount} {item.usageCount === 1 ? "song" : "songs"}
+                                  </div>
+                                )}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </ScrollArea>
+                  </div>
+
+                  {/* Detail sidebar */}
+                  {mediaSelected && (() => {
+                    const item = mediaImages.find((i) => i.path === mediaSelected)
+                    if (!item) return null
+                    return (
+                      <div className="w-56 shrink-0 border-l border-border flex flex-col min-h-0 overflow-hidden">
+                        <div className="p-3 border-b border-border shrink-0">
+                          <div className="rounded-lg overflow-hidden border border-border" style={{ aspectRatio: "16/9" }}>
+                            {/\.(mp4|webm|mov)$/i.test(item.path) ? (
+                              <video src={`file://${item.path}`} className="w-full h-full object-cover" muted autoPlay loop playsInline />
+                            ) : (
+                              <img src={`file://${item.path}`} className="w-full h-full object-cover" alt="" />
+                            )}
+                          </div>
+                        </div>
+                        <div className="p-3 flex flex-col gap-2 flex-1 overflow-y-auto text-xs">
+                          <div>
+                            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Filename</span>
+                            <p className="text-foreground truncate mt-0.5">{item.filename}</p>
+                          </div>
+                          <div>
+                            <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Used by</span>
+                            <p className="text-foreground mt-0.5">
+                              {item.usageCount > 0 ? `${item.usageCount} ${item.usageCount === 1 ? "song" : "songs"}` : "Not used"}
+                            </p>
+                          </div>
+                          {mediaUsingSongs.length > 0 && (
+                            <div className="flex flex-col gap-1 mt-1">
+                              {mediaUsingSongs.map((s) => (
+                                <div key={s.id} className="flex items-center gap-2 px-2 py-1.5 rounded bg-muted">
+                                  <Music2 className="h-3 w-3 text-muted-foreground shrink-0" />
+                                  <span className="text-[11px] truncate">{s.title}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          <div className="mt-auto pt-2">
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              className="gap-1.5 w-full h-7 text-xs"
+                              onClick={() => handleMediaDelete(item)}
+                            >
+                              <Trash2 className="h-3 w-3" /> Delete
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })()}
+                </div>
               ) : (
                 <div className="flex-1 flex flex-col items-center justify-center gap-3 text-muted-foreground">
-                  <p className="text-sm">
-                    {tab === "media" ? "Media library coming soon" : "Presentations coming soon"}
-                  </p>
+                  <p className="text-sm">Presentations coming soon</p>
                 </div>
               )}
             </div>
@@ -286,13 +471,32 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScri
 
           {/* ── Footer ─────────────────────────────────────────────── */}
           <div className="flex items-center gap-3 px-5 py-3 border-t border-border bg-muted/40 shrink-0">
-            <span className="flex-1 text-xs text-muted-foreground">{selectionLabel}</span>
+            <span className="flex-1 text-xs text-muted-foreground">
+              {tab === "media" && mediaSelected
+                ? "1 media item selected"
+                : selectionLabel}
+            </span>
             <Button variant="outline" size="sm" onClick={onClose}>
               Cancel
             </Button>
-            <Button size="sm" disabled={selectedIds.length === 0} onClick={handleAdd}>
-              + Add to Lineup
-            </Button>
+            {tab === "media" ? (
+              <Button
+                size="sm"
+                disabled={!mediaSelected}
+                onClick={() => {
+                  if (mediaSelected) {
+                    onAddMedia?.(mediaSelected)
+                    onClose()
+                  }
+                }}
+              >
+                + Add to Lineup
+              </Button>
+            ) : (
+              <Button size="sm" disabled={selectedIds.length === 0} onClick={handleAdd}>
+                + Add to Lineup
+              </Button>
+            )}
           </div>
 
         </div>

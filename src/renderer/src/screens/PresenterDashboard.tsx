@@ -3,7 +3,7 @@ import {
   MonitorOff, ChevronLeft, ChevronRight,
   Music, GripVertical, Pencil, Plus, Cast,
   Play, Square, AlertCircle, X, Type,
-  Tv, Hexagon, Image as ImageIcon, Timer,
+  Tv, Hexagon, Image as ImageIcon, Timer, BookOpen, Film,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useServiceStore } from "../store/useServiceStore"
@@ -76,7 +76,17 @@ function buildSlidesForSong(
   let globalIdx = 0
   for (const sec of sections) {
     const lines = sec.lyrics.split("\n").filter(l => l.trim())
-    if (lines.length === 0) continue
+    if (lines.length === 0) {
+      // Media/blank slides: create one slide with empty line so background shows
+      slides.push({
+        lines: [""],
+        sectionLabel: sec.label,
+        sectionType: sec.type,
+        sectionId: sec.id,
+        globalIndex: globalIdx++,
+      })
+      continue
+    }
     for (let i = 0; i < lines.length; i += maxLines) {
       slides.push({
         lines: lines.slice(i, i + maxLines),
@@ -122,6 +132,7 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
   // Countdown state
   const [countdownRunning, setCountdownRunning] = useState(false)
   const [countdownDisplay, setCountdownDisplay] = useState("00:00:00")
+  const [videoPlaying, setVideoPlaying] = useState(false)
   const [serviceTime, setServiceTime] = useState("11:00")
   const [serviceTimezone, setServiceTimezone] = useState("America/Los_Angeles")
   const [projectionFontSize, setProjectionFontSize] = useState(48)
@@ -340,6 +351,19 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
     await addSongToLineup(song.id)
   }
 
+  const handleAddMedia = async (path: string) => {
+    const filename = path.split("/").pop() ?? "Media"
+    const isVideo = /\.(mp4|webm|mov)$/i.test(path)
+    const song = await window.worshipsync.songs.create({
+      title: isVideo ? `Video: ${filename}` : `Image: ${filename}`,
+      artist: "Media",
+      tags: "",
+      sections: [{ type: "interlude" as const, label: isVideo ? "Video" : "Image", lyrics: " ", orderIndex: 0 }],
+    })
+    await window.worshipsync.backgrounds.setBackground(song.id, path)
+    await addSongToLineup(song.id)
+  }
+
   // ── Countdown ───────────────────────────────────────────────────────────
   const getTargetTime = useCallback(() => {
     // Build today's service time in the configured timezone
@@ -519,11 +543,15 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
           {liveSongs.map((song, i) => {
             const isCurrent = selectedSongIdx === i
             const isCountdown = song.itemType === 'countdown'
-            const Icon = isCountdown ? Timer : Music
+            const isScripture = song.artist === 'Scripture'
+            const isMedia = song.artist === 'Media'
+            const Icon = isCountdown ? Timer : isScripture ? BookOpen : isMedia ? (
+              /\.(mp4|webm|mov)$/i.test(song.backgroundPath ?? "") ? Film : ImageIcon
+            ) : Music
             return (
               <button
                 key={song.lineupItemId}
-                onClick={() => setSelectedSongIdx(i)}
+                onClick={() => { setSelectedSongIdx(i); setVideoPlaying(false) }}
                 className={`w-full text-left flex items-center gap-2.5 px-3 py-2.5 border-b border-border transition-colors ${
                   isCurrent
                     ? "bg-primary/[0.08] border-l-[3px] border-l-primary pl-[9px]"
@@ -542,7 +570,7 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
                     {song.title}
                   </p>
                   <p className="text-[11px] text-muted-foreground truncate">
-                    {isCountdown ? "Pre-Service Countdown" : `Song${song.key ? ` · Key: ${song.key}` : ""}`}
+                    {isCountdown ? "Pre-Service Countdown" : isScripture ? "Scripture" : isMedia ? "Media" : `Song${song.key ? ` · Key: ${song.key}` : ""}`}
                   </p>
                 </div>
                 <GripVertical className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
@@ -601,6 +629,86 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
               The countdown will be shown on the projection screen when started.
               It stops automatically when it reaches zero.
             </p>
+          </div>
+        ) : currentSong?.artist === 'Media' ? (
+          <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
+            {(() => {
+              const bg = resolveBg(currentSong)
+              const isVideo = bg ? /\.(mp4|webm|mov)$/i.test(bg) : false
+              return (
+                <>
+                  {/* Media preview */}
+                  <div className="rounded-2xl border border-border overflow-hidden mb-6 w-full max-w-lg" style={{ aspectRatio: "16/9" }}>
+                    {bg && isVideo ? (
+                      <video
+                        src={`file://${encodeURI(bg)}`}
+                        className="w-full h-full object-cover"
+                        muted
+                        preload="metadata"
+                      />
+                    ) : bg ? (
+                      <img src={`file://${bg}`} className="w-full h-full object-cover" alt="" />
+                    ) : (
+                      <div className="w-full h-full bg-black flex items-center justify-center">
+                        <ImageIcon className="h-12 w-12 text-muted-foreground" />
+                      </div>
+                    )}
+                  </div>
+
+                  <h2 className="text-lg font-bold mb-1">{currentSong.title}</h2>
+                  <p className="text-sm text-muted-foreground mb-6">
+                    {isVideo ? "Video" : "Image"} · Click {isVideo ? "Play" : "Show"} to project
+                  </p>
+
+                  {/* Controls */}
+                  <div className="flex items-center gap-3">
+                    {isVideo ? (
+                      <>
+                        {!videoPlaying ? (
+                          <Button size="lg" className="gap-2" onClick={() => {
+                            sendSlide(selectedSongIdx, 0)
+                            window.worshipsync.slide.videoControl('play')
+                            setVideoPlaying(true)
+                          }}>
+                            <Play className="h-5 w-5 fill-current" />
+                            Play Video
+                          </Button>
+                        ) : (
+                          <>
+                            <Button size="lg" variant="outline" className="gap-2" onClick={() => {
+                              window.worshipsync.slide.videoControl('pause')
+                              setVideoPlaying(false)
+                            }}>
+                              <Square className="h-4 w-4" />
+                              Pause
+                            </Button>
+                            <Button size="lg" variant="destructive" className="gap-2" onClick={() => {
+                              window.worshipsync.slide.videoControl('stop')
+                              setVideoPlaying(false)
+                              setIsBlank(true)
+                            }}>
+                              <X className="h-4 w-4" />
+                              Stop
+                            </Button>
+                          </>
+                        )}
+                      </>
+                    ) : (
+                      <Button size="lg" className="gap-2" onClick={() => sendSlide(selectedSongIdx, 0)}>
+                        <Cast className="h-5 w-5" />
+                        Show on Screen
+                      </Button>
+                    )}
+                  </div>
+
+                  <p className="text-[11px] text-muted-foreground mt-6 max-w-sm">
+                    {isVideo
+                      ? "The video will play on the projection screen. Use Pause/Stop to control playback."
+                      : "The image will be shown full-screen on the projection display."}
+                  </p>
+                </>
+              )
+            })()}
           </div>
         ) : currentSong ? (
           <>
@@ -669,17 +777,27 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
                         <div className="w-full" style={{ paddingBottom: "56.25%" }} />
                         <div className="absolute inset-0 flex items-center justify-center">
                           {bg && slide.sectionType !== "blank" ? (
-                            <>
-                              <img
-                                src={`file://${bg}`}
+                            bg.startsWith("color:") ? (
+                              <div className="absolute inset-0" style={{ background: bg.replace("color:", "") }} />
+                            ) : /\.(mp4|webm|mov)$/i.test(bg) ? (
+                              <video
+                                src={`file://${encodeURI(bg)}`}
                                 className="absolute inset-0 w-full h-full object-cover"
-                                alt=""
+                                muted preload="metadata"
                               />
-                              <div
-                                className="absolute inset-0"
-                                style={{ background: `rgba(0,0,0,${effectiveTheme.overlayOpacity / 100})` }}
-                              />
-                            </>
+                            ) : (
+                              <>
+                                <img
+                                  src={`file://${bg}`}
+                                  className="absolute inset-0 w-full h-full object-cover"
+                                  alt=""
+                                />
+                                <div
+                                  className="absolute inset-0"
+                                  style={{ background: `rgba(0,0,0,${effectiveTheme.overlayOpacity / 100})` }}
+                                />
+                              </>
+                            )
                           ) : (
                             <div className="absolute inset-0 bg-black" />
                           )}
@@ -866,6 +984,7 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
           onAdd={handleLibraryAdd}
           onAddCountdown={addCountdownToLineup}
           onAddScripture={handleAddScripture}
+          onAddMedia={handleAddMedia}
           excludeIds={liveSongs.filter(s => s.itemType === 'song').map(s => s.songId)}
         />
       )}

@@ -3,7 +3,7 @@ import {
   MonitorOff, ChevronLeft, ChevronRight,
   Music, GripVertical, Pencil, Plus, Cast,
   Play, Square, AlertCircle, X, Type,
-  Tv, Hexagon, Image as ImageIcon, Timer, BookOpen, Film,
+  Tv, Hexagon, Image as ImageIcon, Timer, BookOpen, Film, Volume2, Pause,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useServiceStore } from "../store/useServiceStore"
@@ -133,6 +133,11 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
   const [countdownRunning, setCountdownRunning] = useState(false)
   const [countdownDisplay, setCountdownDisplay] = useState("00:00:00")
   const [videoPlaying, setVideoPlaying] = useState(false)
+  const [audioPlaying, setAudioPlaying] = useState(false)
+  const [audioCurrentTime, setAudioCurrentTime] = useState(0)
+  const [audioDuration, setAudioDuration] = useState(0)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const audioTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const [serviceTime, setServiceTime] = useState("11:00")
   const [serviceTimezone, setServiceTimezone] = useState("America/Los_Angeles")
   const [projectionFontSize, setProjectionFontSize] = useState(48)
@@ -354,11 +359,13 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
   const handleAddMedia = async (path: string) => {
     const filename = path.split("/").pop() ?? "Media"
     const isVideo = /\.(mp4|webm|mov)$/i.test(path)
+    const isAudio = /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(path)
+    const label = isVideo ? "Video" : isAudio ? "Audio" : "Image"
     const song = await window.worshipsync.songs.create({
-      title: isVideo ? `Video: ${filename}` : `Image: ${filename}`,
+      title: `${label}: ${filename}`,
       artist: "Media",
       tags: "",
-      sections: [{ type: "interlude" as const, label: isVideo ? "Video" : "Image", lyrics: " ", orderIndex: 0 }],
+      sections: [{ type: "interlude" as const, label, lyrics: " ", orderIndex: 0 }],
     })
     await window.worshipsync.backgrounds.setBackground(song.id, path)
     await addSongToLineup(song.id)
@@ -428,6 +435,8 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
   useEffect(() => {
     return () => {
       if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current)
+      if (audioTimerRef.current) clearInterval(audioTimerRef.current)
+      if (audioRef.current) { audioRef.current.pause(); audioRef.current = null }
     }
   }, [])
 
@@ -545,13 +554,31 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
             const isCountdown = song.itemType === 'countdown'
             const isScripture = song.artist === 'Scripture'
             const isMedia = song.artist === 'Media'
+            const isAudioItem = isMedia && /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(song.backgroundPath ?? "")
+            const isVideoItem = isMedia && /\.(mp4|webm|mov)$/i.test(song.backgroundPath ?? "")
             const Icon = isCountdown ? Timer : isScripture ? BookOpen : isMedia ? (
-              /\.(mp4|webm|mov)$/i.test(song.backgroundPath ?? "") ? Film : ImageIcon
+              isVideoItem ? Film : isAudioItem ? Volume2 : ImageIcon
             ) : Music
             return (
               <button
                 key={song.lineupItemId}
-                onClick={() => { setSelectedSongIdx(i); setVideoPlaying(false) }}
+                onClick={() => {
+                  setSelectedSongIdx(i)
+                  setVideoPlaying(false)
+                  // Stop audio when switching songs
+                  if (audioRef.current) {
+                    audioRef.current.pause()
+                    audioRef.current.currentTime = 0
+                    audioRef.current = null
+                  }
+                  if (audioTimerRef.current) {
+                    clearInterval(audioTimerRef.current)
+                    audioTimerRef.current = null
+                  }
+                  setAudioPlaying(false)
+                  setAudioCurrentTime(0)
+                  setAudioDuration(0)
+                }}
                 className={`w-full text-left flex items-center gap-2.5 px-3 py-2.5 border-b border-border transition-colors ${
                   isCurrent
                     ? "bg-primary/[0.08] border-l-[3px] border-l-primary pl-[9px]"
@@ -570,7 +597,7 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
                     {song.title}
                   </p>
                   <p className="text-[11px] text-muted-foreground truncate">
-                    {isCountdown ? "Pre-Service Countdown" : isScripture ? "Scripture" : isMedia ? "Media" : `Song${song.key ? ` · Key: ${song.key}` : ""}`}
+                    {isCountdown ? "Pre-Service Countdown" : isScripture ? "Scripture" : isMedia ? (isVideoItem ? "Video" : isAudioItem ? "Audio" : "Image") : `Song${song.key ? ` · Key: ${song.key}` : ""}`}
                   </p>
                 </div>
                 <GripVertical className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
@@ -635,6 +662,113 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
             {(() => {
               const bg = resolveBg(currentSong)
               const isVideo = bg ? /\.(mp4|webm|mov)$/i.test(bg) : false
+              const isAudio = bg ? /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(bg) : false
+
+              if (isAudio && bg) {
+                const formatTime = (s: number) => {
+                  const m = Math.floor(s / 60)
+                  const sec = Math.floor(s % 60)
+                  return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`
+                }
+                return (
+                  <>
+                    {/* Audio icon */}
+                    <div className="rounded-2xl border border-border bg-card w-full max-w-lg mb-6 flex items-center justify-center" style={{ aspectRatio: "16/9" }}>
+                      <Volume2 className="h-20 w-20 text-muted-foreground" />
+                    </div>
+
+                    <h2 className="text-lg font-bold mb-1">{currentSong.title}</h2>
+                    <p className="text-sm text-muted-foreground mb-6">
+                      Audio · Use controls below to play locally
+                    </p>
+
+                    {/* Progress bar */}
+                    <div className="w-full max-w-md mb-3">
+                      <div className="relative h-1.5 bg-input rounded-full overflow-hidden cursor-pointer"
+                        onClick={(e) => {
+                          if (!audioRef.current || !audioDuration) return
+                          const rect = e.currentTarget.getBoundingClientRect()
+                          const ratio = (e.clientX - rect.left) / rect.width
+                          audioRef.current.currentTime = ratio * audioDuration
+                        }}
+                      >
+                        <div
+                          className="absolute left-0 top-0 h-full bg-primary rounded-full transition-all"
+                          style={{ width: `${audioDuration ? (audioCurrentTime / audioDuration) * 100 : 0}%` }}
+                        />
+                      </div>
+                      <div className="flex justify-between text-[11px] text-muted-foreground mt-1">
+                        <span>{formatTime(audioCurrentTime)}</span>
+                        <span>{formatTime(audioDuration)}</span>
+                      </div>
+                    </div>
+
+                    {/* Controls */}
+                    <div className="flex items-center gap-3">
+                      {!audioPlaying ? (
+                        <Button size="lg" className="gap-2" onClick={() => {
+                          if (!audioRef.current) {
+                            audioRef.current = new Audio(`file://${encodeURI(bg)}`)
+                            audioRef.current.onloadedmetadata = () => {
+                              setAudioDuration(audioRef.current?.duration ?? 0)
+                            }
+                            audioRef.current.onended = () => {
+                              setAudioPlaying(false)
+                              setAudioCurrentTime(0)
+                              if (audioTimerRef.current) {
+                                clearInterval(audioTimerRef.current)
+                                audioTimerRef.current = null
+                              }
+                            }
+                          }
+                          audioRef.current.play()
+                          setAudioPlaying(true)
+                          audioTimerRef.current = setInterval(() => {
+                            setAudioCurrentTime(audioRef.current?.currentTime ?? 0)
+                          }, 250)
+                        }}>
+                          <Play className="h-5 w-5 fill-current" />
+                          Play Audio
+                        </Button>
+                      ) : (
+                        <>
+                          <Button size="lg" variant="outline" className="gap-2" onClick={() => {
+                            audioRef.current?.pause()
+                            setAudioPlaying(false)
+                            if (audioTimerRef.current) {
+                              clearInterval(audioTimerRef.current)
+                              audioTimerRef.current = null
+                            }
+                          }}>
+                            <Pause className="h-5 w-5" />
+                            Pause
+                          </Button>
+                          <Button size="lg" variant="destructive" className="gap-2" onClick={() => {
+                            if (audioRef.current) {
+                              audioRef.current.pause()
+                              audioRef.current.currentTime = 0
+                            }
+                            setAudioPlaying(false)
+                            setAudioCurrentTime(0)
+                            if (audioTimerRef.current) {
+                              clearInterval(audioTimerRef.current)
+                              audioTimerRef.current = null
+                            }
+                          }}>
+                            <Square className="h-4 w-4 fill-current" />
+                            Stop
+                          </Button>
+                        </>
+                      )}
+                    </div>
+
+                    <p className="text-[11px] text-muted-foreground mt-6 max-w-sm">
+                      Audio plays through this computer only. Nothing is shown on the projection screen.
+                    </p>
+                  </>
+                )
+              }
+
               return (
                 <>
                   {/* Media preview */}

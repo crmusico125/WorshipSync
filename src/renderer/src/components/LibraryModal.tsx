@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react"
-import { Search, Music2, Timer, Upload, Trash2, Check, Image as ImageIcon, Play } from "lucide-react"
+import { Search, Music2, Timer, Upload, Trash2, Check, Image as ImageIcon, Play, Volume2 } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
@@ -364,6 +364,7 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScri
                           {filteredMedia.map((item) => {
                             const isSel = mediaSelected === item.path
                             const isVideo = /\.(mp4|webm|mov)$/i.test(item.path)
+                            const isAudio = /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(item.path)
                             return (
                               <button
                                 key={item.path}
@@ -373,7 +374,14 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScri
                                 }`}
                                 style={{ aspectRatio: "16/9" }}
                               >
-                                {isVideo ? (
+                                {isAudio ? (
+                                  <div className="absolute inset-0 bg-muted flex flex-col items-center justify-center gap-1">
+                                    <Volume2 className="h-6 w-6 text-muted-foreground" />
+                                    <span className="text-[9px] text-muted-foreground uppercase font-semibold">
+                                      {item.path.split(".").pop()?.toUpperCase()}
+                                    </span>
+                                  </div>
+                                ) : isVideo ? (
                                   <video
                                     src={`file://${encodeURI(item.path)}`}
                                     className="absolute inset-0 w-full h-full object-cover"
@@ -387,9 +395,12 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScri
                                   />
                                 )}
                                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
-                                {isVideo && (
+                                {(isVideo || isAudio) && (
                                   <div className="absolute bottom-1.5 right-1.5 h-5 w-5 rounded-full bg-black/60 flex items-center justify-center">
-                                    <Play className="h-2.5 w-2.5 text-white fill-white" />
+                                    {isAudio
+                                      ? <Volume2 className="h-2.5 w-2.5 text-white" />
+                                      : <Play className="h-2.5 w-2.5 text-white fill-white" />
+                                    }
                                   </div>
                                 )}
                                 {isSel && (
@@ -420,6 +431,13 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScri
                           <div className="rounded-lg overflow-hidden border border-border" style={{ aspectRatio: "16/9" }}>
                             {/\.(mp4|webm|mov)$/i.test(item.path) ? (
                               <video src={`file://${item.path}`} className="w-full h-full object-cover" muted autoPlay loop playsInline />
+                            ) : /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(item.path) ? (
+                              <div className="w-full h-full bg-muted flex flex-col items-center justify-center gap-2">
+                                <Volume2 className="h-8 w-8 text-muted-foreground" />
+                                <span className="text-[10px] text-muted-foreground font-semibold uppercase">
+                                  {item.path.split(".").pop()?.toUpperCase()}
+                                </span>
+                              </div>
                             ) : (
                               <img src={`file://${item.path}`} className="w-full h-full object-cover" alt="" />
                             )}

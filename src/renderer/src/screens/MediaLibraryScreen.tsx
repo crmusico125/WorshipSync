@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useCallback } from "react"
 import {
-  Search, Upload, Trash2, Image as ImageIcon, X, Check, FolderOpen, Plus, Info, Music, Play,
+  Search, Upload, Trash2, Image as ImageIcon, X, Check, FolderOpen, Plus, Info, Music, Play, Volume2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -239,7 +239,7 @@ export default function MediaLibraryScreen() {
         <div className="w-[300px] shrink-0 border-l border-border bg-card flex items-center justify-center px-6 text-center">
           <div>
             <ImageIcon className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-            <p className="text-sm text-muted-foreground">Select an image to see details</p>
+            <p className="text-sm text-muted-foreground">Select a file to see details</p>
           </div>
         </div>
       )}
@@ -273,6 +273,13 @@ function MediaCard({
           muted
           preload="metadata"
         />
+      ) : /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(item.path) ? (
+        <div className="absolute inset-0 bg-muted flex flex-col items-center justify-center gap-1.5">
+          <Volume2 className="h-8 w-8 text-muted-foreground" />
+          <span className="text-[10px] text-muted-foreground font-semibold uppercase">
+            {item.path.split(".").pop()?.toUpperCase()}
+          </span>
+        </div>
       ) : (
         <div
           className="absolute inset-0 bg-cover bg-center"
@@ -283,10 +290,15 @@ function MediaCard({
       {/* Hover overlay */}
       <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
 
-      {/* Video badge */}
+      {/* Type badge */}
       {/\.(mp4|webm|mov)$/i.test(item.path) && (
         <div className="absolute bottom-2 right-2 h-6 w-6 rounded-full bg-black/60 flex items-center justify-center">
           <Play className="h-3 w-3 text-white fill-white" />
+        </div>
+      )}
+      {/\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(item.path) && (
+        <div className="absolute bottom-2 right-2 h-6 w-6 rounded-full bg-black/60 flex items-center justify-center">
+          <Volume2 className="h-3 w-3 text-white" />
         </div>
       )}
 
@@ -326,7 +338,9 @@ function MediaDetailPanel({
     <div className="w-[300px] shrink-0 flex flex-col border-l border-border bg-card overflow-hidden">
       {/* Header */}
       <div className="px-4 py-3 border-b border-border shrink-0 flex items-center justify-between">
-        <span className="text-[13px] font-semibold">Image Details</span>
+        <span className="text-[13px] font-semibold">
+          {/\.(mp4|webm|mov)$/i.test(item.path) ? "Video Details" : /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(item.path) ? "Audio Details" : "Image Details"}
+        </span>
         <button
           onClick={onClose}
           className="text-muted-foreground hover:text-foreground transition-colors"
@@ -347,6 +361,13 @@ function MediaDetailPanel({
               className="absolute inset-0 w-full h-full object-cover"
               muted autoPlay loop playsInline
             />
+          ) : /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(item.path) ? (
+            <div className="absolute inset-0 bg-muted flex flex-col items-center justify-center gap-2">
+              <Volume2 className="h-10 w-10 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground font-semibold uppercase">
+                {item.path.split(".").pop()?.toUpperCase()} Audio
+              </span>
+            </div>
           ) : (
             <img
               src={`file://${item.path}`}

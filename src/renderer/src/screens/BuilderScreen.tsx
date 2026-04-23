@@ -236,11 +236,13 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
   const handleAddMedia = async (path: string) => {
     const filename = path.split("/").pop() ?? "Media"
     const isVideo = /\.(mp4|webm|mov)$/i.test(path)
+    const isAudio = /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(path)
+    const label = isVideo ? "Video" : isAudio ? "Audio" : "Image"
     const song = await window.worshipsync.songs.create({
-      title: isVideo ? `Video: ${filename}` : `Image: ${filename}`,
+      title: `${label}: ${filename}`,
       artist: "Media",
       tags: "",
-      sections: [{ type: "interlude" as const, label: isVideo ? "Video" : "Image", lyrics: " ", orderIndex: 0 }],
+      sections: [{ type: "interlude" as const, label, lyrics: " ", orderIndex: 0 }],
     })
     await window.worshipsync.backgrounds.setBackground(song.id, path)
     await loadSongs()

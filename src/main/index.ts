@@ -482,11 +482,12 @@ ipcMain.handle('backgrounds:getDir', () => {
 
 ipcMain.handle('backgrounds:pickImage', async () => {
   const result = await dialog.showOpenDialog({
-    title: 'Choose background image or video',
+    title: 'Choose media file',
     filters: [
-      { name: 'All Media', extensions: ['jpg', 'jpeg', 'png', 'webp', 'mp4', 'webm', 'mov'] },
+      { name: 'All Media', extensions: ['jpg', 'jpeg', 'png', 'webp', 'mp4', 'webm', 'mov', 'mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac'] },
       { name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp'] },
       { name: 'Videos', extensions: ['mp4', 'webm', 'mov'] },
+      { name: 'Audio', extensions: ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac'] },
     ],
     properties: ['openFile']
   })
@@ -513,7 +514,7 @@ ipcMain.handle('backgrounds:listImages', () => {
   const dir = join(app.getPath('userData'), 'backgrounds')
   if (!existsSync(dir)) return []
   return readdirSync(dir)
-    .filter(f => /\.(jpg|jpeg|png|webp|mp4|webm|mov)$/i.test(f))
+    .filter(f => /\.(jpg|jpeg|png|webp|mp4|webm|mov|mp3|wav|ogg|m4a|aac|flac)$/i.test(f))
     .map(f => join(dir, f))
 })
 
@@ -637,7 +638,7 @@ ipcMain.handle('data:export', async () => {
   // Read background images as base64
   const backgrounds: { filename: string; data: string }[] = []
   if (existsSync(bgDir)) {
-    for (const f of readdirSync(bgDir).filter(f => /\.(jpg|jpeg|png|webp|mp4|webm|mov)$/i.test(f))) {
+    for (const f of readdirSync(bgDir).filter(f => /\.(jpg|jpeg|png|webp|mp4|webm|mov|mp3|wav|ogg|m4a|aac|flac)$/i.test(f))) {
       backgrounds.push({ filename: f, data: readFileSync(join(bgDir, f)).toString('base64') })
     }
   }

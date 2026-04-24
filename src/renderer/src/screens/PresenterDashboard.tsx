@@ -26,7 +26,6 @@ import {
   BookOpen,
   Film,
   Volume2,
-  Pause,
   RefreshCw,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -187,6 +186,10 @@ export default function PresenterDashboard({
   const [audioDuration, setAudioDuration] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const vizFrameRef = useRef<number | null>(null);
+  const [waveformBars, setWaveformBars] = useState<number[]>(new Array(48).fill(0));
   const [serviceTime, setServiceTime] = useState("11:00");
   const [serviceTimezone, setServiceTimezone] = useState("America/Los_Angeles");
   const [projectionFontSize, setProjectionFontSize] = useState(48);
@@ -547,10 +550,12 @@ export default function PresenterDashboard({
         clearInterval(countdownIntervalRef.current);
       if (videoTimerRef.current) clearInterval(videoTimerRef.current);
       if (audioTimerRef.current) clearInterval(audioTimerRef.current);
+      if (vizFrameRef.current) cancelAnimationFrame(vizFrameRef.current);
       if (audioRef.current) {
         audioRef.current.pause();
         audioRef.current = null;
       }
+      audioContextRef.current?.close();
     };
   }, []);
 
@@ -716,6 +721,7 @@ export default function PresenterDashboard({
                     videoPreviewRef.current.currentTime = 0;
                   }
                   // Stop audio when switching songs
+                  if (vizFrameRef.current) { cancelAnimationFrame(vizFrameRef.current); vizFrameRef.current = null }
                   if (audioRef.current) {
                     audioRef.current.pause();
                     audioRef.current.currentTime = 0;
@@ -725,9 +731,13 @@ export default function PresenterDashboard({
                     clearInterval(audioTimerRef.current);
                     audioTimerRef.current = null;
                   }
+                  audioContextRef.current?.close();
+                  audioContextRef.current = null;
+                  analyserRef.current = null;
                   setAudioPlaying(false);
                   setAudioCurrentTime(0);
                   setAudioDuration(0);
+                  setWaveformBars(new Array(48).fill(0));
                 }}
                 className={`w-full text-left flex items-center gap-2.5 px-3 py-2.5 border-b border-border transition-colors ${
                   isCurrent
@@ -956,81 +966,168 @@ export default function PresenterDashboard({
               </>
             )
           })()
+        ) : currentSong?.artist === "Media" && /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(resolveBg(currentSong) ?? "") ? (
+          /* ── Audio media — full-panel layout ── */
+          (() => {
+            const bg = resolveBg(currentSong)!
+            const pct = audioDuration ? (audioCurrentTime / audioDuration) * 100 : 0
+            const fmt = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.floor(s % 60)).padStart(2, "0")}`
+            const ext = bg.split(".").pop()?.toUpperCase() ?? "AUDIO"
+
+            const stopViz = () => {
+              if (vizFrameRef.current) { cancelAnimationFrame(vizFrameRef.current); vizFrameRef.current = null }
+              setWaveformBars(new Array(48).fill(0))
+            }
+
+            const startViz = () => {
+              const analyser = analyserRef.current
+              if (!analyser) return
+              const data = new Uint8Array(analyser.frequencyBinCount)
+              const tick = () => {
+                analyser.getByteFrequencyData(data)
+                setWaveformBars(
+                  Array.from({ length: 48 }, (_, i) => {
+                    const idx = Math.floor((i / 48) * data.length)
+                    return data[idx] / 255
+                  })
+                )
+                vizFrameRef.current = requestAnimationFrame(tick)
+              }
+              vizFrameRef.current = requestAnimationFrame(tick)
+            }
+
+            const ensureAudio = () => {
+              if (!audioRef.current) {
+                audioRef.current = new Audio(`file://${encodeURI(bg)}`)
+                audioRef.current.onloadedmetadata = () => setAudioDuration(audioRef.current?.duration ?? 0)
+                audioRef.current.onended = () => {
+                  setAudioPlaying(false); setAudioCurrentTime(0)
+                  if (audioTimerRef.current) { clearInterval(audioTimerRef.current); audioTimerRef.current = null }
+                  stopViz()
+                }
+                // Wire up Web Audio analyser
+                const ctx = new AudioContext()
+                const analyser = ctx.createAnalyser()
+                analyser.fftSize = 128
+                ctx.createMediaElementSource(audioRef.current).connect(analyser)
+                analyser.connect(ctx.destination)
+                audioContextRef.current = ctx
+                analyserRef.current = analyser
+              }
+              return audioRef.current
+            }
+
+            const handlePlay = () => {
+              const audio = ensureAudio()
+              audioContextRef.current?.resume()
+              audio.play()
+              setAudioPlaying(true)
+              if (audioTimerRef.current) clearInterval(audioTimerRef.current)
+              audioTimerRef.current = setInterval(() => setAudioCurrentTime(audioRef.current?.currentTime ?? 0), 100)
+              startViz()
+            }
+
+            const handlePause = () => {
+              audioRef.current?.pause()
+              setAudioPlaying(false)
+              if (audioTimerRef.current) { clearInterval(audioTimerRef.current); audioTimerRef.current = null }
+              stopViz()
+            }
+
+            const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
+              if (!audioDuration || !audioRef.current) return
+              const rect = e.currentTarget.getBoundingClientRect()
+              audioRef.current.currentTime = ((e.clientX - rect.left) / rect.width) * audioDuration
+              setAudioCurrentTime(audioRef.current.currentTime)
+            }
+
+            return (
+              <>
+                {/* Header */}
+                <div className="px-5 py-3 border-b border-border bg-card flex items-center justify-between gap-4 shrink-0">
+                  <div className="min-w-0">
+                    <h1 className="text-base font-semibold truncate">{currentSong.title}</h1>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
+                      <span>Audio</span>
+                      <span>·</span>
+                      <span className="tabular-nums">{fmt(audioDuration)}</span>
+                      <span>·</span>
+                      <span>{ext}</span>
+                    </div>
+                  </div>
+                  <Button variant="secondary" size="sm" className="gap-1.5 h-8 text-xs shrink-0" onClick={() => setShowLibrary(true)}>
+                    <RefreshCw className="h-3.5 w-3.5" /> Replace
+                  </Button>
+                </div>
+
+                {/* Content */}
+                <div className="flex-1 overflow-y-auto bg-muted/30 flex flex-col items-center justify-center p-6">
+                  <div className="w-full max-w-3xl flex flex-col gap-4">
+
+                    {/* Audio thumbnail with waveform visualizer + play/pause overlay */}
+                    <div className="relative rounded-xl overflow-hidden bg-card border border-border shadow-md" style={{ aspectRatio: "16/9" }}>
+                      {/* Waveform bars */}
+                      <div className="w-full h-full flex items-end justify-center gap-px px-6 pt-6 pb-6">
+                        {waveformBars.map((v, i) => (
+                          <div
+                            key={i}
+                            className="flex-1 rounded-sm bg-primary/70"
+                            style={{ height: `${Math.max(3, v * 100)}%` }}
+                          />
+                        ))}
+                      </div>
+                      {/* Idle icon — shown when not playing and no data */}
+                      {!audioPlaying && (
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                          <Volume2 className="h-16 w-16 text-muted-foreground/40" />
+                        </div>
+                      )}
+                      <button
+                        onClick={audioPlaying ? handlePause : handlePlay}
+                        className="absolute inset-0 flex items-center justify-center group"
+                      >
+                        {!audioPlaying && (
+                          <div className="w-16 h-16 rounded-full bg-black/60 border-2 border-white/80 flex items-center justify-center transition-transform group-hover:scale-110">
+                            <Play className="h-8 w-8 text-white fill-white ml-1" />
+                          </div>
+                        )}
+                      </button>
+                    </div>
+
+                    {/* Progress bar */}
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-muted-foreground tabular-nums w-10 text-right shrink-0">{fmt(audioCurrentTime)}</span>
+                      <div
+                        className="flex-1 relative flex items-center cursor-pointer py-2"
+                        onClick={handleSeek}
+                      >
+                        <div className="w-full h-1.5 bg-secondary rounded-full relative">
+                          <div
+                            className="absolute left-0 top-0 h-full bg-primary rounded-full"
+                            style={{ width: `${pct}%` }}
+                          />
+                          <div
+                            className="absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-background border-2 border-primary rounded-full shadow-sm -translate-x-1/2"
+                            style={{ left: `${pct}%` }}
+                          />
+                        </div>
+                      </div>
+                      <span className="text-xs text-muted-foreground tabular-nums w-10 shrink-0">{fmt(audioDuration)}</span>
+                    </div>
+
+                    <p className="text-center text-[11px] text-muted-foreground">
+                      Audio plays through this computer only. Nothing is shown on the projection screen.
+                    </p>
+                  </div>
+                </div>
+              </>
+            )
+          })()
         ) : currentSong?.artist === "Media" ? (
-          /* ── Audio / Image media — centered layout ── */
+          /* ── Image media — centered layout ── */
           <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
             {(() => {
               const bg = resolveBg(currentSong);
-              const isAudio = bg ? /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(bg) : false;
-
-              if (isAudio && bg) {
-                const formatTime = (s: number) => {
-                  const m = Math.floor(s / 60);
-                  const sec = Math.floor(s % 60);
-                  return `${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
-                };
-                return (
-                  <>
-                    <div className="rounded-2xl border border-border bg-card w-full max-w-lg mb-6 flex items-center justify-center" style={{ aspectRatio: "16/9" }}>
-                      <Volume2 className="h-20 w-20 text-muted-foreground" />
-                    </div>
-                    <h2 className="text-lg font-bold mb-1">{currentSong.title}</h2>
-                    <p className="text-sm text-muted-foreground mb-6">Audio · Use controls below to play locally</p>
-                    <div className="w-full max-w-md mb-3">
-                      <div className="relative h-1.5 bg-input rounded-full overflow-hidden cursor-pointer"
-                        onClick={(e) => {
-                          if (!audioRef.current || !audioDuration) return;
-                          const rect = e.currentTarget.getBoundingClientRect();
-                          audioRef.current.currentTime = ((e.clientX - rect.left) / rect.width) * audioDuration;
-                        }}
-                      >
-                        <div className="absolute left-0 top-0 h-full bg-primary rounded-full transition-all"
-                          style={{ width: `${audioDuration ? (audioCurrentTime / audioDuration) * 100 : 0}%` }} />
-                      </div>
-                      <div className="flex justify-between text-[11px] text-muted-foreground mt-1">
-                        <span>{formatTime(audioCurrentTime)}</span>
-                        <span>{formatTime(audioDuration)}</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      {!audioPlaying ? (
-                        <Button size="lg" className="gap-2" onClick={() => {
-                          if (!audioRef.current) {
-                            audioRef.current = new Audio(`file://${encodeURI(bg)}`);
-                            audioRef.current.onloadedmetadata = () => setAudioDuration(audioRef.current?.duration ?? 0);
-                            audioRef.current.onended = () => {
-                              setAudioPlaying(false); setAudioCurrentTime(0);
-                              if (audioTimerRef.current) { clearInterval(audioTimerRef.current); audioTimerRef.current = null; }
-                            };
-                          }
-                          audioRef.current.play();
-                          setAudioPlaying(true);
-                          audioTimerRef.current = setInterval(() => setAudioCurrentTime(audioRef.current?.currentTime ?? 0), 250);
-                        }}>
-                          <Play className="h-5 w-5 fill-current" /> Play Audio
-                        </Button>
-                      ) : (
-                        <>
-                          <Button size="lg" variant="outline" className="gap-2" onClick={() => {
-                            audioRef.current?.pause(); setAudioPlaying(false);
-                            if (audioTimerRef.current) { clearInterval(audioTimerRef.current); audioTimerRef.current = null; }
-                          }}>
-                            <Pause className="h-5 w-5" /> Pause
-                          </Button>
-                          <Button size="lg" variant="destructive" className="gap-2" onClick={() => {
-                            if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; }
-                            setAudioPlaying(false); setAudioCurrentTime(0);
-                            if (audioTimerRef.current) { clearInterval(audioTimerRef.current); audioTimerRef.current = null; }
-                          }}>
-                            <Square className="h-4 w-4 fill-current" /> Stop
-                          </Button>
-                        </>
-                      )}
-                    </div>
-                    <p className="text-[11px] text-muted-foreground mt-6 max-w-sm">Audio plays through this computer only. Nothing is shown on the projection screen.</p>
-                  </>
-                );
-              }
 
               // Image
               return (
@@ -1240,8 +1337,8 @@ export default function PresenterDashboard({
 
         {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto">
-          {/* Live preview — hidden for video items */}
-          {!(currentSong?.artist === "Media" && /\.(mp4|webm|mov)$/i.test(resolveBg(currentSong) ?? "")) && <div className="p-4 border-b border-border">
+          {/* Live preview — hidden for video/audio items */}
+          {!(currentSong?.artist === "Media" && /\.(mp4|webm|mov|mp3|wav|ogg|m4a|aac|flac)$/i.test(resolveBg(currentSong) ?? "")) && <div className="p-4 border-b border-border">
             <div
               className="relative overflow-hidden rounded-md border border-border bg-black flex items-center justify-center"
               style={{ aspectRatio: "16/9", padding: "16px" }}

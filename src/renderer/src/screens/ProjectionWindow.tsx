@@ -27,6 +27,7 @@ export default function ProjectionWindow() {
   const lyricsTextRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const pendingVideoAction = useRef<"play" | "pause" | "stop" | null>(null);
+  const pendingSeekTime = useRef<number | null>(null);
 
   useEffect(() => {
     window.worshipsync.projection.ready();
@@ -61,6 +62,17 @@ export default function ProjectionWindow() {
       }
     });
 
+    const cleanVideoSeek = window.worshipsync.slide.onVideoSeek((time) => {
+      const vid = videoRef.current;
+      if (!vid) {
+        pendingSeekTime.current = time;
+        return;
+      }
+      const wasPlaying = !vid.paused;
+      vid.currentTime = time;
+      if (wasPlaying) vid.play().catch(() => {});
+    });
+
     const cleanVideo = window.worshipsync.slide.onVideoControl((action) => {
       const vid = videoRef.current;
       if (!vid) {
@@ -84,6 +96,7 @@ export default function ProjectionWindow() {
       cleanLogo,
       cleanCountdown,
       cleanVideo,
+      cleanVideoSeek,
     ];
 
     return () => {
@@ -122,16 +135,23 @@ export default function ProjectionWindow() {
     };
   }, [displayState, countdownTarget]);
 
-  // Apply pending video action once the video element mounts
+  // Apply pending video action / seek once the video element mounts
   useEffect(() => {
     if (
       displayState === "slide" &&
       slide?.backgroundPath &&
-      pendingVideoAction.current
+      (pendingVideoAction.current !== null || pendingSeekTime.current !== null)
     ) {
       if (/\.(mp4|webm|mov)$/i.test(slide.backgroundPath)) {
         requestAnimationFrame(() => {
           const vid = videoRef.current;
+          if (vid && pendingSeekTime.current !== null) {
+            const seekTo = pendingSeekTime.current;
+            pendingSeekTime.current = null;
+            const wasPlaying = !vid.paused;
+            vid.currentTime = seekTo;
+            if (wasPlaying) vid.play().catch(() => {});
+          }
           if (vid && pendingVideoAction.current) {
             const action = pendingVideoAction.current;
             pendingVideoAction.current = null;

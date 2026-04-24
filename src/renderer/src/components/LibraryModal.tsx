@@ -337,7 +337,7 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScri
                   <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
                     <div className="px-4 py-2.5 border-b border-border flex items-center justify-between shrink-0">
                       <span className="text-xs text-muted-foreground">
-                        {filteredMedia.length} {filteredMedia.length === 1 ? "image" : "images"}
+                        {filteredMedia.length} {filteredMedia.length === 1 ? "file" : "files"}
                       </span>
                       <Button size="sm" variant="outline" className="gap-1.5 h-7 text-xs" onClick={handleMediaUpload} disabled={mediaUploading}>
                         <Upload className="h-3 w-3" />
@@ -351,7 +351,7 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScri
                         <div className="flex flex-col items-center justify-center py-16 gap-3">
                           <ImageIcon className="h-10 w-10 text-muted-foreground/30" />
                           <p className="text-sm text-muted-foreground">
-                            {search ? "No images match your search" : "No images uploaded yet"}
+                            {search ? "No files match your search" : "No media uploaded yet"}
                           </p>
                           {!search && (
                             <Button size="sm" className="gap-1.5" onClick={handleMediaUpload}>

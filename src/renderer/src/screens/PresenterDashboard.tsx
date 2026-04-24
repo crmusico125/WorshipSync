@@ -821,7 +821,17 @@ export default function PresenterDashboard({ projectionOpen, onProjectionChange,
                   {/* Video progress bar */}
                   {isVideo && (
                     <div className="w-full max-w-md mb-3">
-                      <div className="relative h-1.5 bg-input rounded-full overflow-hidden">
+                      <div
+                        className="relative h-1.5 bg-input rounded-full overflow-hidden cursor-pointer"
+                        onClick={(e) => {
+                          if (!videoDuration) return
+                          const rect = e.currentTarget.getBoundingClientRect()
+                          const ratio = (e.clientX - rect.left) / rect.width
+                          const seekTo = ratio * videoDuration
+                          setVideoCurrentTime(seekTo)
+                          window.worshipsync.slide.videoSeek(seekTo)
+                        }}
+                      >
                         <div
                           className="absolute left-0 top-0 h-full bg-primary rounded-full transition-all"
                           style={{ width: `${videoDuration ? (videoCurrentTime / videoDuration) * 100 : 0}%` }}

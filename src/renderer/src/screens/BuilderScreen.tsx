@@ -525,13 +525,15 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
                       {currentSong.key && ` · Key: ${currentSong.key}`}
                     </p>
                   </div>
-                  <Button
-                    variant="outline" size="sm"
-                    className="gap-1.5 h-8 text-xs shrink-0"
-                    onClick={() => setEditingItemId(currentItem!.id)}
-                  >
-                    <Pencil className="h-3.5 w-3.5" /> Edit Lyrics
-                  </Button>
+                  {currentSong.artist !== 'Media' && currentSong.artist !== 'Scripture' && (
+                    <Button
+                      variant="outline" size="sm"
+                      className="gap-1.5 h-8 text-xs shrink-0"
+                      onClick={() => setEditingItemId(currentItem!.id)}
+                    >
+                      <Pencil className="h-3.5 w-3.5" /> Edit Lyrics
+                    </Button>
+                  )}
                 </div>
               </div>
 
@@ -544,9 +546,11 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
                     <p className="text-xs text-muted-foreground mb-4">
                       Add lyrics and sections to this song to build slides.
                     </p>
-                    <Button size="sm" className="gap-1.5" onClick={() => setEditingItemId(currentItem!.id)}>
-                      <Pencil className="h-3.5 w-3.5" /> Edit Lyrics
-                    </Button>
+                    {currentSong.artist !== 'Media' && currentSong.artist !== 'Scripture' && (
+                      <Button size="sm" className="gap-1.5" onClick={() => setEditingItemId(currentItem!.id)}>
+                        <Pencil className="h-3.5 w-3.5" /> Edit Lyrics
+                      </Button>
+                    )}
                   </div>
                 ) : (
                   <>

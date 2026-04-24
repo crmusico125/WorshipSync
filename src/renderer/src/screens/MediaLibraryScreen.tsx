@@ -13,14 +13,21 @@ interface MediaItem {
   usageCount: number
 }
 
-type CollectionFilter = "all" | "recent" | "unused" | "in-use"
+type CollectionFilter = "all" | "images" | "audio" | "video" | "recent" | "unused" | "in-use"
 
 const COLLECTION_FILTERS: { id: CollectionFilter; label: string }[] = [
   { id: "all", label: "All Media" },
+  { id: "images", label: "Images" },
+  { id: "audio", label: "Audio" },
+  { id: "video", label: "Video" },
   { id: "recent", label: "Recent" },
   { id: "in-use", label: "In Use" },
   { id: "unused", label: "Unused" },
 ]
+
+const isImage = (p: string) => /\.(jpg|jpeg|png|webp)$/i.test(p)
+const isAudioFile = (p: string) => /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(p)
+const isVideoFile = (p: string) => /\.(mp4|webm|mov)$/i.test(p)
 
 // ── Main Screen ───────────────────────────────────────────────────────────────
 
@@ -69,10 +76,11 @@ export default function MediaLibraryScreen() {
   }
 
   const handleDelete = async (item: MediaItem) => {
+    const kind = isVideoFile(item.path) ? "video" : isAudioFile(item.path) ? "audio file" : "image"
     const message =
       item.usageCount > 0
-        ? `This image is used by ${item.usageCount} song${item.usageCount > 1 ? "s" : ""}. Deleting it will remove it from those songs too. Continue?`
-        : "Delete this image from the library?"
+        ? `This ${kind} is used by ${item.usageCount} song${item.usageCount > 1 ? "s" : ""}. Deleting it will remove it from those songs too. Continue?`
+        : `Delete this ${kind} from the library?`
     if (!confirm(message)) return
     await window.worshipsync.backgrounds.deleteImage(item.path)
     if (selectedPath === item.path) setSelectedPath(null)
@@ -86,11 +94,27 @@ export default function MediaLibraryScreen() {
       const q = searchQuery.toLowerCase()
       result = result.filter((i) => i.filename.toLowerCase().includes(q))
     }
-    if (filter === "in-use") result = result.filter((i) => i.usageCount > 0)
+    if (filter === "images") result = result.filter((i) => isImage(i.path))
+    else if (filter === "audio") result = result.filter((i) => isAudioFile(i.path))
+    else if (filter === "video") result = result.filter((i) => isVideoFile(i.path))
+    else if (filter === "in-use") result = result.filter((i) => i.usageCount > 0)
     else if (filter === "unused") result = result.filter((i) => i.usageCount === 0)
     else if (filter === "recent") result = [...result].reverse().slice(0, 20)
     return result
   }, [images, searchQuery, filter])
+
+  // Group by type (only when showing all and not searching)
+  const grouped = useMemo(() => {
+    if (filter !== "all" || searchQuery) return null
+    const groups: { label: string; items: MediaItem[] }[] = []
+    const imgs = filtered.filter((i) => isImage(i.path))
+    const vids = filtered.filter((i) => isVideoFile(i.path))
+    const auds = filtered.filter((i) => isAudioFile(i.path))
+    if (imgs.length) groups.push({ label: "Images", items: imgs })
+    if (vids.length) groups.push({ label: "Video", items: vids })
+    if (auds.length) groups.push({ label: "Audio", items: auds })
+    return groups.length > 0 ? groups : null
+  }, [filtered, filter, searchQuery])
 
   const selectedItem = useMemo(
     () => images.find((i) => i.path === selectedPath) ?? null,
@@ -127,13 +151,13 @@ export default function MediaLibraryScreen() {
           </div>
           {COLLECTION_FILTERS.map((f) => {
             const count =
-              f.id === "all"
-                ? images.length
-                : f.id === "in-use"
-                  ? images.filter((i) => i.usageCount > 0).length
-                  : f.id === "unused"
-                    ? images.filter((i) => i.usageCount === 0).length
-                    : Math.min(images.length, 20)
+              f.id === "all" ? images.length
+              : f.id === "images" ? images.filter((i) => isImage(i.path)).length
+              : f.id === "audio" ? images.filter((i) => isAudioFile(i.path)).length
+              : f.id === "video" ? images.filter((i) => isVideoFile(i.path)).length
+              : f.id === "in-use" ? images.filter((i) => i.usageCount > 0).length
+              : f.id === "unused" ? images.filter((i) => i.usageCount === 0).length
+              : Math.min(images.length, 20)
             return (
               <button
                 key={f.id}
@@ -166,7 +190,7 @@ export default function MediaLibraryScreen() {
               <div className="flex items-start gap-2">
                 <Info className="h-3.5 w-3.5 text-muted-foreground mt-0.5 shrink-0" />
                 <p className="text-[11px] text-muted-foreground leading-relaxed">
-                  Images are shared across all songs and themes. Supported formats: JPG, PNG, WebP.
+                  Media files are shared across all songs. Supported: JPG, PNG, WebP, MP4, WebM, MOV, MP3, WAV, OGG, M4A, AAC, FLAC.
                 </p>
               </div>
             </div>
@@ -213,6 +237,26 @@ export default function MediaLibraryScreen() {
               searching={!!searchQuery}
               onUpload={handleUpload}
             />
+          ) : grouped ? (
+            <div className="flex flex-col gap-8">
+              {grouped.map((group) => (
+                <div key={group.label}>
+                  <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+                    {group.label} <span className="text-muted-foreground/60 font-normal normal-case tracking-normal">({group.items.length})</span>
+                  </h3>
+                  <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-4">
+                    {group.items.map((item) => (
+                      <MediaCard
+                        key={item.path}
+                        item={item}
+                        selected={selectedPath === item.path}
+                        onClick={() => setSelectedPath(selectedPath === item.path ? null : item.path)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : (
             <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-4">
               {filtered.map((item) => (
@@ -421,12 +465,12 @@ function MediaDetailPanel({
           onClick={onDelete}
         >
           <Trash2 className="h-4 w-4" />
-          Delete Image
+          Delete {isVideoFile(item.path) ? "Video" : isAudioFile(item.path) ? "Audio" : "Image"}
         </Button>
 
         {item.usageCount > 0 && (
           <p className="text-[11px] text-muted-foreground leading-relaxed">
-            Deleting this image will remove it from {item.usageCount}{" "}
+            Deleting this {isVideoFile(item.path) ? "video" : isAudioFile(item.path) ? "audio file" : "image"} will remove it from {item.usageCount}{" "}
             {item.usageCount === 1 ? "song" : "songs"} that currently use it as a background.
           </p>
         )}

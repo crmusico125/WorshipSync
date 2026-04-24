@@ -137,6 +137,12 @@ ipcMain.on('slide:videoControl', (_event, action: 'play' | 'pause' | 'stop') => 
   }
 })
 
+ipcMain.on('slide:videoSeek', (_event, time: number) => {
+  if (projectionWindow && !projectionWindow.isDestroyed()) {
+    projectionWindow.webContents.send('slide:videoSeek', time)
+  }
+})
+
 ipcMain.on('projection:ready', () => {
   controlWindow?.webContents.send('projection:ready')
 })
@@ -474,8 +480,18 @@ ipcMain.handle('analytics:recordUsage', (_e, songId: number, serviceDateId: numb
 
 // ── Background / file IPC handlers ───────────────────────────────────────────
 
+const mediaDir = (ext: string) => {
+  const sub =
+    /\.(mp4|webm|mov)$/i.test(ext) ? 'Videos' :
+    /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(ext) ? 'Audio Tracks' :
+    'Pictures'
+  const dir = join(app.getPath('userData'), sub)
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+  return dir
+}
+
 ipcMain.handle('backgrounds:getDir', () => {
-  const dir = join(app.getPath('userData'), 'backgrounds')
+  const dir = join(app.getPath('userData'), 'Pictures')
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
   return dir
 })
@@ -494,10 +510,8 @@ ipcMain.handle('backgrounds:pickImage', async () => {
   if (result.canceled || result.filePaths.length === 0) return null
 
   const srcPath = result.filePaths[0]
-  const dir = join(app.getPath('userData'), 'backgrounds')
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
-
   const ext = extname(srcPath).toLowerCase()
+  const dir = mediaDir(ext)
   const base = basename(srcPath, extname(srcPath))
   // Use original filename; append _2, _3, … if it already exists
   let filename = `${base}${ext}`
@@ -519,11 +533,16 @@ ipcMain.handle('backgrounds:pickImage', async () => {
 })
 
 ipcMain.handle('backgrounds:listImages', () => {
-  const dir = join(app.getPath('userData'), 'backgrounds')
-  if (!existsSync(dir)) return []
-  return readdirSync(dir)
-    .filter(f => /\.(jpg|jpeg|png|webp|mp4|webm|mov|mp3|wav|ogg|m4a|aac|flac)$/i.test(f))
-    .map(f => join(dir, f))
+  const subdirs = ['Pictures', 'Videos', 'Audio Tracks']
+  const files: string[] = []
+  for (const sub of subdirs) {
+    const dir = join(app.getPath('userData'), sub)
+    if (!existsSync(dir)) continue
+    readdirSync(dir)
+      .filter(f => /\.(jpg|jpeg|png|webp|mp4|webm|mov|mp3|wav|ogg|m4a|aac|flac)$/i.test(f))
+      .forEach(f => files.push(join(dir, f)))
+  }
+  return files
 })
 
 ipcMain.handle('songs:setBackground', (_e, songId: number, backgroundPath: string | null) => {
@@ -641,13 +660,13 @@ ipcMain.handle('data:export', async () => {
   })
   if (result.canceled || !result.filePath) return { success: false, canceled: true }
 
-  const bgDir = join(app.getPath('userData'), 'backgrounds')
-
-  // Read background images as base64
-  const backgrounds: { filename: string; data: string }[] = []
-  if (existsSync(bgDir)) {
+  // Read all media files as base64 (store subdir prefix so import can restore to correct folder)
+  const backgrounds: { filename: string; sub: string; data: string }[] = []
+  for (const sub of ['Pictures', 'Videos', 'Audio Tracks']) {
+    const bgDir = join(app.getPath('userData'), sub)
+    if (!existsSync(bgDir)) continue
     for (const f of readdirSync(bgDir).filter(f => /\.(jpg|jpeg|png|webp|mp4|webm|mov|mp3|wav|ogg|m4a|aac|flac)$/i.test(f))) {
-      backgrounds.push({ filename: f, data: readFileSync(join(bgDir, f)).toString('base64') })
+      backgrounds.push({ filename: f, sub, data: readFileSync(join(bgDir, f)).toString('base64') })
     }
   }
 
@@ -709,15 +728,16 @@ ipcMain.handle('data:import', async () => {
     return { success: false, error: 'Invalid or corrupt backup file.' }
   }
 
-  // Write background images, build filename → absolute path map
-  const bgDir = join(app.getPath('userData'), 'backgrounds')
-  if (!existsSync(bgDir)) mkdirSync(bgDir, { recursive: true })
-
+  // Write media files back into their typed subdirectories
   const pathMap: Record<string, string> = {}
   for (const bg of (data.backgrounds ?? [])) {
+    const sub = bg.sub ?? 'Pictures'
+    const bgDir = join(app.getPath('userData'), sub)
+    if (!existsSync(bgDir)) mkdirSync(bgDir, { recursive: true })
     const dest = join(bgDir, bg.filename)
     writeFileSync(dest, Buffer.from(bg.data, 'base64'))
     pathMap[bg.filename] = dest
+    pathMap[`${sub}/${bg.filename}`] = dest
   }
 
   const restorePath = (p: string | null | undefined): string | null => {

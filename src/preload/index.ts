@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('worshipsync', {
     logo: (show: boolean) => ipcRenderer.send('slide:logo', show),
     countdown: (data: { targetTime: string; running: boolean }) => ipcRenderer.send('slide:countdown', data),
     videoControl: (action: 'play' | 'pause' | 'stop') => ipcRenderer.send('slide:videoControl', action),
+    videoSeek: (time: number) => ipcRenderer.send('slide:videoSeek', time),
 
     onShow: (cb: (payload: SlidePayload) => void) => {
       ipcRenderer.on('slide:show', (_e, payload) => cb(payload))
@@ -28,6 +29,10 @@ contextBridge.exposeInMainWorld('worshipsync', {
     onVideoControl: (cb: (action: 'play' | 'pause' | 'stop') => void) => {
       ipcRenderer.on('slide:videoControl', (_e, action) => cb(action))
       return () => ipcRenderer.removeAllListeners('slide:videoControl')
+    },
+    onVideoSeek: (cb: (time: number) => void) => {
+      ipcRenderer.on('slide:videoSeek', (_e, time) => cb(time))
+      return () => ipcRenderer.removeAllListeners('slide:videoSeek')
     }
   },
 

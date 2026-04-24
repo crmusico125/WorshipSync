@@ -1173,9 +1173,11 @@ export default function PresenterDashboard({
                 >
                   <ImageIcon className="h-3 w-3" /> Background
                 </Button>
-                <Button size="sm" className="gap-1.5 h-7 text-xs">
-                  <Pencil className="h-3 w-3" /> Edit Lyrics
-                </Button>
+                {currentSong.artist !== "Scripture" && (
+                  <Button size="sm" className="gap-1.5 h-7 text-xs">
+                    <Pencil className="h-3 w-3" /> Edit Lyrics
+                  </Button>
+                )}
               </div>
             </div>
 

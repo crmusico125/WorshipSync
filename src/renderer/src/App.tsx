@@ -22,16 +22,21 @@ export default function App() {
   const canGoLive = lineupLength > 0 && !!selectedService
 
   const handleGoLive = useCallback(() => {
-    // Explicit Go Live: open projection window + navigate to presenter
-    if (!projectionOpen) {
-      window.worshipsync.window.openProjection()
-      setProjectionOpen(true)
-    }
+    window.worshipsync.window.openProjection()
+    setProjectionOpen(true)
     setCurrentScreen("presenter")
-  }, [projectionOpen])
+  }, [])
 
   const handleExitLive = useCallback(() => {
     setCurrentScreen("builder")
+  }, [])
+
+  useEffect(() => {
+    // Reset projectionOpen if the user closes the projection window from the OS
+    const cleanup = window.worshipsync.window.onProjectionClosed(() => {
+      setProjectionOpen(false)
+    })
+    return cleanup
   }, [])
 
   useEffect(() => {

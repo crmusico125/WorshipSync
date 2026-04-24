@@ -80,6 +80,7 @@ function createProjectionWindow(displayId?: number): void {
   })
 
   projectionWindow.on('closed', () => {
+    controlWindow?.webContents.send('window:projectionClosed')
     projectionWindow = null
   })
 

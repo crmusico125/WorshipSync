@@ -80,6 +80,7 @@ declare global {
         openProjection: (displayId?: number) => void
         closeProjection: () => void
         onProjectionReady: (cb: () => void) => () => void
+        onProjectionClosed: (cb: () => void) => () => void
       }
       projection: {
         ready: () => void

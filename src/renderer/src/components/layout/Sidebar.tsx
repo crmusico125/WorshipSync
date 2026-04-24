@@ -10,6 +10,7 @@ import {
   Church,
   Music,
   Image,
+  LayoutDashboard,
 } from "lucide-react";
 
 interface Props {
@@ -27,6 +28,7 @@ interface NavItem {
 }
 
 const NAV_TOP: NavItem[] = [
+  { id: "overview",  icon: LayoutDashboard, label: "Overview" },
   { id: "presenter", icon: MonitorPlay, label: "Presenter" },
   { id: "planner", icon: Calendar, label: "Planner" },
   { id: "builder", icon: Wrench, label: "Builder" },

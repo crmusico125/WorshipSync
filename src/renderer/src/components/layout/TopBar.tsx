@@ -2,6 +2,7 @@ import React from "react"
 import type { AppScreen } from "../../../../../shared/types"
 
 const TITLES: Record<AppScreen, string> = {
+  overview: "Overview",
   planner: "Planner",
   builder: "Service Builder",
   library: "Song Library",

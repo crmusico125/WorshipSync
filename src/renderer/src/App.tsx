@@ -9,10 +9,11 @@ import ThemesScreen from "./screens/ThemesScreen"
 import AnalyticsScreen from "./screens/AnalyticsScreen"
 import SettingsScreen from "./screens/SettingsScreen"
 import PresenterDashboard from "./screens/PresenterDashboard"
+import OverviewScreen from "./screens/OverviewScreen"
 import { useServiceStore } from "./store/useServiceStore"
 
 export default function App() {
-  const [currentScreen, setCurrentScreen] = useState<AppScreen>("planner")
+  const [currentScreen, setCurrentScreen] = useState<AppScreen>("overview")
   const [projectionOpen, setProjectionOpen] = useState(false)
   const [activeServiceId, setActiveServiceId] = useState<number | null>(null)
 
@@ -57,6 +58,19 @@ export default function App() {
     setCurrentScreen("builder")
   }, [])
 
+  const handleGoLiveWithService = useCallback(async (serviceId: number) => {
+    setActiveServiceId(serviceId)
+    const { loadServices, selectService, services } = useServiceStore.getState()
+    let list = services
+    if (list.length === 0) {
+      await loadServices()
+      list = useServiceStore.getState().services
+    }
+    const svc = list.find((s) => s.id === serviceId)
+    if (svc) await selectService(svc)
+    handleGoLive()
+  }, [handleGoLive])
+
   return (
     <div className="h-screen flex bg-background text-foreground">
       <Sidebar
@@ -77,6 +91,13 @@ export default function App() {
           </span>
         </div>
         <div className="flex-1 overflow-hidden">
+          {currentScreen === "overview" && (
+            <OverviewScreen
+              onGoLive={handleGoLiveWithService}
+              onOpenBuilder={handleOpenBuilder}
+              onNavigate={setCurrentScreen}
+            />
+          )}
           {currentScreen === "planner" && (
             <PlannerScreen
               onOpenBuilder={handleOpenBuilder}

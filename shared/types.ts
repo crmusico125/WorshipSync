@@ -1,4 +1,5 @@
 export type AppScreen =
+  | "overview"
   | "planner"
   | "builder"
   | "library"

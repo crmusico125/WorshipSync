@@ -84,6 +84,8 @@ contextBridge.exposeInMainWorld('worshipsync', {
     reorder:        (serviceDateId: number, ids: number[])     => ipcRenderer.invoke('lineup:reorder', serviceDateId, ids),
     toggleSection:  (lineupItemId: number, sectionId: number, included: boolean) =>
                         ipcRenderer.invoke('lineup:toggleSection', lineupItemId, sectionId, included),
+    setSections:    (lineupItemId: number, sectionIds: number[]) =>
+                        ipcRenderer.invoke('lineup:setSections', lineupItemId, sectionIds),
   },
   themes: {
     getAll:     ()                    => ipcRenderer.invoke('themes:getAll'),

@@ -109,6 +109,7 @@ declare global {
         removeSong:     (lineupItemId: number) => Promise<boolean>
         reorder:        (serviceDateId: number, ids: number[]) => Promise<boolean>
         toggleSection:  (lineupItemId: number, sectionId: number, included: boolean) => Promise<number[]>
+        setSections:    (lineupItemId: number, sectionIds: number[]) => Promise<number[]>
       }
       themes: {
         getAll:     () => Promise<Theme[]>

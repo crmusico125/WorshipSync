@@ -401,6 +401,14 @@ ipcMain.handle('lineup:toggleSection', (_e, lineupItemId: number, sectionId: num
   return updated
 })
 
+ipcMain.handle('lineup:setSections', (_e, lineupItemId: number, sectionIds: number[]) => {
+  db.update(lineupItems)
+    .set({ selectedSections: JSON.stringify(sectionIds) })
+    .where(eq(lineupItems.id, lineupItemId))
+    .run()
+  return sectionIds
+})
+
 // ── Theme IPC handlers ────────────────────────────────────────────────────────
 
 ipcMain.handle('themes:getAll', () => {

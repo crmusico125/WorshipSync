@@ -193,6 +193,7 @@ export default function PresenterDashboard({
   const [serviceTime, setServiceTime] = useState("11:00");
   const [serviceTimezone, setServiceTimezone] = useState("America/Los_Angeles");
   const [projectionFontSize, setProjectionFontSize] = useState(48);
+  const [churchName, setChurchName] = useState("");
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
     null,
   );
@@ -228,6 +229,7 @@ export default function PresenterDashboard({
         if (state.serviceTimezone) setServiceTimezone(state.serviceTimezone);
         if (state.projectionFontSize)
           setProjectionFontSize(state.projectionFontSize);
+        if (state.churchName) setChurchName(state.churchName);
       })
       .catch(() => {});
   }, []);
@@ -473,44 +475,38 @@ export default function PresenterDashboard({
 
   // ── Countdown ───────────────────────────────────────────────────────────
   const getTargetTime = useCallback(() => {
-    // Build today's service time in the configured timezone
-    const now = new Date();
-    const dateStr = now.toLocaleDateString("en-CA", {
-      timeZone: serviceTimezone,
-    }); // YYYY-MM-DD
+    // Use the actual service date from the lineup, combined with the configured start time
+    const dateStr = selectedService?.date ?? new Date().toLocaleDateString("en-CA", { timeZone: serviceTimezone });
     return `${dateStr}T${serviceTime}:00`;
-  }, [serviceTime, serviceTimezone]);
+  }, [serviceTime, serviceTimezone, selectedService]);
 
   const computeCountdownDisplay = useCallback(() => {
-    // Convert to timezone-aware target
+    const targetStr = selectedService?.date
+      ? `${selectedService.date}T${serviceTime}:00`
+      : `${new Date().toLocaleDateString("en-CA", { timeZone: serviceTimezone })}T${serviceTime}:00`;
+
+    // Get current time expressed in the service timezone so the diff is timezone-correct
     const formatter = new Intl.DateTimeFormat("en-US", {
       timeZone: serviceTimezone,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
     });
-    // Get current time in the service timezone
     const nowParts = formatter.formatToParts(new Date());
-    const getPart = (type: string) =>
-      nowParts.find((p) => p.type === type)?.value ?? "0";
-    const nowInTz = new Date(
-      `${getPart("year")}-${getPart("month")}-${getPart("day")}T${getPart("hour")}:${getPart("minute")}:${getPart("second")}`,
-    );
-    const targetInTz = new Date(
-      `${new Date().toLocaleDateString("en-CA", { timeZone: serviceTimezone })}T${serviceTime}:00`,
-    );
+    const p = (t: string) => nowParts.find((x) => x.type === t)?.value ?? "0";
+    const nowInTz = new Date(`${p("year")}-${p("month")}-${p("day")}T${p("hour")}:${p("minute")}:${p("second")}`);
+    const targetInTz = new Date(targetStr);
 
     const diff = targetInTz.getTime() - nowInTz.getTime();
     if (diff <= 0) return "00:00:00";
-    const h = Math.floor(diff / 3600000);
+    const d = Math.floor(diff / 86400000);
+    const h = Math.floor((diff % 86400000) / 3600000);
     const m = Math.floor((diff % 3600000) / 60000);
     const s = Math.floor((diff % 60000) / 1000);
-    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-  }, [getTargetTime, serviceTimezone, serviceTime]);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return d > 0
+      ? `${pad(d)}d ${pad(h)}:${pad(m)}:${pad(s)}`
+      : `${pad(h)}:${pad(m)}:${pad(s)}`;
+  }, [serviceTime, serviceTimezone, selectedService]);
 
   const startCountdown = useCallback(() => {
     setCountdownRunning(true);
@@ -1339,82 +1335,141 @@ export default function PresenterDashboard({
 
         {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto">
-          {/* Live preview — hidden for video/audio items */}
-          {!(currentSong?.artist === "Media" && /\.(mp4|webm|mov|mp3|wav|ogg|m4a|aac|flac)$/i.test(resolveBg(currentSong) ?? "")) && <div className="p-4 border-b border-border">
-            <div
-              className="relative overflow-hidden rounded-md border border-border bg-black flex items-center justify-center"
-              style={{ aspectRatio: "16/9", padding: "16px" }}
-            >
-              {effectiveBg && currentSlide && !isBlank && (
-                <img
-                  src={`file://${effectiveBg}`}
-                  className="absolute inset-0 w-full h-full object-cover"
-                  alt=""
-                />
-              )}
-              {effectiveBg && currentSlide && !isBlank && (
-                <div
-                  className="absolute inset-0"
-                  style={{
-                    background: `rgba(0,0,0,${effectiveTheme.overlayOpacity / 100})`,
-                  }}
-                />
-              )}
-              {currentSlide && !isBlank ? (
-                <span
-                  className="relative z-10 text-center font-bold text-xs leading-relaxed whitespace-pre-wrap"
-                  style={{
-                    color: effectiveTheme.textColor,
-                    fontFamily: effectiveTheme.fontFamily,
-                    textAlign: effectiveTheme.textAlign,
-                    textShadow: `0 1px 4px rgba(0,0,0,${effectiveTheme.textShadowOpacity / 100})`,
-                    width: "100%",
-                  }}
-                >
-                  {currentSlide.lines.join("\n")}
+          {/* Preview — conditional by item type */}
+          {currentSong?.itemType === "countdown" ? (
+            /* ── Countdown mini-preview ── */
+            <div className="p-4 border-b border-border">
+              {(() => {
+                const previewTarget = new Date(getTargetTime()).getTime()
+                const previewDiff = Math.max(0, previewTarget - Date.now())
+                const pd = Math.floor(previewDiff / 86400000)
+                const ph = Math.floor((previewDiff % 86400000) / 3600000)
+                const pm = Math.floor((previewDiff % 3600000) / 60000)
+                const ps = Math.floor((previewDiff % 60000) / 1000)
+                const pad = (n: number) => String(n).padStart(2, "0")
+                const showHours = pd > 0 || ph > 0
+
+                const Seg = ({ value, label }: { value: number; label: string }) => (
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                    <div style={{ fontFamily: "Montserrat, sans-serif", fontSize: 160, fontWeight: 800, color: "#fff", lineHeight: 1, letterSpacing: "0.03em" }}>{pad(value)}</div>
+                    <div style={{ fontFamily: "Montserrat, sans-serif", fontSize: 15, fontWeight: 600, color: "rgba(255,255,255,0.5)", letterSpacing: "0.25em", textTransform: "uppercase" as const, marginTop: 8 }}>{label}</div>
+                  </div>
+                )
+                const Col = () => (
+                  <div style={{ fontFamily: "Montserrat, sans-serif", fontSize: 120, fontWeight: 800, color: "rgba(255,255,255,0.4)", lineHeight: 1, paddingBottom: 32, alignSelf: "flex-end" as const, margin: "0 8px" }}>:</div>
+                )
+
+                return (
+                  <div style={{ position: "relative", overflow: "hidden", borderRadius: "6px", aspectRatio: "16/9", border: "1px solid hsl(var(--border))" }}>
+                    <div style={{
+                      position: "absolute", top: 0, left: 0,
+                      width: "1920px", height: "1080px",
+                      transform: "scale(0.14)", transformOrigin: "top left",
+                      background: "linear-gradient(to bottom, rgba(0,0,0,0.52) 0%, rgba(0,0,0,0.62) 100%), linear-gradient(135deg, #1a1a2e 0%, #16213e 60%, #0f3460 100%)",
+                      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+                    }}>
+                      <div style={{ fontFamily: "Montserrat, sans-serif", fontSize: 52, fontWeight: 800, color: "#fff", letterSpacing: "0.38em", textTransform: "uppercase" as const, marginBottom: 14 }}>Welcome</div>
+                      <div style={{ fontFamily: "Montserrat, sans-serif", fontSize: 24, fontWeight: 400, color: "rgba(255,255,255,0.82)", marginBottom: 36 }}>Our Sunday Service will begin in</div>
+                      <div style={{ display: "flex", alignItems: "flex-end", marginBottom: 36 }}>
+                        {pd > 0 && <><Seg value={pd} label="Days" /><Col /></>}
+                        {showHours && <><Seg value={ph} label="Hours" /><Col /></>}
+                        <Seg value={pm} label="Minutes" /><Col />
+                        <Seg value={ps} label="Seconds" />
+                      </div>
+                      <div style={{ fontFamily: "Montserrat, sans-serif", fontSize: 20, fontWeight: 400, color: "rgba(255,255,255,0.65)" }}>Please find your seats and silence your devices</div>
+                      {churchName && (
+                        <div style={{ position: "absolute", bottom: 36, display: "flex", alignItems: "center", gap: 10 }}>
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                            <polyline points="9 22 9 12 15 12 15 22" />
+                          </svg>
+                          <div style={{ fontFamily: "Montserrat, sans-serif", fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.35)", letterSpacing: "0.2em", textTransform: "uppercase" as const }}>{churchName}</div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })()}
+              <p className="text-[11px] text-muted-foreground mt-2 text-center">Countdown preview</p>
+            </div>
+          ) : !(currentSong?.artist === "Media" && /\.(mp4|webm|mov|mp3|wav|ogg|m4a|aac|flac)$/i.test(resolveBg(currentSong) ?? "")) && (
+            /* ── Standard slide preview ── */
+            <div className="p-4 border-b border-border">
+              <div
+                className="relative overflow-hidden rounded-md border border-border bg-black flex items-center justify-center"
+                style={{ aspectRatio: "16/9", padding: "16px" }}
+              >
+                {effectiveBg && currentSlide && !isBlank && (
+                  <img
+                    src={`file://${effectiveBg}`}
+                    className="absolute inset-0 w-full h-full object-cover"
+                    alt=""
+                  />
+                )}
+                {effectiveBg && currentSlide && !isBlank && (
+                  <div
+                    className="absolute inset-0"
+                    style={{
+                      background: `rgba(0,0,0,${effectiveTheme.overlayOpacity / 100})`,
+                    }}
+                  />
+                )}
+                {currentSlide && !isBlank ? (
+                  <span
+                    className="relative z-10 text-center font-bold text-xs leading-relaxed whitespace-pre-wrap"
+                    style={{
+                      color: effectiveTheme.textColor,
+                      fontFamily: effectiveTheme.fontFamily,
+                      textAlign: effectiveTheme.textAlign,
+                      textShadow: `0 1px 4px rgba(0,0,0,${effectiveTheme.textShadowOpacity / 100})`,
+                      width: "100%",
+                    }}
+                  >
+                    {currentSlide.lines.join("\n")}
+                  </span>
+                ) : (
+                  <div className="relative z-10 flex items-center justify-center h-full">
+                    {isBlank ? (
+                      <MonitorOff className="h-5 w-5 text-gray-700" />
+                    ) : (
+                      <p className="text-xs text-gray-600">No slide active</p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Info row */}
+              <div className="flex justify-between items-center mt-2 text-[11px] text-muted-foreground font-medium">
+                <span>
+                  {selectedDisplay
+                    ? `${selectedDisplay.width} × ${selectedDisplay.height}`
+                    : "—"}
                 </span>
-              ) : (
-                <div className="relative z-10 flex items-center justify-center h-full">
-                  {isBlank ? (
-                    <MonitorOff className="h-5 w-5 text-gray-700" />
-                  ) : (
-                    <p className="text-xs text-gray-600">No slide active</p>
-                  )}
-                </div>
-              )}
-            </div>
+                <span>
+                  {activeSlideIdx >= 0
+                    ? `Slide ${activeSlideIdx + 1} / ${totalSlides}`
+                    : "—"}
+                </span>
+              </div>
 
-            {/* Info row */}
-            <div className="flex justify-between items-center mt-2 text-[11px] text-muted-foreground font-medium">
-              <span>
-                {selectedDisplay
-                  ? `${selectedDisplay.width} × ${selectedDisplay.height}`
-                  : "—"}
-              </span>
-              <span>
-                {activeSlideIdx >= 0
-                  ? `Slide ${activeSlideIdx + 1} / ${totalSlides}`
-                  : "—"}
-              </span>
+              {/* Prev / Next */}
+              <div className="flex gap-2 mt-3">
+                <button
+                  onClick={goPrevSlide}
+                  disabled={activeSlideIdx <= 0}
+                  className="flex-1 py-2 bg-background border border-border rounded-md text-xs font-semibold flex items-center justify-center gap-1 hover:bg-accent/40 transition-colors disabled:opacity-40"
+                >
+                  <ChevronLeft className="h-4 w-4" /> Prev
+                </button>
+                <button
+                  onClick={goNextSlide}
+                  className="flex-1 py-2 bg-background border border-border rounded-md text-xs font-semibold flex items-center justify-center gap-1 hover:bg-accent/40 transition-colors"
+                >
+                  Next <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
             </div>
-
-            {/* Prev / Next */}
-            <div className="flex gap-2 mt-3">
-              <button
-                onClick={goPrevSlide}
-                disabled={activeSlideIdx <= 0}
-                className="flex-1 py-2 bg-background border border-border rounded-md text-xs font-semibold flex items-center justify-center gap-1 hover:bg-accent/40 transition-colors disabled:opacity-40"
-              >
-                <ChevronLeft className="h-4 w-4" /> Prev
-              </button>
-              <button
-                onClick={goNextSlide}
-                className="flex-1 py-2 bg-background border border-border rounded-md text-xs font-semibold flex items-center justify-center gap-1 hover:bg-accent/40 transition-colors"
-              >
-                Next <ChevronRight className="h-4 w-4" />
-              </button>
-            </div>
-          </div>}
+          )}
 
           {/* Quick Actions */}
           <div className="p-4 border-b border-border">

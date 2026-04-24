@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { Download, Upload, CheckCircle2, AlertCircle, Database, Clock, Type } from "lucide-react"
+import { Download, Upload, CheckCircle2, AlertCircle, Database, Clock, Type, Church } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select } from "@/components/ui/select"
@@ -34,13 +34,24 @@ export default function SettingsScreen() {
   const [projectionFontSize, setProjectionFontSize] = useState(48)
   const [fontSizeSaved, setFontSizeSaved] = useState(false)
 
+  // Church name
+  const [churchName, setChurchName] = useState("")
+  const [churchNameSaved, setChurchNameSaved] = useState(false)
+
   useEffect(() => {
     window.worshipsync.appState.get().then((state: Record<string, any>) => {
       if (state.serviceTime) setServiceTime(state.serviceTime)
       if (state.serviceTimezone) setServiceTimezone(state.serviceTimezone)
       if (state.projectionFontSize) setProjectionFontSize(state.projectionFontSize)
+      if (state.churchName) setChurchName(state.churchName)
     }).catch(() => {})
   }, [])
+
+  const handleSaveChurchName = async () => {
+    await window.worshipsync.appState.set({ churchName })
+    setChurchNameSaved(true)
+    setTimeout(() => setChurchNameSaved(false), 2000)
+  }
 
   const handleSaveTime = async () => {
     await window.worshipsync.appState.set({ serviceTime, serviceTimezone })
@@ -86,6 +97,39 @@ export default function SettingsScreen() {
             Configure your service defaults and manage data.
           </p>
         </div>
+
+        {/* ── Church name card ─────────────────────────────────────────── */}
+        <section className="rounded-2xl border border-border bg-card shadow-elevation-1 p-5">
+          <div className="flex items-start gap-3 mb-4">
+            <div className="h-10 w-10 rounded-xl bg-primary/15 flex items-center justify-center shrink-0">
+              <Church className="h-5 w-5 text-primary" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <h2 className="text-sm font-semibold text-foreground">Church name</h2>
+              <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                Displayed at the bottom of the countdown screen on the projection window.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-col gap-3">
+            <Input
+              type="text"
+              placeholder="e.g. Grace Community Church"
+              value={churchName}
+              onChange={(e) => setChurchName(e.target.value)}
+            />
+            <div className="flex items-center gap-3">
+              <Button size="sm" className="gap-1.5" onClick={handleSaveChurchName}>
+                Save
+              </Button>
+              {churchNameSaved && (
+                <span className="text-xs text-green-500 flex items-center gap-1">
+                  <CheckCircle2 className="h-3.5 w-3.5" /> Saved
+                </span>
+              )}
+            </div>
+          </div>
+        </section>
 
         {/* ── Service start time card ──────────────────────────────────── */}
         <section className="rounded-2xl border border-border bg-card shadow-elevation-1 p-5">

@@ -19,7 +19,8 @@ export default function ProjectionWindow() {
   const [slide, setSlide] = useState<SlidePayload | null>(null);
   const [displayState, setDisplayState] = useState<DisplayState>("blank");
   const [countdownTarget, setCountdownTarget] = useState<string>("");
-  const [countdownDisplay, setCountdownDisplay] = useState("00:00:00");
+  const [countdownParts, setCountdownParts] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+  const [churchName, setChurchName] = useState("");
   const [scaledFontSize, setScaledFontSize] = useState<number>(48);
   const cleanupRef = useRef<(() => void)[]>([]);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -31,6 +32,9 @@ export default function ProjectionWindow() {
 
   useEffect(() => {
     window.worshipsync.projection.ready();
+    window.worshipsync.appState.get().then((s) => {
+      if (s.churchName) setChurchName(s.churchName);
+    }).catch(() => {});
 
     const cleanSlide = window.worshipsync.slide.onShow((payload) => {
       setSlide(payload);
@@ -114,15 +118,15 @@ export default function ProjectionWindow() {
       const now = Date.now();
       const diff = target - now;
       if (diff <= 0) {
-        setCountdownDisplay("00:00:00");
+        setCountdownParts({ days: 0, hours: 0, minutes: 0, seconds: 0 });
         return;
       }
-      const h = Math.floor(diff / 3600000);
-      const m = Math.floor((diff % 3600000) / 60000);
-      const s = Math.floor((diff % 60000) / 1000);
-      setCountdownDisplay(
-        `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`,
-      );
+      setCountdownParts({
+        days:    Math.floor(diff / 86400000),
+        hours:   Math.floor((diff % 86400000) / 3600000),
+        minutes: Math.floor((diff % 3600000) / 60000),
+        seconds: Math.floor((diff % 60000) / 1000),
+      });
     };
 
     tick();
@@ -318,38 +322,141 @@ export default function ProjectionWindow() {
             position: "absolute",
             inset: 0,
             zIndex: 10,
-            background: "#000",
+            background: "linear-gradient(to bottom, rgba(0,0,0,0.52) 0%, rgba(0,0,0,0.62) 100%), linear-gradient(135deg, #1a1a2e 0%, #16213e 60%, #0f3460 100%)",
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
             justifyContent: "center",
           }}
         >
+          {/* WELCOME */}
           <div
             style={{
               fontFamily: "Montserrat, sans-serif",
-              fontSize: 18,
-              fontWeight: 500,
-              color: "rgba(255,255,255,0.4)",
-              letterSpacing: "0.15em",
+              fontSize: 52,
+              fontWeight: 800,
+              color: "#ffffff",
+              letterSpacing: "0.38em",
               textTransform: "uppercase",
-              marginBottom: 24,
+              marginBottom: 14,
             }}
           >
-            Service starts in
+            Welcome
           </div>
+
+          {/* Subtitle */}
           <div
             style={{
-              fontFamily: "'Courier New', Courier, monospace",
-              fontSize: 120,
-              fontWeight: 700,
-              color: "#ffffff",
-              letterSpacing: "0.05em",
-              textShadow: "0 0 40px rgba(255,255,255,0.15)",
+              fontFamily: "Montserrat, sans-serif",
+              fontSize: 24,
+              fontWeight: 400,
+              color: "rgba(255,255,255,0.82)",
+              letterSpacing: "0.01em",
+              marginBottom: 36,
             }}
           >
-            {countdownDisplay}
+            Our Sunday Service will begin in
           </div>
+
+          {/* Countdown segments */}
+          {(() => {
+            const { days, hours, minutes, seconds } = countdownParts;
+            const showHours = days > 0 || hours > 0;
+            const pad = (n: number) => String(n).padStart(2, "0");
+
+            const Segment = ({ value, label }: { value: number; label: string }) => (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                <div style={{
+                  fontFamily: "Montserrat, sans-serif",
+                  fontSize: 160,
+                  fontWeight: 800,
+                  color: "#ffffff",
+                  letterSpacing: "0.03em",
+                  lineHeight: 1,
+                  textShadow: "0 4px 40px rgba(0,0,0,0.5)",
+                }}>
+                  {pad(value)}
+                </div>
+                <div style={{
+                  fontFamily: "Montserrat, sans-serif",
+                  fontSize: 15,
+                  fontWeight: 600,
+                  color: "rgba(255,255,255,0.5)",
+                  letterSpacing: "0.25em",
+                  textTransform: "uppercase",
+                  marginTop: 8,
+                }}>
+                  {label}
+                </div>
+              </div>
+            );
+
+            const Colon = () => (
+              <div style={{
+                fontFamily: "Montserrat, sans-serif",
+                fontSize: 120,
+                fontWeight: 800,
+                color: "rgba(255,255,255,0.4)",
+                lineHeight: 1,
+                paddingBottom: 32,
+                alignSelf: "flex-end",
+                margin: "0 8px",
+              }}>:</div>
+            );
+
+            return (
+              <div style={{ display: "flex", alignItems: "flex-end", marginBottom: 36 }}>
+                {days > 0 && <><Segment value={days}    label="Days"    /><Colon /></>}
+                {showHours && <><Segment value={hours}   label="Hours"   /><Colon /></>}
+                <Segment value={minutes} label="Minutes" />
+                <Colon />
+                <Segment value={seconds} label="Seconds" />
+              </div>
+            );
+          })()}
+
+          {/* Please find your seats */}
+          <div
+            style={{
+              fontFamily: "Montserrat, sans-serif",
+              fontSize: 20,
+              fontWeight: 400,
+              color: "rgba(255,255,255,0.65)",
+              letterSpacing: "0.02em",
+            }}
+          >
+            Please find your seats and silence your devices
+          </div>
+
+          {/* Bottom branding */}
+          {churchName && (
+            <div
+              style={{
+                position: "absolute",
+                bottom: 36,
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                <polyline points="9 22 9 12 15 12 15 22" />
+              </svg>
+              <div
+                style={{
+                  fontFamily: "Montserrat, sans-serif",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: "rgba(255,255,255,0.35)",
+                  letterSpacing: "0.2em",
+                  textTransform: "uppercase",
+                }}
+              >
+                {churchName}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

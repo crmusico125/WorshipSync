@@ -55,7 +55,7 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScri
     ;(async () => {
       setLoading(true)
       const all = await window.worshipsync.songs.getAll()
-      setSongs((all as SongRow[]).filter((s) => !excludeIds.includes(s.id)))
+      setSongs((all as SongRow[]).filter((s) => !excludeIds.includes(s.id) && s.artist !== "Scripture" && s.artist !== "Media"))
       setLoading(false)
     })()
   }, [])
@@ -67,7 +67,7 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScri
       const result = search.trim()
         ? await window.worshipsync.songs.search(search)
         : await window.worshipsync.songs.getAll()
-      setSongs((result as SongRow[]).filter((s) => !excludeIds.includes(s.id)))
+      setSongs((result as SongRow[]).filter((s) => !excludeIds.includes(s.id) && s.artist !== "Scripture" && s.artist !== "Media"))
       setLoading(false)
     }, 150)
     return () => clearTimeout(timer)

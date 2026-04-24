@@ -22,16 +22,16 @@ export const useSongStore = create<SongStore>((set, get) => ({
 
   loadSongs: async () => {
     set({ loading: true })
-    const songs = await window.worshipsync.songs.getAll()
-    set({ songs, loading: false })
+    const all = await window.worshipsync.songs.getAll()
+    set({ songs: all.filter((s) => s.artist !== "Scripture" && s.artist !== "Media"), loading: false })
   },
 
   searchSongs: async (q: string) => {
     set({ searchQuery: q, loading: true })
-    const songs = q.trim()
+    const all = q.trim()
       ? await window.worshipsync.songs.search(q)
       : await window.worshipsync.songs.getAll()
-    set({ songs, loading: false })
+    set({ songs: all.filter((s) => s.artist !== "Scripture" && s.artist !== "Media"), loading: false })
   },
 
   selectSong: async (id: number) => {

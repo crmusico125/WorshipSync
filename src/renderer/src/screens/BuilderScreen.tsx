@@ -334,7 +334,7 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
               weekday: "long", month: "long", day: "numeric",
             })}
             {" · "}
-            {lineup.length} {lineup.length === 1 ? "song" : "songs"}
+            {lineup.length} {lineup.length === 1 ? "item" : "items"}
           </p>
         </div>
 
@@ -370,7 +370,7 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
               Lineup
             </span>
             <span className="text-[10px] text-muted-foreground">
-              {lineup.length} {lineup.length === 1 ? "song" : "songs"}
+              {lineup.length} {lineup.length === 1 ? "item" : "items"}
             </span>
           </div>
 

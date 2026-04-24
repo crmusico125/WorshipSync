@@ -4,7 +4,7 @@ import { join, extname, basename } from 'path'
 import { copyFileSync, mkdirSync, existsSync, readdirSync, unlinkSync, readFileSync, writeFileSync } from 'fs'
 import { db } from './db/index'
 import { songs, sections, serviceDates, lineupItems, themes, songUsage } from './db/schema'
-import { asc, desc, eq, like, or, count } from 'drizzle-orm'
+import { asc, desc, eq, ne, and, like, or, count } from 'drizzle-orm'
 import { runMigrations } from './db/migrate'
 import { seedIfEmpty } from './db/seed'
 
@@ -282,9 +282,18 @@ ipcMain.handle('services:delete', (_e, id: number) => {
 ipcMain.handle('services:getAllWithCounts', () => {
   const all = db.select().from(serviceDates).orderBy(desc(serviceDates.date)).all()
   return all.map(service => {
-    const row = db.select({ count: count() }).from(lineupItems)
+    const songRow = db.select({ count: count() })
+      .from(lineupItems)
+      .leftJoin(songs, eq(lineupItems.songId, songs.id))
+      .where(and(
+        eq(lineupItems.serviceDateId, service.id),
+        eq(lineupItems.itemType, 'song'),
+        ne(songs.artist, 'Scripture'),
+        ne(songs.artist, 'Media'),
+      )).get()
+    const totalRow = db.select({ count: count() }).from(lineupItems)
       .where(eq(lineupItems.serviceDateId, service.id)).get()
-    return { ...service, itemCount: row?.count ?? 0 }
+    return { ...service, songCount: songRow?.count ?? 0, itemCount: totalRow?.count ?? 0 }
   })
 })
 

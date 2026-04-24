@@ -61,7 +61,8 @@ export default function PlannerScreen({ onOpenService, onGoLive }: Props) {
   } = useServiceStore()
   const [showNew, setShowNew] = useState(false)
   const [initializing, setInitializing] = useState(false)
-  const [lineupCounts, setLineupCounts] = useState<Record<number, number>>({})
+  const [songCounts, setSongCounts] = useState<Record<number, number>>({})
+  const [itemCounts, setItemCounts] = useState<Record<number, number>>({})
 
   useEffect(() => { loadServices() }, [])
 
@@ -69,9 +70,11 @@ export default function PlannerScreen({ onOpenService, onGoLive }: Props) {
   useEffect(() => {
     if (services.length === 0) return
     window.worshipsync.services.getAllWithCounts().then((rows: any[]) => {
-      const counts: Record<number, number> = {}
-      rows.forEach((r) => { counts[r.id] = r.itemCount })
-      setLineupCounts(counts)
+      const songs: Record<number, number> = {}
+      const items: Record<number, number> = {}
+      rows.forEach((r) => { songs[r.id] = r.songCount; items[r.id] = r.itemCount })
+      setSongCounts(songs)
+      setItemCounts(items)
     }).catch(() => {})
   }, [services])
 
@@ -123,7 +126,8 @@ export default function PlannerScreen({ onOpenService, onGoLive }: Props) {
         {nextService && (
           <NextServiceHero
             service={nextService}
-            itemCount={lineupCounts[nextService.id] ?? 0}
+            songCount={songCounts[nextService.id] ?? 0}
+            itemCount={itemCounts[nextService.id] ?? 0}
             onPrepare={() => openInBuilder(nextService)}
             onGoLive={() => goLive(nextService)}
           />
@@ -156,7 +160,7 @@ export default function PlannerScreen({ onOpenService, onGoLive }: Props) {
                 <ServiceRow
                   key={service.id}
                   service={service}
-                  itemCount={lineupCounts[service.id] ?? 0}
+                  itemCount={itemCounts[service.id] ?? 0}
                   onOpen={() => openInBuilder(service)}
                   onDelete={() => { if (confirm("Delete this service?")) deleteService(service.id) }}
                 />
@@ -176,7 +180,7 @@ export default function PlannerScreen({ onOpenService, onGoLive }: Props) {
                 <ServiceRow
                   key={service.id}
                   service={service}
-                  itemCount={lineupCounts[service.id] ?? 0}
+                  itemCount={itemCounts[service.id] ?? 0}
                   past
                   onOpen={() => openInBuilder(service)}
                   onDelete={() => { if (confirm("Delete this service?")) deleteService(service.id) }}
@@ -203,9 +207,10 @@ export default function PlannerScreen({ onOpenService, onGoLive }: Props) {
 // ── Next Service Hero ────────────────────────────────────────────────────────
 
 function NextServiceHero({
-  service, itemCount, onPrepare, onGoLive,
+  service, songCount, itemCount, onPrepare, onGoLive,
 }: {
   service: any
+  songCount: number
   itemCount: number
   onPrepare: () => void
   onGoLive: () => void
@@ -216,10 +221,10 @@ function NextServiceHero({
 
   const checks = useMemo(() => [
     { label: "Service date created", done: true },
-    { label: "Songs added to lineup", done: itemCount > 0 },
-    { label: "At least 3 songs", done: itemCount >= 3 },
+    { label: "Songs added to lineup", done: songCount > 0 },
+    { label: "At least 3 songs", done: songCount >= 3 },
     { label: "Marked as ready", done: service.status === "ready" },
-  ], [itemCount, service.status])
+  ], [songCount, service.status])
 
   const completedCount = checks.filter((c) => c.done).length
   const progress = (completedCount / checks.length) * 100
@@ -317,14 +322,14 @@ function NextServiceHero({
             <span className="text-sm text-foreground">
               <span className="font-semibold">{itemCount}</span>{" "}
               <span className="text-muted-foreground">
-                {itemCount === 1 ? "song" : "songs"} in lineup
+                {itemCount === 1 ? "item" : "items"} in lineup
               </span>
             </span>
           </div>
           {itemCount === 0 && (
             <span className="flex items-center gap-1.5 text-xs text-amber-400">
               <AlertCircle className="h-3.5 w-3.5" />
-              Lineup is empty — click "Prepare lineup" to add songs
+              Lineup is empty — click "Prepare lineup" to add items
             </span>
           )}
         </div>
@@ -367,7 +372,7 @@ function ServiceRow({
         <p className="text-xs text-muted-foreground mt-0.5">
           {past ? formatShort(service.date) : daysAwayLabel(daysAway)}
           {" · "}
-          {itemCount} {itemCount === 1 ? "song" : "songs"}
+          {itemCount} {itemCount === 1 ? "item" : "items"}
         </p>
       </div>
 

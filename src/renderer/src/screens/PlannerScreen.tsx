@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { useServiceStore } from "../store/useServiceStore"
-import { useQuickLaunch } from "../store/useQuickLaunch"
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -52,15 +51,14 @@ function daysAwayLabel(d: number): string {
 // ── Main Screen ──────────────────────────────────────────────────────────────
 
 interface Props {
-  onOpenBuilder: (serviceId: number) => void
-  onGoLive: () => void
+  onOpenService: (serviceId: number) => void
+  onGoLive: (serviceId: number) => void
 }
 
-export default function PlannerScreen({ onOpenBuilder, onGoLive }: Props) {
+export default function PlannerScreen({ onOpenService, onGoLive }: Props) {
   const {
     services, loadServices, createService, deleteService,
   } = useServiceStore()
-  const { launch } = useQuickLaunch()
   const [showNew, setShowNew] = useState(false)
   const [initializing, setInitializing] = useState(false)
   const [lineupCounts, setLineupCounts] = useState<Record<number, number>>({})
@@ -104,12 +102,11 @@ export default function PlannerScreen({ onOpenBuilder, onGoLive }: Props) {
   }
 
   const openInBuilder = (service: any) => {
-    launch(service, (id) => onOpenBuilder(id))
+    onOpenService(service.id)
   }
 
-  const goLive = async (service: any) => {
-    await launch(service, () => {})
-    onGoLive()
+  const goLive = (service: any) => {
+    onGoLive(service.id)
   }
 
   if (services.length === 0) {

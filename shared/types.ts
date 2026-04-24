@@ -1,13 +1,12 @@
 export type AppScreen =
   | "overview"
   | "planner"
-  | "builder"
+  | "service"
   | "library"
   | "media"
   | "themes"
   | "analytics"
   | "settings"
-  | "presenter"
 
 export interface Song {
   id: number

@@ -2,9 +2,7 @@ import React from "react";
 import type { AppScreen } from "../../../../../shared/types";
 import {
   Calendar,
-  Wrench,
   Palette,
-  MonitorPlay,
   BarChart3,
   Settings,
   Church,
@@ -17,8 +15,6 @@ interface Props {
   current: AppScreen;
   onChange: (screen: AppScreen) => void;
   projectionOpen: boolean;
-  onGoLive: () => void;
-  canGoLive: boolean;
 }
 
 interface NavItem {
@@ -28,17 +24,15 @@ interface NavItem {
 }
 
 const NAV_TOP: NavItem[] = [
-  { id: "overview",  icon: LayoutDashboard, label: "Overview" },
-  { id: "presenter", icon: MonitorPlay, label: "Presenter" },
-  { id: "planner", icon: Calendar, label: "Planner" },
-  { id: "builder", icon: Wrench, label: "Builder" },
-  { id: "library", icon: Music, label: "Library" },
-  { id: "media", icon: Image, label: "Media" },
-  { id: "themes", icon: Palette, label: "Themes" },
-  { id: "analytics", icon: BarChart3, label: "Analytics" },
+  { id: "overview", icon: LayoutDashboard, label: "Overview" },
+  { id: "planner",  icon: Calendar,        label: "Planner"  },
+  { id: "library",  icon: Music,           label: "Library"  },
+  { id: "media",    icon: Image,           label: "Media"    },
+  { id: "themes",   icon: Palette,         label: "Themes"   },
+  { id: "analytics",icon: BarChart3,       label: "Analytics"},
 ];
 
-export default function Sidebar({ current, onChange, projectionOpen }: Props) {
+export default function Sidebar({ current, onChange, projectionOpen: _projectionOpen }: Props) {
   return (
     <nav className="w-[64px] shrink-0 bg-sidebar border-r border-border flex flex-col items-center">
       {/* Draggable logo area */}
@@ -56,7 +50,6 @@ export default function Sidebar({ current, onChange, projectionOpen }: Props) {
       >
         {NAV_TOP.map((item) => {
           const isActive = current === item.id;
-          const isPresenter = item.id === "presenter";
           const Icon = item.icon;
           return (
             <button
@@ -65,9 +58,7 @@ export default function Sidebar({ current, onChange, projectionOpen }: Props) {
               title={item.label}
               className={`w-10 h-10 flex items-center justify-center rounded-lg transition-all ${
                 isActive
-                  ? isPresenter && projectionOpen
-                    ? "bg-[hsl(var(--success)/0.14)] text-[hsl(var(--success))]"
-                    : "bg-sidebar-primary text-sidebar-primary-foreground"
+                  ? "bg-sidebar-primary text-sidebar-primary-foreground"
                   : "text-muted-foreground hover:text-foreground hover:bg-sidebar-primary/50"
               }`}
             >

@@ -4,13 +4,12 @@ import type { AppScreen } from "../../../../../shared/types"
 const TITLES: Record<AppScreen, string> = {
   overview: "Overview",
   planner: "Planner",
-  builder: "Service Builder",
+  service: "Service",
   library: "Song Library",
   media: "Media Library",
   themes: "Themes",
   analytics: "Analytics",
   settings: "Settings",
-  presenter: "Presenter",
 }
 
 interface Props {

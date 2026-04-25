@@ -78,6 +78,8 @@ export default function App() {
         current={currentScreen}
         onChange={setCurrentScreen}
         projectionOpen={projectionOpen}
+        isLive={projectionOpen && activeServiceId !== null}
+        onReturnToLive={() => setCurrentScreen("service")}
       />
       <div className="flex-1 flex flex-col min-w-0">
         {/* Draggable title bar region */}
@@ -103,13 +105,16 @@ export default function App() {
               onGoLive={handleOpenServiceLive}
             />
           )}
-          {currentScreen === "service" && activeServiceId !== null && (
-            <ServiceScreen
-              serviceId={activeServiceId}
-              initialMode={serviceLaunchMode}
-              projectionOpen={projectionOpen}
-              onProjectionChange={setProjectionOpen}
-            />
+          {/* ServiceScreen stays mounted once a service is active so mode/state survive navigation */}
+          {activeServiceId !== null && (
+            <div className={currentScreen === "service" ? "h-full" : "hidden"}>
+              <ServiceScreen
+                serviceId={activeServiceId}
+                initialMode={serviceLaunchMode}
+                projectionOpen={projectionOpen}
+                onProjectionChange={setProjectionOpen}
+              />
+            </div>
           )}
           {currentScreen === "library"   && <LibraryScreen />}
           {currentScreen === "media"     && <MediaLibraryScreen />}

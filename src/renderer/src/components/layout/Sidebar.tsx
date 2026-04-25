@@ -9,12 +9,15 @@ import {
   Music,
   Image,
   LayoutDashboard,
+  Radio,
 } from "lucide-react";
 
 interface Props {
   current: AppScreen;
   onChange: (screen: AppScreen) => void;
   projectionOpen: boolean;
+  isLive?: boolean;
+  onReturnToLive?: () => void;
 }
 
 interface NavItem {
@@ -32,7 +35,7 @@ const NAV_TOP: NavItem[] = [
   { id: "analytics",icon: BarChart3,       label: "Analytics"},
 ];
 
-export default function Sidebar({ current, onChange, projectionOpen: _projectionOpen }: Props) {
+export default function Sidebar({ current, onChange, projectionOpen: _projectionOpen, isLive, onReturnToLive }: Props) {
   return (
     <nav className="w-[64px] shrink-0 bg-sidebar border-r border-border flex flex-col items-center">
       {/* Draggable logo area */}
@@ -68,8 +71,18 @@ export default function Sidebar({ current, onChange, projectionOpen: _projection
         })}
       </div>
 
-      {/* Bottom: Settings */}
-      <div className="mt-auto pb-3 flex flex-col items-center">
+      {/* Bottom: Live indicator + Settings */}
+      <div className="mt-auto pb-3 flex flex-col items-center gap-1" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
+        {isLive && (
+          <button
+            onClick={onReturnToLive}
+            title="Return to Live"
+            className="w-10 h-10 flex items-center justify-center rounded-lg bg-red-600 hover:bg-red-500 text-white transition-all relative"
+          >
+            <Radio className="h-5 w-5" />
+            <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+          </button>
+        )}
         <button
           onClick={() => onChange("settings")}
           title="Settings"

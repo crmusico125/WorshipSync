@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, screen, dialog } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, screen, dialog, powerSaveBlocker } from 'electron'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { join, extname, basename } from 'path'
 import { copyFileSync, mkdirSync, existsSync, readdirSync, unlinkSync, readFileSync, writeFileSync } from 'fs'
@@ -10,6 +10,7 @@ import { seedIfEmpty } from './db/seed'
 
 let controlWindow: BrowserWindow | null = null
 let projectionWindow: BrowserWindow | null = null
+let powerSaveBlockerId: number | null = null
 
 function createControlWindow(): void {
   controlWindow = new BrowserWindow({
@@ -75,11 +76,21 @@ function createProjectionWindow(displayId?: number): void {
     show: false
   })
 
+  // Prevent display sleep while projecting
+  if (powerSaveBlockerId === null || !powerSaveBlocker.isStarted(powerSaveBlockerId)) {
+    powerSaveBlockerId = powerSaveBlocker.start('prevent-display-sleep')
+  }
+
   projectionWindow.on('ready-to-show', () => {
     projectionWindow?.show()
   })
 
   projectionWindow.on('closed', () => {
+    // Stop display-sleep prevention
+    if (powerSaveBlockerId !== null && powerSaveBlocker.isStarted(powerSaveBlockerId)) {
+      powerSaveBlocker.stop(powerSaveBlockerId)
+      powerSaveBlockerId = null
+    }
     controlWindow?.webContents.send('window:projectionClosed')
     projectionWindow = null
   })
@@ -172,6 +183,10 @@ ipcMain.on('window:openProjection', (_event, displayId?: number) => {
 })
 
 ipcMain.on('window:closeProjection', () => {
+  if (powerSaveBlockerId !== null && powerSaveBlocker.isStarted(powerSaveBlockerId)) {
+    powerSaveBlocker.stop(powerSaveBlockerId)
+    powerSaveBlockerId = null
+  }
   projectionWindow?.close()
   projectionWindow = null
 })

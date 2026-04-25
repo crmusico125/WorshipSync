@@ -765,7 +765,13 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
             canCustomize={!!currentSong}
             readOnly={isPast}
             onThemeChange={(key, value) => setThemeOverrides(p => ({ ...p, [key]: value }))}
-            onBgChange={(path) => setBgOverride(path)}
+            onBgChange={async (path) => {
+              setBgOverride(path)
+              if (currentSong) {
+                await window.worshipsync.backgrounds.setBackground(currentSong.id, path)
+                await loadSongs()
+              }
+            }}
           />
         </div>
         )}

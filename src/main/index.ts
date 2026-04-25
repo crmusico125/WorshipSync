@@ -572,18 +572,39 @@ ipcMain.handle('songs:setBackground', (_e, songId: number, backgroundPath: strin
 })
 
 ipcMain.handle('backgrounds:getUsageCount', (_e, imagePath: string) => {
-  // Count how many songs use this image
-  const usingSongs = db.select().from(songs)
-    .all()
-    .filter(s => s.backgroundPath === imagePath)
-  return usingSongs.length
+  const result = db.select({ count: count() })
+    .from(songs)
+    .where(eq(songs.backgroundPath, imagePath))
+    .get()
+  return result?.count ?? 0
 })
 
 ipcMain.handle('backgrounds:getUsingSongs', (_e, imagePath: string) => {
   return db.select({ id: songs.id, title: songs.title, artist: songs.artist })
     .from(songs)
+    .where(eq(songs.backgroundPath, imagePath))
     .all()
-    .filter(s => s.backgroundPath === imagePath)
+})
+
+ipcMain.handle('backgrounds:getUsingServices', (_e, imagePath: string) => {
+  const rows = db.select({
+    id: serviceDates.id,
+    date: serviceDates.date,
+    label: serviceDates.label,
+  })
+    .from(lineupItems)
+    .leftJoin(songs, eq(lineupItems.songId, songs.id))
+    .innerJoin(serviceDates, eq(lineupItems.serviceDateId, serviceDates.id))
+    .where(or(
+      eq(lineupItems.overrideBackgroundPath, imagePath),
+      eq(songs.backgroundPath, imagePath),
+    ))
+    .all()
+
+  const seen = new Set<number>()
+  return rows
+    .filter(r => { if (seen.has(r.id)) return false; seen.add(r.id); return true })
+    .sort((a, b) => b.date.localeCompare(a.date))
 })
 
 ipcMain.handle('backgrounds:deleteImage', (_e, imagePath: string) => {

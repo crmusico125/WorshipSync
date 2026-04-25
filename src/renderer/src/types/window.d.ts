@@ -130,6 +130,7 @@ declare global {
         listImages: () => Promise<string[]>
         getUsageCount: (imagePath: string) => Promise<number>
         getUsingSongs: (imagePath: string) => Promise<{ id: number; title: string; artist: string }[]>
+        getUsingServices: (imagePath: string) => Promise<{ id: number; date: string; label: string }[]>
         deleteImage:   (imagePath: string) => Promise<boolean>
       }
       appState: {

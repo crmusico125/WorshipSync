@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useCallback } from "react"
 import {
-  Search, Upload, Trash2, Image as ImageIcon, X, Check, FolderOpen, Plus, Info, Music, Play, Volume2,
+  Search, Upload, Trash2, Image as ImageIcon, X, Check, FolderOpen, Plus, Info, Music, Play, Volume2, Calendar,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -373,9 +373,11 @@ function MediaDetailPanel({
   onClose: () => void
 }) {
   const [usingSongs, setUsingSongs] = useState<{ id: number; title: string; artist: string }[]>([])
+  const [usingServices, setUsingServices] = useState<{ id: number; date: string; label: string }[]>([])
 
   useEffect(() => {
     window.worshipsync.backgrounds.getUsingSongs(item.path).then(setUsingSongs).catch(() => setUsingSongs([]))
+    window.worshipsync.backgrounds.getUsingServices(item.path).then(setUsingServices).catch(() => setUsingServices([]))
   }, [item.path])
 
   return (
@@ -425,18 +427,12 @@ function MediaDetailPanel({
       {/* Info */}
       <div className="p-4 flex flex-col gap-3 flex-1 overflow-y-auto">
         <DetailRow label="Filename" value={item.filename} />
-        <DetailRow
-          label="Used by"
-          value={
-            item.usageCount > 0
-              ? `${item.usageCount} ${item.usageCount === 1 ? "song" : "songs"}`
-              : "Not used"
-          }
-        />
-
-        {/* Song list */}
+        {/* Songs using this file */}
         {usingSongs.length > 0 && (
           <div className="flex flex-col gap-1.5">
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+              Songs ({usingSongs.length})
+            </span>
             {usingSongs.map((s) => (
               <div
                 key={s.id}
@@ -454,6 +450,35 @@ function MediaDetailPanel({
           </div>
         )}
 
+        {/* Services using this file */}
+        {usingServices.length > 0 && (
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+              Services ({usingServices.length})
+            </span>
+            {usingServices.map((svc) => {
+              const d = new Date(svc.date + "T00:00:00")
+              const dateStr = d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+              return (
+                <div
+                  key={svc.id}
+                  className="flex items-center gap-2.5 px-3 py-2 rounded-md bg-input"
+                >
+                  <Calendar className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[12px] font-medium truncate">{svc.label}</p>
+                    <p className="text-[11px] text-muted-foreground">{dateStr}</p>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {usingSongs.length === 0 && usingServices.length === 0 && (
+          <p className="text-[12px] text-muted-foreground italic">Not used in any songs or services.</p>
+        )}
+
         <DetailRow label="Path" value={item.path} mono />
 
         <div className="h-px bg-border my-1" />
@@ -468,10 +493,10 @@ function MediaDetailPanel({
           Delete {isVideoFile(item.path) ? "Video" : isAudioFile(item.path) ? "Audio" : "Image"}
         </Button>
 
-        {item.usageCount > 0 && (
+        {usingSongs.length > 0 && (
           <p className="text-[11px] text-muted-foreground leading-relaxed">
-            Deleting this {isVideoFile(item.path) ? "video" : isAudioFile(item.path) ? "audio file" : "image"} will remove it from {item.usageCount}{" "}
-            {item.usageCount === 1 ? "song" : "songs"} that currently use it as a background.
+            Deleting will remove this file from {usingSongs.length}{" "}
+            {usingSongs.length === 1 ? "song" : "songs"} that use it as a background.
           </p>
         )}
       </div>

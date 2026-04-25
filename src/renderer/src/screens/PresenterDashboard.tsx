@@ -387,19 +387,16 @@ export default function PresenterDashboard({
     setActiveSlideIdx(-1);
   }, [selectedSongIdx]);
 
-  // When going live, always start the projection window blank regardless of
-  // prior state. Send immediately (covers an already-open window that was
-  // just focused) and again on projection:ready (covers a freshly-created window).
-  useEffect(() => {
-    if (!projectionOpen) return;
-    window.worshipsync.slide.blank(true);
-    setIsBlank(true);
-    setActiveSlideIdx(-1);
-    const cleanup = window.worshipsync.window.onProjectionReady(() => {
-      window.worshipsync.slide.blank(true);
-    });
-    return cleanup;
-  }, [projectionOpen]);
+  // Refs that always hold the latest projection state — used inside the
+  // projection:ready callback so display moves restore the correct content.
+  const countdownRunningRef = useRef(countdownRunning);
+  countdownRunningRef.current = countdownRunning;
+  const isBlankRef = useRef(isBlank);
+  isBlankRef.current = isBlank;
+  const activeSlideIdxRef = useRef(activeSlideIdx);
+  activeSlideIdxRef.current = activeSlideIdx;
+  const selectedSongIdxRef = useRef(selectedSongIdx);
+  selectedSongIdxRef.current = selectedSongIdx;
 
   // ── Controls ─────────────────────────────────────────────────────────────
   const clearAll = () => {
@@ -508,6 +505,31 @@ export default function PresenterDashboard({
     const dateStr = selectedService?.date ?? new Date().toLocaleDateString("en-CA", { timeZone: tz });
     return `${dateStr}T${serviceTime}:00`;
   }, [serviceTime, getEffectiveTz, selectedService]);
+
+  // Restore whatever is currently active on a freshly created projection window.
+  // Uses refs so the callback is stable but always sees current state.
+  const restoreProjectionState = useCallback(() => {
+    if (countdownRunningRef.current) {
+      window.worshipsync.slide.logo(false);
+      window.worshipsync.slide.countdown({ targetTime: getTargetTime(), running: true });
+    } else if (activeSlideIdxRef.current >= 0 && !isBlankRef.current) {
+      sendSlide(selectedSongIdxRef.current, activeSlideIdxRef.current);
+    } else {
+      window.worshipsync.slide.blank(true);
+    }
+  }, [getTargetTime, sendSlide]);
+
+  // When going live, start blank and register the projection:ready listener.
+  // The same listener fires after a display move — refs ensure it restores
+  // the current state rather than the initial blank.
+  useEffect(() => {
+    if (!projectionOpen) return;
+    window.worshipsync.slide.blank(true);
+    setIsBlank(true);
+    setActiveSlideIdx(-1);
+    const cleanup = window.worshipsync.window.onProjectionReady(restoreProjectionState);
+    return cleanup;
+  }, [projectionOpen, restoreProjectionState]);
 
   const computeCountdownDisplay = useCallback(() => {
     const tz = getEffectiveTz();
@@ -1362,7 +1384,11 @@ export default function PresenterDashboard({
             <select
               className="flex-1 bg-transparent text-xs text-foreground font-medium border-none outline-none cursor-pointer min-w-0"
               value={selectedDisplayId ?? ""}
-              onChange={(e) => setSelectedDisplayId(Number(e.target.value))}
+              onChange={(e) => {
+                const id = Number(e.target.value)
+                setSelectedDisplayId(id)
+                if (projectionOpen) window.worshipsync.window.moveProjection(id)
+              }}
             >
               {displays.map((d) => (
                 <option key={d.id} value={d.id}>

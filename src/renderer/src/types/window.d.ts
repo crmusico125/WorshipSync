@@ -78,6 +78,7 @@ declare global {
           { id: number; label: string; width: number; height: number; isPrimary: boolean }[]
         >
         openProjection: (displayId?: number) => void
+        moveProjection: (displayId: number) => void
         closeProjection: () => void
         onProjectionReady: (cb: () => void) => () => void
         onProjectionClosed: (cb: () => void) => () => void

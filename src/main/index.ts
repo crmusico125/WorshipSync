@@ -11,6 +11,7 @@ import { seedIfEmpty } from './db/seed'
 let controlWindow: BrowserWindow | null = null
 let projectionWindow: BrowserWindow | null = null
 let powerSaveBlockerId: number | null = null
+let movingProjection = false  // true while doing an intentional display switch
 
 function createControlWindow(): void {
   controlWindow = new BrowserWindow({
@@ -86,13 +87,18 @@ function createProjectionWindow(displayId?: number): void {
   })
 
   projectionWindow.on('closed', () => {
-    // Stop display-sleep prevention
+    projectionWindow = null
+    if (movingProjection) {
+      // Intentional display switch — don't notify the renderer
+      movingProjection = false
+      return
+    }
+    // Real close — stop display-sleep prevention and notify renderer
     if (powerSaveBlockerId !== null && powerSaveBlocker.isStarted(powerSaveBlockerId)) {
       powerSaveBlocker.stop(powerSaveBlockerId)
       powerSaveBlockerId = null
     }
     controlWindow?.webContents.send('window:projectionClosed')
-    projectionWindow = null
   })
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
@@ -179,6 +185,16 @@ ipcMain.on('window:openProjection', (_event, displayId?: number) => {
     createProjectionWindow(displayId)
   } else {
     projectionWindow.focus()
+  }
+})
+
+ipcMain.on('window:moveProjection', (_event, displayId: number) => {
+  if (projectionWindow && !projectionWindow.isDestroyed()) {
+    movingProjection = true
+    projectionWindow.once('closed', () => createProjectionWindow(displayId))
+    projectionWindow.close()
+  } else {
+    createProjectionWindow(displayId)
   }
 })
 

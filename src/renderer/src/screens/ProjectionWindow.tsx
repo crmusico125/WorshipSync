@@ -355,12 +355,12 @@ export default function ProjectionWindow() {
           <div
             style={{
               fontFamily: "Montserrat, sans-serif",
-              fontSize: 52,
+              fontSize: "7vh",
               fontWeight: 800,
               color: "#ffffff",
               letterSpacing: "0.38em",
               textTransform: "uppercase",
-              marginBottom: 14,
+              marginBottom: "2vh",
             }}
           >
             Welcome
@@ -370,11 +370,11 @@ export default function ProjectionWindow() {
           <div
             style={{
               fontFamily: "Montserrat, sans-serif",
-              fontSize: 24,
+              fontSize: "3vh",
               fontWeight: 400,
               color: "rgba(255,255,255,0.82)",
               letterSpacing: "0.01em",
-              marginBottom: 36,
+              marginBottom: "4vh",
             }}
           >
             Our Sunday Service will begin in
@@ -390,7 +390,7 @@ export default function ProjectionWindow() {
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
                 <div style={{
                   fontFamily: "Montserrat, sans-serif",
-                  fontSize: 160,
+                  fontSize: "22vh",
                   fontWeight: 800,
                   color: "#ffffff",
                   letterSpacing: "0.03em",
@@ -401,12 +401,12 @@ export default function ProjectionWindow() {
                 </div>
                 <div style={{
                   fontFamily: "Montserrat, sans-serif",
-                  fontSize: 15,
+                  fontSize: "2vh",
                   fontWeight: 600,
                   color: "rgba(255,255,255,0.5)",
                   letterSpacing: "0.25em",
                   textTransform: "uppercase",
-                  marginTop: 8,
+                  marginTop: "1vh",
                 }}>
                   {label}
                 </div>
@@ -416,18 +416,18 @@ export default function ProjectionWindow() {
             const Colon = () => (
               <div style={{
                 fontFamily: "Montserrat, sans-serif",
-                fontSize: 120,
+                fontSize: "16vh",
                 fontWeight: 800,
                 color: "rgba(255,255,255,0.4)",
                 lineHeight: 1,
-                paddingBottom: 32,
+                paddingBottom: "4.5vh",
                 alignSelf: "flex-end",
-                margin: "0 8px",
+                margin: "0 1vh",
               }}>:</div>
             );
 
             return (
-              <div style={{ display: "flex", alignItems: "flex-end", marginBottom: 36 }}>
+              <div style={{ display: "flex", alignItems: "flex-end", marginBottom: "4vh" }}>
                 {days > 0 && <><Segment value={days}    label="Days"    /><Colon /></>}
                 {showHours && <><Segment value={hours}   label="Hours"   /><Colon /></>}
                 <Segment value={minutes} label="Minutes" />
@@ -441,7 +441,7 @@ export default function ProjectionWindow() {
           <div
             style={{
               fontFamily: "Montserrat, sans-serif",
-              fontSize: 20,
+              fontSize: "2.5vh",
               fontWeight: 400,
               color: "rgba(255,255,255,0.65)",
               letterSpacing: "0.02em",
@@ -455,20 +455,20 @@ export default function ProjectionWindow() {
             <div
               style={{
                 position: "absolute",
-                bottom: 36,
+                bottom: "4vh",
                 display: "flex",
                 alignItems: "center",
-                gap: 10,
+                gap: "0.9vh",
               }}
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="1.65vh" height="1.65vh" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
                 <polyline points="9 22 9 12 15 12 15 22" />
               </svg>
               <div
                 style={{
                   fontFamily: "Montserrat, sans-serif",
-                  fontSize: 13,
+                  fontSize: "1.6vh",
                   fontWeight: 600,
                   color: "rgba(255,255,255,0.35)",
                   letterSpacing: "0.2em",

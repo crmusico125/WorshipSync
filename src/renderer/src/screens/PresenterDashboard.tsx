@@ -532,23 +532,10 @@ export default function PresenterDashboard({
   }, [projectionOpen, restoreProjectionState]);
 
   const computeCountdownDisplay = useCallback(() => {
-    const tz = getEffectiveTz();
-    const targetStr = selectedService?.date
-      ? `${selectedService.date}T${serviceTime}:00`
-      : `${new Date().toLocaleDateString("en-CA", { timeZone: tz })}T${serviceTime}:00`;
-
-    // Get current time expressed in the service timezone so the diff is timezone-correct
-    const formatter = new Intl.DateTimeFormat("en-US", {
-      timeZone: tz,
-      year: "numeric", month: "2-digit", day: "2-digit",
-      hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
-    });
-    const nowParts = formatter.formatToParts(new Date());
-    const p = (t: string) => nowParts.find((x) => x.type === t)?.value ?? "0";
-    const nowInTz = new Date(`${p("year")}-${p("month")}-${p("day")}T${p("hour")}:${p("minute")}:${p("second")}`);
-    const targetInTz = new Date(targetStr);
-
-    const diff = targetInTz.getTime() - nowInTz.getTime();
+    const dateStr = selectedService?.date ?? new Date().toLocaleDateString("en-CA");
+    const target = new Date(`${dateStr}T${serviceTime}:00`);
+    if (isNaN(target.getTime())) return "00:00:00";
+    const diff = target.getTime() - Date.now();
     if (diff <= 0) return "00:00:00";
     const d = Math.floor(diff / 86400000);
     const h = Math.floor((diff % 86400000) / 3600000);
@@ -558,7 +545,7 @@ export default function PresenterDashboard({
     return d > 0
       ? `${pad(d)}d ${pad(h)}:${pad(m)}:${pad(s)}`
       : `${pad(h)}:${pad(m)}:${pad(s)}`;
-  }, [serviceTime, getEffectiveTz, selectedService]);
+  }, [serviceTime, selectedService]);
 
   const startCountdown = useCallback(() => {
     setCountdownRunning(true);

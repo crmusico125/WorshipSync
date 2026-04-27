@@ -1562,50 +1562,55 @@ export default function PresenterDashboard({
           </div>
 
           {/* Next Up */}
-          {nextUp && (
-            <div className="p-4">
-              <h3 className="text-xs font-semibold mb-2">
-                Next Up:{" "}
-                <span className="text-muted-foreground font-medium">
-                  {nextUp.songTitle
-                    ? `${nextUp.songTitle} — ${nextUp.slide.sectionLabel}`
-                    : nextUp.slide.sectionLabel}
-                </span>
-              </h3>
-              <div
-                className="relative overflow-hidden rounded-md border border-border bg-black flex items-center justify-center opacity-[0.86]"
-                style={{ aspectRatio: "16/9", padding: "12px" }}
-              >
-                {effectiveBg && nextUp.slide.sectionType !== "blank" && (
-                  <>
-                    <img
-                      src={`file://${effectiveBg}`}
-                      className="absolute inset-0 w-full h-full object-cover"
-                      alt=""
-                    />
-                    <div
-                      className="absolute inset-0"
-                      style={{
-                        background: `rgba(0,0,0,${effectiveTheme.overlayOpacity / 100})`,
-                      }}
-                    />
-                  </>
-                )}
-                <span
-                  className="relative z-10 text-center font-bold text-xs leading-relaxed whitespace-pre-wrap"
-                  style={{
-                    color: effectiveTheme.textColor,
-                    fontFamily: effectiveTheme.fontFamily,
-                    textAlign: effectiveTheme.textAlign,
-                    textShadow: `0 1px 4px rgba(0,0,0,${effectiveTheme.textShadowOpacity / 100})`,
-                    width: "100%",
-                  }}
+          {nextUp && (() => {
+            const nextUpSong = nextUp.songTitle ? nextSong : currentSong;
+            const nextUpTheme = nextUpSong ? resolveTheme(nextUpSong) : effectiveTheme;
+            const nextUpBg = nextUpSong ? resolveBg(nextUpSong) : effectiveBg;
+            return (
+              <div className="p-4">
+                <h3 className="text-xs font-semibold mb-2">
+                  Next Up:{" "}
+                  <span className="text-muted-foreground font-medium">
+                    {nextUp.songTitle
+                      ? `${nextUp.songTitle} — ${nextUp.slide.sectionLabel}`
+                      : nextUp.slide.sectionLabel}
+                  </span>
+                </h3>
+                <div
+                  className="relative overflow-hidden rounded-md border border-border bg-black flex items-center justify-center opacity-[0.86]"
+                  style={{ aspectRatio: "16/9", padding: "12px" }}
                 >
-                  {nextUp.slide.lines.join("\n") || " "}
-                </span>
+                  {nextUpBg && nextUp.slide.sectionType !== "blank" && (
+                    <>
+                      <img
+                        src={`file://${nextUpBg}`}
+                        className="absolute inset-0 w-full h-full object-cover"
+                        alt=""
+                      />
+                      <div
+                        className="absolute inset-0"
+                        style={{
+                          background: `rgba(0,0,0,${nextUpTheme.overlayOpacity / 100})`,
+                        }}
+                      />
+                    </>
+                  )}
+                  <span
+                    className="relative z-10 text-center font-bold text-xs leading-relaxed whitespace-pre-wrap"
+                    style={{
+                      color: nextUpTheme.textColor,
+                      fontFamily: nextUpTheme.fontFamily,
+                      textAlign: nextUpTheme.textAlign,
+                      textShadow: `0 1px 4px rgba(0,0,0,${nextUpTheme.textShadowOpacity / 100})`,
+                      width: "100%",
+                    }}
+                  >
+                    {nextUp.slide.lines.join("\n") || " "}
+                  </span>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
         </div>
       </div>
 

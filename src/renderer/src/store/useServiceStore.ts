@@ -19,6 +19,7 @@ interface LineupItemWithSong {
   selectedSections: string
   overrideThemeId: number | null
   overrideBackgroundPath: string | null
+  notes: string | null
   song: {
     id: number
     title: string

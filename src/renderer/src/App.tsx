@@ -46,9 +46,18 @@ export default function App() {
   }, [])
 
   // Open a service in prepare (builder) mode
-  const handleOpenService = useCallback((serviceId: number) => {
+  const handleOpenService = useCallback(async (serviceId: number) => {
     setActiveServiceId(serviceId)
     setServiceLaunchMode("prepare")
+    // Pre-select the service so BuilderScreen never sees a null selectedService
+    const { loadServices, selectService, services } = useServiceStore.getState()
+    let list = services
+    if (list.length === 0) {
+      await loadServices()
+      list = useServiceStore.getState().services
+    }
+    const svc = list.find((s) => s.id === serviceId)
+    if (svc) await selectService(svc)
     setCurrentScreen("service")
     window.worshipsync.appState.set({ lastServiceId: serviceId })
   }, [])

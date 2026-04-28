@@ -47,7 +47,8 @@ export const lineupItems = sqliteTable('lineup_items', {
   orderIndex:             integer('order_index').notNull().default(0),
   selectedSections:       text('selected_sections').notNull().default('[]'),
   overrideThemeId:        integer('override_theme_id'),
-  overrideBackgroundPath: text('override_background_path')
+  overrideBackgroundPath: text('override_background_path'),
+  notes:                  text('notes')
 })
 
 // ── Themes ────────────────────────────────────────────────────────────────────

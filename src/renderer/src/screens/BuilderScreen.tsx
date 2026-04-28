@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react"
+import { useEffect, useState, useMemo, useRef } from "react"
 import {
   Plus, BookOpen, Trash2, Pencil,
   Radio, Eye, Music2, Calendar, Image as ImageIcon,
@@ -123,6 +123,8 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
   const [editingItemId, setEditingItemId] = useState<number | null>(null)
   const [selectedSongIdx, setSelectedSongIdx] = useState(0)
   const [previewSlideIdx, setPreviewSlideIdx] = useState(0)
+  const [notesMap, setNotesMap] = useState<Record<number, string>>({})
+  const notesTimers = useRef<Record<number, ReturnType<typeof setTimeout>>>({})
 
   // Theme data
   const [themeCache, setThemeCache] = useState<Record<number, any>>({})
@@ -163,6 +165,13 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
     setThemeOverrides({})
     setBgOverride(undefined)
   }, [selectedSongIdx])
+
+  // Seed notes from DB whenever lineup changes
+  useEffect(() => {
+    const map: Record<number, string> = {}
+    lineup.forEach(item => { map[item.id] = item.notes ?? "" })
+    setNotesMap(map)
+  }, [lineup])
 
   // ── Derived ──────────────────────────────────────────────────────────────
   const isPast = selectedService
@@ -721,6 +730,34 @@ export default function BuilderScreen({ serviceId, onGoLive }: Props) {
               </Button>
             </div>
           )}
+
+          {/* Notes / cue strip — pinned at the bottom of the center panel */}
+          {currentItem && (
+            <div className="shrink-0 border-t border-border px-5 py-3 bg-card">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">Notes</p>
+              <textarea
+                value={notesMap[currentItem.id] ?? ""}
+                onChange={(e) => {
+                  const val = e.target.value
+                  setNotesMap(prev => ({ ...prev, [currentItem.id]: val }))
+                  clearTimeout(notesTimers.current[currentItem.id])
+                  notesTimers.current[currentItem.id] = setTimeout(() => {
+                    window.worshipsync.lineup.setNotes(currentItem.id, val)
+                  }, 600)
+                }}
+                onBlur={(e) => {
+                  const id = currentItem.id
+                  clearTimeout(notesTimers.current[id])
+                  delete notesTimers.current[id]
+                  window.worshipsync.lineup.setNotes(id, e.target.value)
+                }}
+                placeholder={isPast ? "No notes." : "Cue notes (e.g. Start in D, skip bridge)…"}
+                readOnly={isPast}
+                rows={2}
+                className="w-full text-xs text-foreground bg-background border border-border rounded-md px-3 py-2 resize-none outline-none placeholder:text-muted-foreground/40 focus:border-primary/50 transition-colors leading-relaxed"
+              />
+            </div>
+          )}
         </div>
 
         {/* ─── RIGHT: Preview + Appearance (hidden for media items) ──── */}
@@ -864,6 +901,7 @@ function SortableLineupItem({
           </button>
         )}
       </div>
+
     </div>
   )
 }

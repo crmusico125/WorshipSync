@@ -91,6 +91,8 @@ contextBridge.exposeInMainWorld('worshipsync', {
                         ipcRenderer.invoke('lineup:toggleSection', lineupItemId, sectionId, included),
     setSections:    (lineupItemId: number, sectionIds: number[]) =>
                         ipcRenderer.invoke('lineup:setSections', lineupItemId, sectionIds),
+    setNotes:       (lineupItemId: number, notes: string) =>
+                        ipcRenderer.invoke('lineup:setNotes', lineupItemId, notes),
   },
   themes: {
     getAll:     ()                    => ipcRenderer.invoke('themes:getAll'),

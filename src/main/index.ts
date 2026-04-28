@@ -441,6 +441,14 @@ ipcMain.handle('lineup:setSections', (_e, lineupItemId: number, sectionIds: numb
   return sectionIds
 })
 
+ipcMain.handle('lineup:setNotes', (_e, lineupItemId: number, notes: string) => {
+  db.update(lineupItems)
+    .set({ notes: notes || null })
+    .where(eq(lineupItems.id, lineupItemId))
+    .run()
+  return true
+})
+
 // ── Theme IPC handlers ────────────────────────────────────────────────────────
 
 ipcMain.handle('themes:getAll', () => {

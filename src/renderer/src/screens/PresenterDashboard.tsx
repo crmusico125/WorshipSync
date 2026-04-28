@@ -53,6 +53,7 @@ interface LiveSong {
   ccliNumber: string | null;
   backgroundPath: string | null;
   themeId: number | null;
+  notes: string | null;
   slides: Slide[];
 }
 
@@ -264,6 +265,7 @@ export default function PresenterDashboard({
           ccliNumber: null,
           backgroundPath: null,
           themeId: null,
+          notes: item.notes ?? null,
           slides: [],
         };
       }
@@ -280,6 +282,7 @@ export default function PresenterDashboard({
           ccliNumber: null,
           backgroundPath: null,
           themeId: null,
+          notes: item.notes ?? null,
           slides: [],
         };
       }
@@ -310,6 +313,7 @@ export default function PresenterDashboard({
         ccliNumber: item.song.ccliNumber ?? null,
         backgroundPath: item.song.backgroundPath ?? null,
         themeId: item.song.themeId ?? null,
+        notes: item.notes ?? null,
         slides: buildSlidesForSong(filtered, maxLines),
       };
     });
@@ -789,8 +793,8 @@ export default function PresenterDashboard({
                       : ImageIcon
                   : Music;
             return (
+              <React.Fragment key={song.lineupItemId}>
               <button
-                key={song.lineupItemId}
                 onClick={() => {
                   setSelectedSongIdx(i);
                   setVideoPlaying(false);
@@ -864,6 +868,7 @@ export default function PresenterDashboard({
                 </div>
                 <GripVertical className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
               </button>
+              </React.Fragment>
             );
           })}
         </div>
@@ -1397,6 +1402,16 @@ export default function PresenterDashboard({
             </p>
           </div>
         )}
+
+        {/* Notes strip — pinned at the bottom of the slide area */}
+        {currentSong?.notes ? (
+          <div className="shrink-0 border-t border-border px-5 py-3 bg-card">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">Notes</p>
+            <p className="text-[11px] text-amber-400/90 leading-relaxed whitespace-pre-wrap break-words">
+              {currentSong.notes}
+            </p>
+          </div>
+        ) : null}
       </div>
 
       {/* ═════ RIGHT: Live Output Panel (300px) ═════ */}

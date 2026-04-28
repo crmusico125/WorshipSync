@@ -109,5 +109,16 @@ export function runMigrations(): void {
     console.error('[db] migration error (lineup_items):', e)
   }
 
+  // ── Migration: add notes column to lineup_items ──────────────────────────
+  try {
+    const cols2 = sqlite.prepare("PRAGMA table_info(lineup_items)").all() as { name: string }[]
+    if (!cols2.some(c => c.name === 'notes')) {
+      sqlite.exec(`ALTER TABLE lineup_items ADD COLUMN notes TEXT`)
+      console.log('[db] migration: added notes column to lineup_items')
+    }
+  } catch (e) {
+    console.error('[db] migration error (lineup_items notes):', e)
+  }
+
   console.log('[db] migrations complete')
 }

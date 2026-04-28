@@ -19,6 +19,7 @@ interface LineupItemWithSong {
   selectedSections: string
   overrideThemeId: number | null
   overrideBackgroundPath: string | null
+  notes: string | null
   song: SongWithSections | null
 }
 interface Theme {
@@ -112,6 +113,7 @@ declare global {
         reorder:        (serviceDateId: number, ids: number[]) => Promise<boolean>
         toggleSection:  (lineupItemId: number, sectionId: number, included: boolean) => Promise<number[]>
         setSections:    (lineupItemId: number, sectionIds: number[]) => Promise<number[]>
+        setNotes:       (lineupItemId: number, notes: string) => Promise<boolean>
       }
       themes: {
         getAll:     () => Promise<Theme[]>

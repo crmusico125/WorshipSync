@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react"
 import {
-  BarChart3, Calendar, TrendingUp, AlertCircle, Music2,
-  CheckCircle2, Clock, History,
+  BarChart3, Calendar, Music2, Clock, ChevronDown,
+  Download, TrendingUp, TrendingDown,
 } from "lucide-react"
-import { Button } from "@/components/ui/button"
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 interface SongWithUsage {
   id: number
@@ -24,34 +25,56 @@ interface ServiceDate {
   updatedAt: string
 }
 
-function weeksAgo(dateStr: string): number {
-  const d = new Date(dateStr + "T00:00:00")
-  const today = new Date()
-  return Math.floor(
-    (today.getTime() - d.getTime()) / (1000 * 60 * 60 * 24 * 7),
-  )
-}
+type Period = "3m" | "6m" | "1y" | "all"
 
-function formatDate(dateStr: string): string {
-  return new Date(dateStr + "T00:00:00").toLocaleDateString("en-US", {
-    month: "short", day: "numeric", year: "numeric",
-  })
-}
-
-type SortKey = "usage" | "recent" | "alpha" | "never"
-
-const SORT_OPTIONS: { key: SortKey; label: string }[] = [
-  { key: "usage", label: "Most used" },
-  { key: "recent", label: "Recent" },
-  { key: "alpha", label: "A–Z" },
-  { key: "never", label: "Overdue" },
+const PERIOD_OPTIONS: { key: Period; label: string; months: number | null }[] = [
+  { key: "3m",  label: "Last 3 Months", months: 3  },
+  { key: "6m",  label: "Last 6 Months", months: 6  },
+  { key: "1y",  label: "Last Year",     months: 12 },
+  { key: "all", label: "All Time",      months: null },
 ]
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function periodCutoff(period: Period): Date | null {
+  const opt = PERIOD_OPTIONS.find(p => p.key === period)
+  if (!opt?.months) return null
+  const d = new Date()
+  d.setMonth(d.getMonth() - opt.months)
+  d.setHours(0, 0, 0, 0)
+  return d
+}
+
+function daysAgo(dateStr: string): number {
+  const d = new Date(dateStr + "T00:00:00")
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return Math.floor((today.getTime() - d.getTime()) / (1000 * 60 * 60 * 24))
+}
+
+function formatLastUsed(dateStr: string | null): string {
+  if (!dateStr) return "Never used"
+  const days = daysAgo(dateStr)
+  if (days === 0) return "Today"
+  if (days === 1) return "Yesterday"
+  if (days < 7)  return `${days} days ago`
+  const weeks = Math.floor(days / 7)
+  if (weeks < 5) return `${weeks} week${weeks > 1 ? "s" : ""} ago`
+  const months = Math.floor(days / 30)
+  if (months < 12) return `${months} month${months > 1 ? "s" : ""} ago`
+  return `${Math.floor(days / 365)} year${days >= 730 ? "s" : ""} ago`
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
 export default function AnalyticsScreen() {
-  const [songUsage, setSongUsage] = useState<SongWithUsage[]>([])
+  const [songUsage, setSongUsage]         = useState<SongWithUsage[]>([])
   const [serviceHistory, setServiceHistory] = useState<ServiceDate[]>([])
-  const [loading, setLoading] = useState(true)
-  const [sortBy, setSortBy] = useState<SortKey>("usage")
+  const [loading, setLoading]             = useState(true)
+  const [period, setPeriod]               = useState<Period>("6m")
+  const [showPeriodMenu, setShowPeriodMenu] = useState(false)
+  const [showAllTop, setShowAllTop]       = useState(false)
+  const [showAllStagnant, setShowAllStagnant] = useState(false)
 
   useEffect(() => { loadData() }, [])
 
@@ -66,28 +89,57 @@ export default function AnalyticsScreen() {
     setLoading(false)
   }
 
-  const sorted = [...songUsage].sort((a, b) => {
-    if (sortBy === "usage") return b.usageCount - a.usageCount
-    if (sortBy === "alpha") return a.title.localeCompare(b.title)
-    if (sortBy === "never") {
-      if (!a.lastUsedDate && !b.lastUsedDate) return 0
-      if (!a.lastUsedDate) return -1
-      if (!b.lastUsedDate) return 1
-      return a.lastUsedDate.localeCompare(b.lastUsedDate)
-    }
-    if (!a.lastUsedDate && !b.lastUsedDate) return 0
-    if (!a.lastUsedDate) return 1
-    if (!b.lastUsedDate) return -1
-    return b.lastUsedDate.localeCompare(a.lastUsedDate)
+  // ── Derived data ─────────────────────────────────────────────────────────
+
+  const cutoff = periodCutoff(period)
+
+  const filteredServices = cutoff
+    ? serviceHistory.filter(s => new Date(s.date + "T00:00:00") >= cutoff)
+    : serviceHistory
+
+  const uniqueSongs  = songUsage.filter(s => s.usageCount > 0).length
+  const totalPlays   = songUsage.reduce((sum, s) => sum + s.usageCount, 0)
+  const neverUsed    = songUsage.filter(s => s.usageCount === 0).length
+
+  const topSongs = [...songUsage]
+    .filter(s => s.usageCount > 0)
+    .sort((a, b) => b.usageCount - a.usageCount)
+
+  // Stagnant: never used first, then sorted by oldest last-use date
+  const stagnantSongs = [...songUsage].sort((a, b) => {
+    if (a.usageCount === 0 && b.usageCount === 0) return a.title.localeCompare(b.title)
+    if (a.usageCount === 0) return -1
+    if (b.usageCount === 0) return 1
+    return (a.lastUsedDate ?? "").localeCompare(b.lastUsedDate ?? "")
   })
 
-  const maxUsage = Math.max(...songUsage.map((s) => s.usageCount), 1)
-  const totalServices = serviceHistory.length
-  const totalUnique = songUsage.filter((s) => s.usageCount > 0).length
-  const neverUsed = songUsage.filter((s) => s.usageCount === 0).length
-  const overdueCount = songUsage.filter(
-    (s) => s.lastUsedDate && weeksAgo(s.lastUsedDate) >= 8,
-  ).length
+  const stats = [
+    {
+      label: "Total Services",
+      value: filteredServices.length,
+      sub: period === "all" ? "all time" : PERIOD_OPTIONS.find(p => p.key === period)!.label.toLowerCase(),
+      icon: Calendar,
+    },
+    {
+      label: "Unique Songs Sung",
+      value: uniqueSongs,
+      sub: `of ${songUsage.length} in library`,
+      icon: Music2,
+    },
+    {
+      label: "Total Song Plays",
+      value: totalPlays,
+      sub: "across all services",
+      icon: TrendingUp,
+    },
+    {
+      label: "Never Used",
+      value: neverUsed,
+      sub: "songs in library",
+      icon: Clock,
+      warn: neverUsed > 0,
+    },
+  ]
 
   if (loading) {
     return (
@@ -100,288 +152,176 @@ export default function AnalyticsScreen() {
     )
   }
 
-  const stats = [
-    {
-      label: "Total services",
-      value: totalServices,
-      sub: "logged",
-      icon: Calendar,
-    },
-    {
-      label: "Songs used",
-      value: totalUnique,
-      sub: `of ${songUsage.length} in library`,
-      icon: Music2,
-    },
-    {
-      label: "Overdue rotation",
-      value: overdueCount,
-      sub: "not used in 8+ wks",
-      icon: AlertCircle,
-      tone: overdueCount > 0 ? "amber" as const : undefined,
-    },
-    {
-      label: "Never used",
-      value: neverUsed,
-      sub: "songs in library",
-      icon: Clock,
-    },
-  ]
+  const currentPeriodLabel = PERIOD_OPTIONS.find(p => p.key === period)!.label
+  const displayedTop      = showAllTop      ? topSongs      : topSongs.slice(0, 5)
+  const displayedStagnant = showAllStagnant ? stagnantSongs : stagnantSongs.slice(0, 5)
 
   return (
     <div className="h-full overflow-y-auto bg-background text-foreground">
-      <div className="max-w-6xl mx-auto px-6 py-6">
+      <div className="max-w-5xl mx-auto px-6 py-6">
 
-        {/* ── Stat cards ──────────────────────────────────────────────── */}
+        {/* ── Header ──────────────────────────────────────────────────────── */}
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-lg font-semibold">Analytics & Usage</h1>
+          <div className="flex items-center gap-2">
+
+            {/* Period filter */}
+            <div className="relative">
+              <button
+                onClick={() => setShowPeriodMenu(v => !v)}
+                className="flex items-center gap-1.5 text-xs font-medium bg-card border border-border rounded-md px-3 py-1.5 hover:bg-accent transition-colors"
+              >
+                <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+                {currentPeriodLabel}
+                <ChevronDown className="h-3 w-3 text-muted-foreground" />
+              </button>
+              {showPeriodMenu && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowPeriodMenu(false)} />
+                  <div className="absolute right-0 top-full mt-1 z-50 bg-card border border-border rounded-md shadow-lg overflow-hidden min-w-[150px]">
+                    {PERIOD_OPTIONS.map(opt => (
+                      <button
+                        key={opt.key}
+                        onClick={() => { setPeriod(opt.key); setShowPeriodMenu(false) }}
+                        className={`w-full text-left px-3 py-2 text-xs hover:bg-accent transition-colors ${
+                          period === opt.key ? "text-primary font-semibold" : "text-foreground"
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Export (UI only) */}
+            <button className="flex items-center gap-1.5 text-xs font-medium bg-card border border-border rounded-md px-3 py-1.5 hover:bg-accent transition-colors text-muted-foreground">
+              <Download className="h-3.5 w-3.5" />
+              Export Report
+            </button>
+          </div>
+        </div>
+
+        {/* ── Stat cards ──────────────────────────────────────────────────── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-          {stats.map((stat) => {
+          {stats.map(stat => {
             const Icon = stat.icon
             return (
-              <div
-                key={stat.label}
-                className="rounded-lg border border-border bg-card p-4"
-              >
-                <div className="flex items-start justify-between mb-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+              <div key={stat.label} className="rounded-lg border border-border bg-card p-4">
+                <div className="flex items-start justify-between mb-3">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground leading-tight pr-2">
                     {stat.label}
                   </span>
-                  <Icon
-                    className={`h-3.5 w-3.5 ${
-                      stat.tone === "amber" ? "text-amber-500" : "text-muted-foreground"
-                    }`}
-                  />
+                  <Icon className={`h-3.5 w-3.5 shrink-0 mt-0.5 ${stat.warn ? "text-amber-500" : "text-muted-foreground"}`} />
                 </div>
-                <div className="text-2xl font-bold leading-none">{stat.value}</div>
-                <div className="text-[10px] text-muted-foreground mt-1.5">
-                  {stat.sub}
+                <div className={`text-3xl font-bold leading-none tabular-nums ${stat.warn ? "text-amber-500" : ""}`}>
+                  {stat.value}
                 </div>
+                <div className="text-[10px] text-muted-foreground mt-1.5">{stat.sub}</div>
               </div>
             )
           })}
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4">
+        {/* ── Two-column song lists ────────────────────────────────────────── */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
-          {/* ── Song usage table ──────────────────────────────────────── */}
+          {/* Most Frequently Used */}
           <section className="rounded-lg border border-border bg-card overflow-hidden">
-            <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
-              <TrendingUp className="h-3.5 w-3.5 text-muted-foreground" />
-              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex-1">
-                Song usage
-              </span>
-              <div className="flex items-center gap-1 bg-muted/40 p-0.5 rounded-md">
-                {SORT_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.key}
-                    onClick={() => setSortBy(opt.key)}
-                    className={`px-2.5 py-1 rounded text-[10px] font-medium transition-colors ${
-                      sortBy === opt.key
-                        ? "bg-background text-foreground shadow-sm"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+              <div className="flex items-center gap-2">
+                <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-semibold">Most Frequently Used Songs</span>
               </div>
+              {topSongs.length > 5 && (
+                <button
+                  onClick={() => setShowAllTop(v => !v)}
+                  className="text-[11px] text-primary hover:text-primary/80 font-medium transition-colors shrink-0"
+                >
+                  {showAllTop ? "Show less" : "View All"}
+                </button>
+              )}
             </div>
-
-            <div className="p-3 space-y-1.5 max-h-[calc(100vh-280px)] overflow-y-auto">
-              {sorted.length === 0 ? (
-                <div className="text-center py-8 text-xs text-muted-foreground">
-                  No songs in library yet.
+            <div className="divide-y divide-border">
+              {displayedTop.length === 0 ? (
+                <div className="px-4 py-10 text-center text-xs text-muted-foreground">
+                  No songs have been used yet.
                 </div>
               ) : (
-                sorted.map((song) => {
-                  const status = getRotationStatus(song)
-                  const barWidth = maxUsage > 0 ? (song.usageCount / maxUsage) * 100 : 0
-                  return (
-                    <div
-                      key={song.id}
-                      className="flex items-center gap-3 px-3 py-2 rounded-md border border-border bg-background"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="text-xs font-medium text-foreground truncate">
-                          {song.title}
-                        </div>
-                        <div className="mt-1.5 h-1 bg-muted rounded-full overflow-hidden">
-                          <div
-                            className={`h-full transition-all ${
-                              song.usageCount === 0 ? "bg-muted-foreground/30" : "bg-primary"
-                            }`}
-                            style={{ width: `${barWidth}%` }}
-                          />
-                        </div>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <div className="text-sm font-bold text-foreground tabular-nums">
-                          {song.usageCount}×
-                        </div>
-                        <div className={`text-[10px] mt-0.5 ${status.className}`}>
-                          {status.label}
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })
+                displayedTop.map((song, i) => (
+                  <SongRow key={song.id} rank={i + 1} song={song} />
+                ))
               )}
             </div>
           </section>
 
-          {/* ── Right column ──────────────────────────────────────────── */}
-          <div className="space-y-4">
+          {/* Rarely Used / Stagnant */}
+          <section className="rounded-lg border border-border bg-card overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+              <div className="flex items-center gap-2 min-w-0">
+                <TrendingDown className="h-4 w-4 text-muted-foreground shrink-0" />
+                <span className="text-sm font-semibold truncate">Rarely Used / Stagnant Songs</span>
+              </div>
+              {stagnantSongs.length > 5 && (
+                <button
+                  onClick={() => setShowAllStagnant(v => !v)}
+                  className="text-[11px] text-primary hover:text-primary/80 font-medium transition-colors shrink-0 ml-2"
+                >
+                  {showAllStagnant ? "Show less" : "View All"}
+                </button>
+              )}
+            </div>
+            <div className="divide-y divide-border">
+              {displayedStagnant.length === 0 ? (
+                <div className="px-4 py-10 text-center text-xs text-muted-foreground">
+                  All songs are in active rotation.
+                </div>
+              ) : (
+                displayedStagnant.map((song, i) => (
+                  <SongRow key={song.id} rank={i + 1} song={song} muted />
+                ))
+              )}
+            </div>
+          </section>
 
-            {/* Rotation health */}
-            <section className="rounded-lg border border-border bg-card overflow-hidden">
-              <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
-                <CheckCircle2 className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                  Rotation health
-                </span>
-              </div>
-              <div className="p-3 space-y-1.5">
-                {(() => {
-                  const items = songUsage
-                    .filter((s) => s.usageCount > 0)
-                    .sort((a, b) => {
-                      if (!a.lastUsedDate) return 1
-                      if (!b.lastUsedDate) return -1
-                      return a.lastUsedDate.localeCompare(b.lastUsedDate)
-                    })
-                    .slice(0, 6)
-                  if (items.length === 0) {
-                    return (
-                      <div className="text-center py-4 text-xs text-muted-foreground">
-                        No usage data yet.
-                      </div>
-                    )
-                  }
-                  return items.map((song) => {
-                    const weeks = song.lastUsedDate ? weeksAgo(song.lastUsedDate) : 99
-                    const isOverdue = weeks >= 8
-                    const isOverused = song.usageCount >= 4 && weeks <= 3
-                    return (
-                      <div
-                        key={song.id}
-                        className="flex items-center gap-2 px-2.5 py-2 rounded-md bg-background border border-border"
-                      >
-                        <div
-                          className={`h-2 w-2 rounded-full shrink-0 ${
-                            isOverused
-                              ? "bg-destructive"
-                              : isOverdue
-                                ? "bg-amber-500"
-                                : "bg-green-500"
-                          }`}
-                        />
-                        <div className="min-w-0 flex-1">
-                          <div className="text-[11px] font-medium text-foreground truncate">
-                            {song.title}
-                          </div>
-                          <div className="text-[10px] text-muted-foreground mt-0.5">
-                            {isOverused
-                              ? "Consider a break"
-                              : isOverdue
-                                ? `${weeks} weeks since last use`
-                                : "Good rotation"}
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })
-                })()}
-              </div>
-            </section>
-
-            {/* Service history */}
-            <section className="rounded-lg border border-border bg-card overflow-hidden">
-              <div className="flex items-center gap-2 px-4 py-3 border-b border-border">
-                <History className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                  Service history
-                </span>
-              </div>
-              <div className="p-3 space-y-1.5">
-                {serviceHistory.length === 0 ? (
-                  <div className="text-center py-4 text-xs text-muted-foreground">
-                    No services logged yet.
-                  </div>
-                ) : (
-                  serviceHistory.slice(0, 8).map((service) => (
-                    <div
-                      key={service.id}
-                      className="flex items-center gap-2 px-2.5 py-2 rounded-md bg-background border border-border"
-                    >
-                      <div
-                        className={`h-2 w-2 rounded-full shrink-0 ${
-                          service.status === "ready"
-                            ? "bg-green-500"
-                            : service.status === "in-progress"
-                              ? "bg-amber-500"
-                              : "bg-muted-foreground/40"
-                        }`}
-                      />
-                      <div className="min-w-0 flex-1">
-                        <div className="text-[11px] font-medium text-foreground truncate">
-                          {service.label}
-                        </div>
-                        <div className="text-[10px] text-muted-foreground mt-0.5">
-                          {formatDate(service.date)}
-                        </div>
-                      </div>
-                      <ServiceStatusBadge status={service.status} />
-                    </div>
-                  ))
-                )}
-              </div>
-            </section>
-
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full gap-1.5"
-              onClick={loadData}
-            >
-              <BarChart3 className="h-3.5 w-3.5" />
-              Refresh
-            </Button>
-          </div>
         </div>
       </div>
     </div>
   )
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────
+// ── Song row ──────────────────────────────────────────────────────────────────
 
-function getRotationStatus(song: SongWithUsage): { label: string; className: string } {
-  if (song.usageCount === 0) return { label: "Never used", className: "text-muted-foreground" }
-  if (!song.lastUsedDate) return { label: "Unknown", className: "text-muted-foreground" }
-  const weeks = weeksAgo(song.lastUsedDate)
-  if (weeks <= 2) return { label: `${weeks}w ago`, className: "text-green-500" }
-  if (weeks <= 6) return { label: `${weeks}w ago`, className: "text-primary" }
-  if (weeks <= 10) return { label: `${weeks}w ago`, className: "text-amber-500" }
-  return { label: `${weeks}w ago`, className: "text-destructive" }
-}
-
-function ServiceStatusBadge({ status }: { status: string }) {
-  if (status === "ready") {
-    return (
-      <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-green-500/15 text-green-500">
-        Ready
-      </span>
-    )
-  }
-  if (status === "in-progress") {
-    return (
-      <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-500">
-        In prep
-      </span>
-    )
-  }
+function SongRow({
+  rank,
+  song,
+  muted,
+}: {
+  rank: number
+  song: SongWithUsage
+  muted?: boolean
+}) {
   return (
-    <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground">
-      Empty
-    </span>
+    <div className="flex items-center gap-3 px-4 py-3 hover:bg-accent/30 transition-colors">
+      <span className="text-sm font-bold tabular-nums w-5 text-right shrink-0 text-muted-foreground/60">
+        {rank}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium truncate">{song.title}</p>
+        <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
+          {song.artist}
+          {song.key ? ` • Key ${song.key}` : ""}
+        </p>
+      </div>
+      <div className="text-right shrink-0">
+        <p className={`text-xs font-semibold tabular-nums ${muted && song.usageCount === 0 ? "text-muted-foreground" : ""}`}>
+          {song.usageCount} {song.usageCount === 1 ? "play" : "plays"}
+        </p>
+        <p className="text-[10px] text-muted-foreground mt-0.5">
+          {formatLastUsed(song.lastUsedDate)}
+        </p>
+      </div>
+    </div>
   )
 }

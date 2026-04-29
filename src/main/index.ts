@@ -516,25 +516,40 @@ ipcMain.handle('themes:delete', (_e, id: number) => {
 // ── Analytics IPC handlers ────────────────────────────────────────────────────
 
 ipcMain.handle('analytics:getSongUsage', () => {
-  // Return all songs with their usage count and last used date
-  const allSongs = db.select().from(songs).orderBy(asc(songs.title)).all()
-  const usageData = db.select().from(songUsage).all()
-  const serviceDateData = db.select().from(serviceDates).all()
+  const allSongs = db.select().from(songs)
+    .where(and(ne(songs.artist, 'Scripture'), ne(songs.artist, 'Media')))
+    .orderBy(asc(songs.title)).all()
+
+  // Derive usage from lineup_items — always accurate, updates on add/remove
+  const lineupRows = db.select({
+    songId: lineupItems.songId,
+    serviceDateId: lineupItems.serviceDateId,
+  }).from(lineupItems).where(eq(lineupItems.itemType, 'song')).all()
+
+  const serviceDateMap = new Map(
+    db.select({ id: serviceDates.id, date: serviceDates.date, label: serviceDates.label })
+      .from(serviceDates).all().map(s => [s.id, s])
+  )
+
+  // Group lineup rows by songId
+  const usagesBySong = new Map<number, { date: string; label: string }[]>()
+  for (const row of lineupRows) {
+    if (row.songId == null) continue
+    const svc = serviceDateMap.get(row.serviceDateId)
+    if (!svc) continue
+    const arr = usagesBySong.get(row.songId) ?? []
+    arr.push(svc)
+    usagesBySong.set(row.songId, arr)
+  }
 
   return allSongs.map(song => {
-    const usages = usageData.filter(u => u.songId === song.id)
-    const lastUsage = usages.sort((a, b) =>
-      new Date(b.usedAt).getTime() - new Date(a.usedAt).getTime()
-    )[0]
-    const lastServiceDate = lastUsage
-      ? serviceDateData.find(s => s.id === lastUsage.serviceDateId)
-      : null
-
+    const usages = usagesBySong.get(song.id) ?? []
+    const lastService = usages.sort((a, b) => b.date.localeCompare(a.date))[0] ?? null
     return {
       ...song,
       usageCount: usages.length,
-      lastUsedDate: lastServiceDate?.date ?? null,
-      lastUsedLabel: lastServiceDate?.label ?? null
+      lastUsedDate: lastService?.date ?? null,
+      lastUsedLabel: lastService?.label ?? null,
     }
   })
 })

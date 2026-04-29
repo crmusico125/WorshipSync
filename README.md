@@ -1,99 +1,262 @@
 # WorshipSync
 
-Church worship presentation app — a free, open-source alternative to EasyWorship and ProPresenter built specifically for our church's workflow.
+WorshipSync is an offline-first desktop app for planning church services and running live projection.
 
-## Features
+It is built around a practical single-operator workflow:
 
-- **Song library** — section-based lyrics (verse, chorus, bridge, etc.) with inline creation and section editor
-- **Service planner** — weekly lineup builder with drag-and-drop reordering, today detection, and quick launch
-- **Live presenter** — dual-screen operator panel + audience display with blank, logo, and slide controls
-- **Slide theming** — global, seasonal, and per-song themes with custom backgrounds (images or solid colors)
-- **Per-song backgrounds** — assign different backgrounds to each song in a lineup
-- **Data backup** — export/import all app data (songs, services, backgrounds) as a `.worshipsync` file for moving to another machine
-- **Analytics** — song usage history and frequency tracking
+1. Create or open a service
+2. Build the lineup with songs, scripture, countdowns, and media
+3. Choose a display and go live
+4. Control the audience-facing projection from a separate operator window
 
-## Tech stack
+The app is built with Electron, React, TypeScript, Zustand, SQLite, and Drizzle ORM.
 
-| Layer         | Choice                                | Why                             |
-| ------------- | ------------------------------------- | ------------------------------- |
-| Desktop shell | Electron                              | Cross-platform, two-window IPC  |
-| UI            | React + Vite + TypeScript             | Fast dev, type safety           |
-| Styling       | Tailwind CSS + CSS variables          | Utility-first, consistent       |
-| State         | Zustand                               | Lightweight, no boilerplate     |
-| Database      | SQLite + better-sqlite3 + Drizzle ORM | Local, offline, fast            |
-| Packaging     | electron-builder                      | DMG (macOS), NSIS installer (Windows) |
+## What It Does Today
 
-## Getting started
+- Service planning with upcoming/past services, readiness states, and quick access from an overview dashboard
+- A service workspace that combines lineup preparation and live presentation control
+- Song library with section-based lyrics, slide preview, CCLI metadata, and per-song styling
+- Scripture insertion from an in-app browser directly into a service lineup
+- Shared media library for images, video, and audio assets
+- Theme management with global, seasonal, and per-song presentation themes
+- Separate projection window for the audience display
+- Multi-display detection, projection display switching, and projection window recovery hooks
+- Live controls for slides, blank/logo states, countdowns, and media playback
+- Service cue notes visible to the presenter
+- Church name, recurring service schedule, timezone, and projection defaults in Settings
+- Local analytics for song usage, rotation health, and service history
+- Backup export/import using a portable `.worshipsync` file
+
+## Product Focus
+
+WorshipSync is currently optimized for a focused church presentation workflow rather than broad production tooling.
+
+- Offline-first local desktop app
+- Designed for a small team or single operator
+- Fast Sunday-morning workflow over deep broadcast integrations
+- Local data ownership with SQLite storage and file-based backups
+
+## Current Workflow
+
+### Overview
+
+- See the next service, library counts, display availability, and quick actions
+- Jump into planning or return to an active live session
+
+### Planner
+
+- Create and manage service dates
+- Track service status as `empty`, `in-progress`, or `ready`
+- Open a service for preparation or go live from the planner
+
+### Service Workspace
+
+- Build and reorder a lineup
+- Add songs from the library
+- Add scripture passages
+- Add countdowns and media items
+- Edit included sections and cue notes
+- Preview how slides will break before going live
+
+### Live Presentation
+
+- Open a dedicated projection window
+- Select or move the output display
+- Advance slides with keyboard controls
+- Show countdowns, videos, audio, images, lyrics, or blank/logo states
+- View current and next content from the operator interface
+
+### Library And Settings
+
+- Manage songs, media assets, and themes
+- Configure church name, service schedules, timezone defaults, and projection font size
+- Export/import data for another machine
+
+## Feature Breakdown
+
+### Service Planning
+
+- Overview dashboard with next-service summary
+- Planner for future and past services
+- Service edit/status management
+- Recurring service schedule defaults
+
+### Song And Scripture Content
+
+- Song creation with section parsing via tags like `[Verse]` and `[Chorus]`
+- Song metadata including artist, key, and CCLI number
+- Slide generation from song sections
+- Scripture browser that converts selected verses into lineup-ready slides
+
+### Media
+
+- Shared media library stored locally
+- Image, video, and audio support
+- Usage-aware delete checks before removing media
+- Media insertion into services as presentable lineup items
+
+Supported formats currently include:
+
+- Images: `jpg`, `jpeg`, `png`, `webp`
+- Video: `mp4`, `webm`, `mov`
+- Audio: `mp3`, `wav`, `ogg`, `m4a`, `aac`, `flac`
+
+### Themes And Styling
+
+- Global themes
+- Seasonal themes
+- Per-song themes
+- Configurable font family, size, weight, color, alignment, text position, overlay, shadow, and lines-per-slide
+- Theme background assignment
+
+### Live Projection
+
+- Dedicated projection renderer
+- Audience-facing lyrics/media output
+- Blank and logo screen controls
+- Countdown projection
+- Video play/pause/stop and seek controls
+- Audio playback support from the presenter
+- Projection window lifecycle handling in Electron main/preload/renderer layers
+
+### Operations
+
+- Local SQLite persistence
+- Data export/import to a `.worshipsync` bundle
+- Projection font defaults
+- Church branding text on projection
+- Song usage analytics and service history
+
+## Tech Stack
+
+| Layer | Choice |
+| --- | --- |
+| Desktop shell | Electron |
+| UI | React 19 + Vite + TypeScript |
+| Styling | Tailwind CSS |
+| State | Zustand |
+| Database | SQLite + better-sqlite3 |
+| ORM | Drizzle ORM |
+| Packaging | electron-builder |
+
+## Architecture
+
+WorshipSync uses a standard Electron split with a dedicated projection renderer:
+
+- `src/main` handles window creation, IPC, display management, file access, and SQLite persistence
+- `src/preload` exposes a typed bridge to the renderer via `contextBridge`
+- `src/renderer` contains the React operator UI
+- `src/renderer/projection.html` + `src/renderer/src/projection.tsx` power the audience-facing projection window
+- `shared/types.ts` and renderer window typings keep IPC contracts explicit
+
+Key architectural concerns in the current app:
+
+- Two-window desktop flow: control window + projection window
+- Display enumeration and switching
+- Local-first persistence
+- Projection synchronization through Electron IPC
+
+## Project Structure
+
+```text
+src/
+├── main/
+│   ├── index.ts
+│   └── db/
+├── preload/
+│   └── index.ts
+├── renderer/
+│   ├── index.html
+│   ├── projection.html
+│   └── src/
+│       ├── App.tsx
+│       ├── projection.tsx
+│       ├── components/
+│       ├── screens/
+│       ├── store/
+│       └── styles/
+└── shared/
+    └── types.ts
+```
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 20+
+- npm
+
+### Install
 
 ```bash
-# Install dependencies
 npm install
+```
 
-# Run in development (opens both windows)
+### Run In Development
+
+```bash
 npm run dev
+```
 
-# Type-check and lint
+### Typecheck And Lint
+
+```bash
 npm run typecheck
 npm run lint
 ```
 
+### Build
+
+```bash
+npm run build
+```
+
 ## Packaging
 
-### macOS (DMG)
+### macOS
 
 ```bash
 npm run dist:mac
 ```
 
-Outputs to `release/`:
-- `WorshipSync-x.x.x-arm64.dmg` — Apple Silicon (M1/M2/M3)
-- `WorshipSync-x.x.x.dmg` — Intel
+Current packaging target:
 
-> **First launch on another Mac:** macOS will show an "unidentified developer" warning because the app is not notarized. Right-click the app → **Open** → **Open** to bypass it once.
+- `arm64` DMG
 
-### Windows (NSIS installer)
+Output goes to `release/`.
+
+### Windows
 
 ```bash
 npm run dist:win
 ```
 
-Outputs a standard `.exe` installer to `release/`.
+Current packaging target:
 
-## Moving data to another machine
+- `x64` NSIS installer
 
-1. Open WorshipSync → **Settings** tab
-2. Click **Export backup** — saves a `.worshipsync` file containing all songs, services, themes, and background images
-3. On the new machine, open WorshipSync → **Settings** → **Import backup** and select the file
+Output goes to `release/`.
 
-## Project structure
+## Data Storage And Backups
 
-```
-src/
-├── main/           # Electron main process (Node.js)
-│   ├── index.ts    # Window creation, IPC handlers
-│   └── db/         # SQLite schema, migrations, Drizzle ORM
-├── preload/        # contextBridge API exposed to renderer
-├── shared/         # Types shared across processes
-└── renderer/       # React UI (Chromium)
-    ├── index.html          # Control window entry
-    ├── projection.html     # Projection window entry
-    └── src/
-        ├── App.tsx                  # Shell + navigation
-        ├── projection.tsx           # Projection React root
-        ├── screens/                 # One file per screen
-        ├── components/              # Shared UI components
-        ├── store/                   # Zustand stores
-        └── styles/
-            └── globals.css
-```
+WorshipSync stores app data locally on the machine using SQLite and app-managed asset storage.
 
-## Environment variables
+- Songs, services, lineup items, themes, and analytics are stored locally
+- Imported backgrounds/media are copied into the app data directory
+- Export creates a portable `.worshipsync` backup file containing structured data plus referenced local media
 
-Create a `.env` file in the project root (never commit this):
+Typical migration flow:
 
-```env
-ANTHROPIC_API_KEY=sk-ant-...
-```
+1. Open `Settings`
+2. Export a backup
+3. Move the `.worshipsync` file to another machine
+4. Import the backup from `Settings`
+
+## Development Notes
+
+- No external service is required to run the current app locally
+- SongSelect is present in the UI as a future-facing placeholder, not a completed integration
+- The codebase is actively evolving toward a more explicit service/presentation state model
 
 ## License
 

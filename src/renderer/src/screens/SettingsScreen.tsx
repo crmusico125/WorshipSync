@@ -202,6 +202,7 @@ export default function SettingsScreen() {
   const [stageMdnsURL, setStageMdnsURL]     = useState("")
   const [stagePortInput, setStagePortInput] = useState("4040")
   const [stageClients, setStageClients]     = useState(0)
+  const [stageClientList, setStageClientList] = useState<{ ip: string; device: string; connectedAt: number; connectedForSeconds: number }[]>([])
   const [stageCopied, setStageCopied]       = useState(false)
   const [stageMdnsCopied, setStageMdnsCopied] = useState(false)
   const [stageLoading, setStageLoading]     = useState(false)
@@ -214,6 +215,7 @@ export default function SettingsScreen() {
     setStageMdnsURL(s.mdnsUrl)
     setStagePortInput(String(s.port))
     setStageClients(s.clients)
+    setStageClientList(s.clientList ?? [])
   }, [])
 
   useEffect(() => {
@@ -662,17 +664,41 @@ export default function SettingsScreen() {
                     )}
                   </div>
 
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <Users className="h-3.5 w-3.5" />
-                    {stageClients === 0
-                      ? "No devices connected"
-                      : `${stageClients} device${stageClients > 1 ? "s" : ""} connected`}
-                    <button
-                      onClick={refreshStageStatus}
-                      className="ml-auto text-primary hover:text-primary/80 transition-colors font-medium"
-                    >
-                      Refresh
-                    </button>
+                  {/* Connected devices */}
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-1.5">
+                      <Users className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span className="text-xs text-muted-foreground">
+                        {stageClients === 0
+                          ? "No devices connected"
+                          : `${stageClients} device${stageClients > 1 ? "s" : ""} connected`}
+                      </span>
+                      <button
+                        onClick={refreshStageStatus}
+                        className="ml-auto text-xs text-primary hover:text-primary/80 transition-colors font-medium"
+                      >
+                        Refresh
+                      </button>
+                    </div>
+                    {stageClientList.length > 0 && (
+                      <div className="flex flex-col gap-1">
+                        {stageClientList.map((c, i) => (
+                          <div
+                            key={i}
+                            className="flex items-center gap-2 rounded-md bg-background border border-border px-3 py-1.5"
+                          >
+                            <span className="h-1.5 w-1.5 rounded-full bg-green-500 shrink-0" />
+                            <span className="text-xs font-medium flex-1">{c.device}</span>
+                            <span className="text-[11px] text-muted-foreground font-mono">{c.ip}</span>
+                            <span className="text-[11px] text-muted-foreground">
+                              {c.connectedForSeconds < 60
+                                ? `${c.connectedForSeconds}s`
+                                : `${Math.floor(c.connectedForSeconds / 60)}m`}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

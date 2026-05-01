@@ -23,8 +23,27 @@ let movingProjection = false  // true while doing an intentional display switch
 
 // ── Stage display (local web server) ──────────────────────────────────────────
 
+interface StageClient {
+  res: ServerResponse
+  ip: string
+  userAgent: string
+  connectedAt: number
+}
+
+function parseDeviceLabel(ua: string): string {
+  if (/iPhone/i.test(ua))                      return 'iPhone'
+  if (/iPad/i.test(ua))                        return 'iPad'
+  if (/Android/i.test(ua) && /Mobile/i.test(ua)) return 'Android Phone'
+  if (/Android/i.test(ua))                     return 'Android Tablet'
+  if (/Macintosh|Mac OS X/i.test(ua))          return 'Mac'
+  if (/Windows/i.test(ua))                     return 'Windows PC'
+  if (/Linux/i.test(ua))                       return 'Linux'
+  if (/CrOS/i.test(ua))                        return 'Chromebook'
+  return 'Unknown Device'
+}
+
 let stageServer: Server | null = null
-let stageClients: ServerResponse[] = []
+let stageClients: StageClient[] = []
 let stageSlide: unknown = null
 let stageBlank = false
 let stageCountdown: unknown = null
@@ -53,7 +72,7 @@ function getLocalIP(): string {
 
 function broadcastStage(event: unknown) {
   const line = `data: ${JSON.stringify(event)}\n\n`
-  stageClients = stageClients.filter(c => { try { c.write(line); return true } catch { return false } })
+  stageClients = stageClients.filter(c => { try { c.res.write(line); return true } catch { return false } })
 }
 
 function startStageServer(port = 4040): Promise<boolean> {
@@ -68,9 +87,15 @@ function startStageServer(port = 4040): Promise<boolean> {
           'Connection': 'keep-alive',
           'Access-Control-Allow-Origin': '*',
         })
-        stageClients.push(res)
+        const client: StageClient = {
+          res,
+          ip: (req.socket.remoteAddress ?? '').replace('::ffff:', ''),
+          userAgent: req.headers['user-agent'] ?? '',
+          connectedAt: Date.now(),
+        }
+        stageClients.push(client)
         res.write(`data: ${JSON.stringify({ type: 'init', slide: stageSlide, blank: stageBlank, countdown: stageCountdown })}\n\n`)
-        req.on('close', () => { stageClients = stageClients.filter(c => c !== res) })
+        req.on('close', () => { stageClients = stageClients.filter(c => c !== client) })
       } else {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
         res.end(STAGE_DISPLAY_HTML)
@@ -96,7 +121,7 @@ function startStageServer(port = 4040): Promise<boolean> {
 }
 
 function stopStageServer() {
-  stageClients.forEach(c => { try { c.end() } catch { /* ignore */ } })
+  stageClients.forEach(c => { try { c.res.end() } catch { /* ignore */ } })
   stageClients = []
   stageServer?.close()
   stageServer = null
@@ -1150,14 +1175,23 @@ ipcMain.handle('stageDisplay:stop', () => {
   return true
 })
 
-ipcMain.handle('stageDisplay:getStatus', () => ({
-  running: !!stageServer,
-  url: `http://${getLocalIP()}:${stagePort}`,
-  mdnsUrl: `http://${getMdnsHostname()}:${stagePort}`,
-  port: stagePort,
-  clients: stageClients.length,
-  localIP: getLocalIP(),
-}))
+ipcMain.handle('stageDisplay:getStatus', () => {
+  const now = Date.now()
+  return {
+    running: !!stageServer,
+    url: `http://${getLocalIP()}:${stagePort}`,
+    mdnsUrl: `http://${getMdnsHostname()}:${stagePort}`,
+    port: stagePort,
+    clients: stageClients.length,
+    localIP: getLocalIP(),
+    clientList: stageClients.map(c => ({
+      ip: c.ip,
+      device: parseDeviceLabel(c.userAgent),
+      connectedAt: c.connectedAt,
+      connectedForSeconds: Math.floor((now - c.connectedAt) / 1000),
+    })),
+  }
+})
 
 // ── Data export / import ──────────────────────────────────────────────────────
 

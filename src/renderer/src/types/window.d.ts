@@ -148,7 +148,15 @@ declare global {
       stageDisplay: {
         start:     (port?: number) => Promise<{ ok: boolean; url: string; port: number }>
         stop:      ()              => Promise<boolean>
-        getStatus: ()              => Promise<{ running: boolean; url: string; mdnsUrl: string; port: number; clients: number; localIP: string }>
+        getStatus: ()              => Promise<{
+          running: boolean
+          url: string
+          mdnsUrl: string
+          port: number
+          clients: number
+          localIP: string
+          clientList: { ip: string; device: string; connectedAt: number; connectedForSeconds: number }[]
+        }>
       }
       confidence: {
         open:     (displayId?: number) => void

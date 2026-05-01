@@ -27,6 +27,7 @@ The app is built with Electron, React, TypeScript, Zustand, SQLite, and Drizzle 
 - Local analytics for song usage, rotation health, and service history
 - Backup export/import using a portable `.worshipsync` file
 - Stage display (confidence monitor) served over a local Wi-Fi web server — any phone, tablet, or laptop on the same network can open the URL in a browser with no app install required
+- Two connection URLs for the stage display: a human-readable device-name address (e.g. `http://device-name.local:4040`) for phones and laptops, and an IP address fallback for smart TVs and devices without mDNS support
 
 ## Product Focus
 
@@ -70,7 +71,9 @@ WorshipSync is currently optimized for a focused church presentation workflow ra
 ### Stage Display
 
 - Enable a local web server from **Settings → Stage Display**
-- Share the displayed URL (e.g. `http://192.168.1.x:4040`) with musicians or worship leaders
+- Settings shows two URLs to share with the worship team:
+  - **Device name** (e.g. `http://MacBook-Pro.local:4040`) — works on phones, tablets, and laptops on the same Wi-Fi; easier to type than an IP
+  - **IP address** (e.g. `http://192.168.1.x:4040`) — fallback for smart TVs and older devices that don't support mDNS
 - Any device on the same Wi-Fi network opens the URL in a browser — no app install needed
 - Updates instantly as slides advance via Server-Sent Events (SSE)
 - Shows: current slide lyrics (large), next slide preview (dimmed), current time, slide position, and a countdown timer when active
@@ -139,6 +142,8 @@ Supported formats currently include:
 - Each slide advance in the presenter sends `nextLines` and `nextSectionLabel` in the payload so the stage display can show an accurate next-slide preview
 - `SlidePayload` in `shared/types.ts` carries both current and next slide data across the IPC boundary
 - The served page is a self-contained HTML file embedded in the main process — no separate build step
+- mDNS hostname resolved via `scutil --get LocalHostName` on macOS (falls back to `os.hostname()` on other platforms) so the `.local` address shown in Settings is the one that actually resolves
+- `bonjour-service` advertises the server on the local network for service discovery
 
 ### Operations
 

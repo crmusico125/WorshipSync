@@ -198,15 +198,18 @@ export default function SettingsScreen() {
   // Stage display
   const [stageRunning, setStageRunning]     = useState(false)
   const [stageURL, setStageURL]             = useState("")
+  const [stageMdnsURL, setStageMdnsURL]     = useState("")
   const [stagePortInput, setStagePortInput] = useState("4040")
   const [stageClients, setStageClients]     = useState(0)
   const [stageCopied, setStageCopied]       = useState(false)
+  const [stageMdnsCopied, setStageMdnsCopied] = useState(false)
   const [stageLoading, setStageLoading]     = useState(false)
 
   const refreshStageStatus = useCallback(async () => {
     const s = await window.worshipsync.stageDisplay.getStatus()
     setStageRunning(s.running)
     setStageURL(s.url)
+    setStageMdnsURL(s.mdnsUrl)
     setStagePortInput(String(s.port))
     setStageClients(s.clients)
   }, [])
@@ -303,6 +306,13 @@ export default function SettingsScreen() {
     navigator.clipboard.writeText(stageURL).then(() => {
       setStageCopied(true)
       setTimeout(() => setStageCopied(false), 2000)
+    })
+  }
+
+  const handleCopyMdnsURL = () => {
+    navigator.clipboard.writeText(stageMdnsURL).then(() => {
+      setStageMdnsCopied(true)
+      setTimeout(() => setStageMdnsCopied(false), 2000)
     })
   }
 
@@ -580,19 +590,47 @@ export default function SettingsScreen() {
                     <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse shrink-0" />
                     <span className="text-xs font-medium text-green-500">Live on your local network</span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <code className="flex-1 text-sm font-mono font-semibold bg-background border border-border rounded-lg px-3 py-2 truncate">
-                      {stageURL}
-                    </code>
-                    <button
-                      onClick={handleCopyURL}
-                      className="h-9 px-3 flex items-center gap-1.5 rounded-md border border-border text-xs font-medium hover:bg-accent transition-colors shrink-0"
-                    >
-                      {stageCopied
-                        ? <><Check className="h-3.5 w-3.5 text-green-500" /> Copied</>
-                        : <><Copy className="h-3.5 w-3.5" /> Copy</>}
-                    </button>
+
+                  {/* mDNS URL — works on most phones, tablets, laptops */}
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      Device name <span className="normal-case font-normal">(phones, tablets, laptops on same Wi-Fi)</span>
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 text-sm font-mono font-semibold bg-background border border-border rounded-lg px-3 py-2 truncate">
+                        {stageMdnsURL}
+                      </code>
+                      <button
+                        onClick={handleCopyMdnsURL}
+                        className="h-9 px-3 flex items-center gap-1.5 rounded-md border border-border text-xs font-medium hover:bg-accent transition-colors shrink-0"
+                      >
+                        {stageMdnsCopied
+                          ? <><Check className="h-3.5 w-3.5 text-green-500" /> Copied</>
+                          : <><Copy className="h-3.5 w-3.5" /> Copy</>}
+                      </button>
+                    </div>
                   </div>
+
+                  {/* IP URL — fallback for smart TVs and older devices */}
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      IP address <span className="normal-case font-normal">(smart TVs, older devices)</span>
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 text-sm font-mono bg-background border border-border rounded-lg px-3 py-2 truncate text-muted-foreground">
+                        {stageURL}
+                      </code>
+                      <button
+                        onClick={handleCopyURL}
+                        className="h-9 px-3 flex items-center gap-1.5 rounded-md border border-border text-xs font-medium hover:bg-accent transition-colors shrink-0"
+                      >
+                        {stageCopied
+                          ? <><Check className="h-3.5 w-3.5 text-green-500" /> Copied</>
+                          : <><Copy className="h-3.5 w-3.5" /> Copy</>}
+                      </button>
+                    </div>
+                  </div>
+
                   <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     <Users className="h-3.5 w-3.5" />
                     {stageClients === 0

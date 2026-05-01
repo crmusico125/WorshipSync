@@ -4,7 +4,9 @@ import { join, extname, basename } from 'path'
 import { copyFileSync, mkdirSync, existsSync, readdirSync, unlinkSync, readFileSync, writeFileSync } from 'fs'
 import { createServer } from 'http'
 import type { Server, ServerResponse } from 'http'
-import { networkInterfaces } from 'os'
+import { networkInterfaces, hostname } from 'os'
+import { execSync } from 'child_process'
+import { Bonjour } from 'bonjour-service'
 import { db } from './db/index'
 import { songs, sections, serviceDates, lineupItems, themes, songUsage } from './db/schema'
 import { asc, desc, eq, ne, and, like, or, count, lte, gte } from 'drizzle-orm'
@@ -24,6 +26,17 @@ let stageSlide: unknown = null
 let stageBlank = false
 let stageCountdown: unknown = null
 let stagePort = 4040
+const bonjour = new Bonjour()
+let bonjourService: ReturnType<typeof bonjour.publish> | null = null
+
+function getMdnsHostname(): string {
+  try {
+    if (process.platform === 'darwin') {
+      return execSync('scutil --get LocalHostName', { encoding: 'utf8' }).trim() + '.local'
+    }
+  } catch { /* fall through */ }
+  return hostname() + '.local'
+}
 
 function getLocalIP(): string {
   for (const ifaces of Object.values(networkInterfaces())) {
@@ -33,6 +46,7 @@ function getLocalIP(): string {
   }
   return 'localhost'
 }
+
 
 function broadcastStage(event: unknown) {
   const line = `data: ${JSON.stringify(event)}\n\n`
@@ -67,6 +81,12 @@ function startStageServer(port = 4040): Promise<boolean> {
     server.listen(port, () => {
       stageServer = server
       console.log(`[stage] listening on http://localhost:${port}`)
+      // Advertise via mDNS so devices can reach http://worshipsync.local:<port>
+      try {
+        bonjourService = bonjour.publish({ name: 'WorshipSync', type: 'http', port })
+      } catch (e) {
+        console.warn('[stage] mDNS publish failed:', e)
+      }
       resolve(true)
     })
   })
@@ -77,6 +97,10 @@ function stopStageServer() {
   stageClients = []
   stageServer?.close()
   stageServer = null
+  if (bonjourService) {
+    try { bonjourService.stop() } catch { /* ignore */ }
+    bonjourService = null
+  }
 }
 
 const STAGE_DISPLAY_HTML = `<!DOCTYPE html>
@@ -1030,6 +1054,7 @@ ipcMain.handle('stageDisplay:stop', () => {
 ipcMain.handle('stageDisplay:getStatus', () => ({
   running: !!stageServer,
   url: `http://${getLocalIP()}:${stagePort}`,
+  mdnsUrl: `http://${getMdnsHostname()}:${stagePort}`,
   port: stagePort,
   clients: stageClients.length,
   localIP: getLocalIP(),
@@ -1211,6 +1236,7 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   stopStageServer()
+  try { bonjour.destroy() } catch { /* ignore */ }
   if (process.platform !== 'darwin') {
     app.quit()
   }

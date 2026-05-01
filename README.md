@@ -26,6 +26,7 @@ The app is built with Electron, React, TypeScript, Zustand, SQLite, and Drizzle 
 - Church name, recurring service schedule, timezone, and projection defaults in Settings
 - Local analytics for song usage, rotation health, and service history
 - Backup export/import using a portable `.worshipsync` file
+- Stage display (confidence monitor) served over a local Wi-Fi web server — any phone, tablet, or laptop on the same network can open the URL in a browser with no app install required
 
 ## Product Focus
 
@@ -65,6 +66,18 @@ WorshipSync is currently optimized for a focused church presentation workflow ra
 - Advance slides with keyboard controls
 - Show countdowns, videos, audio, images, lyrics, or blank/logo states
 - View current and next content from the operator interface
+
+### Stage Display
+
+- Enable a local web server from **Settings → Stage Display**
+- Share the displayed URL (e.g. `http://192.168.1.x:4040`) with musicians or worship leaders
+- Any device on the same Wi-Fi network opens the URL in a browser — no app install needed
+- Updates instantly as slides advance via Server-Sent Events (SSE)
+- Shows: current slide lyrics (large), next slide preview (dimmed), current time, slide position, and a countdown timer when active
+- Blank overlay appears when the operator blanks the screen
+- Connection dot shows live status; auto-reconnects if the network drops
+- Default port is 4040, configurable in Settings
+- Auto-starts on app launch if it was previously enabled
 
 ### Library And Settings
 
@@ -119,6 +132,14 @@ Supported formats currently include:
 - Audio playback support from the presenter
 - Projection window lifecycle handling in Electron main/preload/renderer layers
 
+### Stage Display
+
+- Local HTTP server running inside the Electron main process
+- Slide state is pushed to connected browsers in real time using Server-Sent Events (SSE)
+- Each slide advance in the presenter sends `nextLines` and `nextSectionLabel` in the payload so the stage display can show an accurate next-slide preview
+- `SlidePayload` in `shared/types.ts` carries both current and next slide data across the IPC boundary
+- The served page is a self-contained HTML file embedded in the main process — no separate build step
+
 ### Operations
 
 - Local SQLite persistence
@@ -155,6 +176,7 @@ Key architectural concerns in the current app:
 - Display enumeration and switching
 - Local-first persistence
 - Projection synchronization through Electron IPC
+- Stage display served as a third output channel — same slide events fan out from the main process to the projection window (via IPC) and to connected stage display browsers (via SSE) simultaneously
 
 ## Project Structure
 

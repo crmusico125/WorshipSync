@@ -174,6 +174,7 @@ export default function PresenterDashboard({
   const [selectedSongIdx, setSelectedSongIdx] = useState(0);
   const [activeSlideIdx, setActiveSlideIdx] = useState(-1);
   const [isBlank, setIsBlank] = useState(false);
+  const [isTextCleared, setIsTextCleared] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [confirmEndShow, setConfirmEndShow] = useState(false);
   const confirmEndTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -403,6 +404,7 @@ export default function PresenterDashboard({
       setSelectedSongIdx(songIdx);
       setActiveSlideIdx(slideIdx);
       setIsBlank(false);
+      setIsTextCleared(false);
 
       // Compute next slide for stage display
       let nextLines: string[] | undefined;
@@ -477,19 +479,59 @@ export default function PresenterDashboard({
   const clearAll = () => {
     window.worshipsync.slide.blank(true);
     setIsBlank(true);
+    setIsTextCleared(false);
     setActiveSlideIdx(-1);
   };
   const clearText = () => {
-    window.worshipsync.slide.blank(true);
-    setIsBlank(true);
+    if (isTextCleared) {
+      // Restore — re-send the active slide
+      if (activeSlideIdx >= 0) sendSlide(selectedSongIdx, activeSlideIdx);
+      setIsTextCleared(false);
+      return;
+    }
+    const song = liveSongs[selectedSongIdx];
+    if (!song) {
+      window.worshipsync.slide.blank(true);
+      setIsBlank(true);
+      return;
+    }
+    const theme = resolveTheme(song);
+    const bg = resolveBg(song);
+    const currentSlide = song.slides[activeSlideIdx];
+    window.worshipsync.slide.blank(false);
+    window.worshipsync.slide.logo(false);
+    window.worshipsync.slide.show({
+      lines: [],
+      songTitle: song.title,
+      artist: song.artist,
+      sectionLabel: currentSlide?.sectionLabel ?? "",
+      slideIndex: currentSlide?.globalIndex ?? 0,
+      totalSlides: song.slides.length,
+      backgroundPath: bg,
+      theme: {
+        fontFamily: theme.fontFamily,
+        fontSize: theme.fontSize !== DEFAULT_THEME.fontSize ? theme.fontSize : projectionFontSize,
+        fontWeight: theme.fontWeight,
+        textColor: theme.textColor,
+        textAlign: theme.textAlign,
+        textPosition: theme.textPosition,
+        overlayOpacity: theme.overlayOpacity,
+        textShadowOpacity: theme.textShadowOpacity,
+        maxLinesPerSlide: theme.maxLinesPerSlide,
+      },
+    });
+    setIsBlank(false);
+    setIsTextCleared(true);
   };
   const toBlack = () => {
     window.worshipsync.slide.blank(true);
     setIsBlank(true);
+    setIsTextCleared(false);
   };
   const showLogo = () => {
     window.worshipsync.slide.logo(true);
     setIsBlank(false);
+    setIsTextCleared(false);
   };
 
   const jumpToItem = useCallback((idx: number) => {
@@ -755,7 +797,18 @@ export default function PresenterDashboard({
         else goNextSong();
       } else if (e.key === "b" || e.key === "B") {
         e.preventDefault();
-        toBlack();
+        if (isBlank) {
+          if (activeSlideIdx >= 0) sendSlide(selectedSongIdx, activeSlideIdx);
+          else { window.worshipsync.slide.blank(false); setIsBlank(false); }
+        } else {
+          toBlack();
+        }
+      } else if (e.key === "u" || e.key === "U") {
+        e.preventDefault();
+        if (isBlank) {
+          if (activeSlideIdx >= 0) sendSlide(selectedSongIdx, activeSlideIdx);
+          else { window.worshipsync.slide.blank(false); setIsBlank(false); }
+        }
       } else if (e.key === "?" || (e.key === "/" && e.shiftKey)) {
         e.preventDefault();
         setShowHelp((v) => !v);
@@ -765,7 +818,7 @@ export default function PresenterDashboard({
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [goNextSlide, goPrevSlide, goNextSong, goPrevSong]);
+  }, [goNextSlide, goPrevSlide, goNextSong, goPrevSong, isBlank, activeSlideIdx, selectedSongIdx, sendSlide, toBlack]);
 
 
   // Scroll active slide into view when it changes
@@ -1852,12 +1905,26 @@ export default function PresenterDashboard({
                 iconColor="text-destructive"
                 onClick={clearAll}
               />
-              <QuickAction icon={Type} label="Clear Text" onClick={clearText} />
+              <QuickAction
+                icon={Type}
+                label={isTextCleared ? "Restore Text" : "Clear Text"}
+                iconBg={isTextCleared ? "bg-primary/20" : undefined}
+                iconColor={isTextCleared ? "text-primary" : undefined}
+                onClick={clearText}
+              />
               <QuickAction
                 icon={MonitorOff}
-                label="To Black"
-                iconBg="bg-black border border-muted"
-                onClick={toBlack}
+                label={isBlank ? "Unblank" : "To Black"}
+                iconBg={isBlank ? "bg-zinc-800 border border-zinc-600" : "bg-black border border-muted"}
+                iconColor={isBlank ? "text-white" : undefined}
+                onClick={() => {
+                  if (isBlank) {
+                    if (activeSlideIdx >= 0) sendSlide(selectedSongIdx, activeSlideIdx);
+                    else { window.worshipsync.slide.blank(false); setIsBlank(false); }
+                  } else {
+                    toBlack();
+                  }
+                }}
               />
               <QuickAction
                 icon={Hexagon}
@@ -1967,7 +2034,8 @@ export default function PresenterDashboard({
                   {
                     group: "Output",
                     items: [
-                      { keys: ["B"], label: "Blank screen (black)" },
+                      { keys: ["B"], label: "Toggle blank screen (black)" },
+                      { keys: ["U"], label: "Unblank screen" },
                     ],
                   },
                   {

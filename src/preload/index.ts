@@ -131,9 +131,10 @@ contextBridge.exposeInMainWorld('worshipsync', {
     import: () => ipcRenderer.invoke('data:import'),
   },
   stageDisplay: {
-    start:     (port?: number) => ipcRenderer.invoke('stageDisplay:start', port),
-    stop:      ()              => ipcRenderer.invoke('stageDisplay:stop'),
-    getStatus: ()              => ipcRenderer.invoke('stageDisplay:getStatus'),
+    start:      (port?: number)                    => ipcRenderer.invoke('stageDisplay:start', port),
+    stop:       ()                                 => ipcRenderer.invoke('stageDisplay:stop'),
+    getStatus:  ()                                 => ipcRenderer.invoke('stageDisplay:getStatus'),
+    setLineup:  (items: unknown[], currentIdx: number) => ipcRenderer.invoke('stageDisplay:setLineup', items, currentIdx),
   },
   confidence: {
     open:      (displayId?: number) => ipcRenderer.send('window:openConfidence', displayId),
@@ -146,15 +147,25 @@ contextBridge.exposeInMainWorld('worshipsync', {
       return () => ipcRenderer.removeListener('window:confidenceClosed', cb)
     },
   },
+  pwa: {
+    onControl: (cb: (action: { action: string }) => void) => {
+      ipcRenderer.on('pwa:control', (_e, action) => cb(action))
+      return () => ipcRenderer.removeAllListeners('pwa:control')
+    },
+  },
 })
 
 interface SlidePayload {
   lines: string[]
   songTitle: string
+  artist?: string
   sectionLabel: string
+  sectionType?: string
   slideIndex: number
   totalSlides: number
   backgroundPath?: string
+  nextLines?: string[]
+  nextSectionLabel?: string
   theme?: {
     fontFamily: string
     fontSize: number

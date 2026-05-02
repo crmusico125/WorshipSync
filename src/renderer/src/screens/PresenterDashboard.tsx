@@ -360,6 +360,17 @@ export default function PresenterDashboard({
     setLiveSongs(built);
   }, [lineup, themeCache]);
 
+  // Sync lineup to stage display / PWA controller whenever the live song list or selection changes
+  useEffect(() => {
+    const items = liveSongs.map((s) => ({
+      title: s.title,
+      artist: s.artist,
+      slideCount: s.slides.length,
+      itemType: s.itemType,
+    }));
+    window.worshipsync.stageDisplay.setLineup(items, selectedSongIdx).catch(() => {});
+  }, [liveSongs, selectedSongIdx]);
+
   // ── Theme + background resolution ────────────────────────────────────────
   const resolveTheme = useCallback(
     (song: LiveSong): ThemeStyle => {
@@ -435,6 +446,7 @@ export default function PresenterDashboard({
           songTitle: song.title,
           artist: song.artist,
           sectionLabel: slide.sectionLabel,
+          sectionType: slide.sectionType,
           slideIndex: slide.globalIndex,
           totalSlides: song.slides.length,
           backgroundPath: bg,
@@ -476,13 +488,13 @@ export default function PresenterDashboard({
   selectedSongIdxRef.current = selectedSongIdx;
 
   // ── Controls ─────────────────────────────────────────────────────────────
-  const clearAll = () => {
+  const clearAll = useCallback(() => {
     window.worshipsync.slide.blank(true);
     setIsBlank(true);
     setIsTextCleared(false);
     setActiveSlideIdx(-1);
-  };
-  const clearText = () => {
+  }, []);
+  const clearText = useCallback(() => {
     if (isTextCleared) {
       // Restore — re-send the active slide
       if (activeSlideIdx >= 0) sendSlide(selectedSongIdx, activeSlideIdx);
@@ -522,17 +534,17 @@ export default function PresenterDashboard({
     });
     setIsBlank(false);
     setIsTextCleared(true);
-  };
-  const toBlack = () => {
+  }, [isTextCleared, activeSlideIdx, selectedSongIdx, liveSongs, sendSlide, resolveTheme, resolveBg, projectionFontSize]);
+  const toBlack = useCallback(() => {
     window.worshipsync.slide.blank(true);
     setIsBlank(true);
     setIsTextCleared(false);
-  };
-  const showLogo = () => {
+  }, []);
+  const showLogo = useCallback(() => {
     window.worshipsync.slide.logo(true);
     setIsBlank(false);
     setIsTextCleared(false);
-  };
+  }, []);
 
   const jumpToItem = useCallback((idx: number) => {
     const item = liveSongs[idx];
@@ -568,6 +580,17 @@ export default function PresenterDashboard({
     if (next < song.slides.length) sendSlide(selectedSongIdx, next);
     else goNextSong();
   }, [activeSlideIdx, selectedSongIdx, liveSongs, sendSlide, goNextSong]);
+
+  const goNextSection = useCallback(() => {
+    const song = liveSongs[selectedSongIdx];
+    if (!song || activeSlideIdx < 0) return;
+    const currentLabel = song.slides[activeSlideIdx]?.sectionLabel;
+    const nextIdx = song.slides.findIndex(
+      (s, i) => i > activeSlideIdx && s.sectionLabel !== currentLabel && s.sectionType !== 'blank'
+    );
+    if (nextIdx >= 0) sendSlide(selectedSongIdx, nextIdx);
+    else goNextSong();
+  }, [liveSongs, selectedSongIdx, activeSlideIdx, sendSlide, goNextSong]);
 
   const startLive = () => {
     window.worshipsync.window.openProjection(selectedDisplayId);
@@ -820,6 +843,26 @@ export default function PresenterDashboard({
     return () => window.removeEventListener("keydown", handler);
   }, [goNextSlide, goPrevSlide, goNextSong, goPrevSong, isBlank, activeSlideIdx, selectedSongIdx, sendSlide, toBlack]);
 
+
+  useEffect(() => {
+    if (!window.worshipsync.pwa) return;
+    const cleanup = window.worshipsync.pwa.onControl((cmd) => {
+      switch (cmd.action) {
+        case 'next':        goNextSlide();  break;
+        case 'prev':        goPrevSlide();  break;
+        case 'nextSection': goNextSection(); break;
+        case 'blank':
+          if (isBlankRef.current) {
+            if (activeSlideIdxRef.current >= 0) sendSlide(selectedSongIdxRef.current, activeSlideIdxRef.current);
+            else { window.worshipsync.slide.blank(false); setIsBlank(false); }
+          } else { toBlack(); }
+          break;
+        case 'clearText': clearText(); break;
+        case 'logo':      showLogo();  break;
+      }
+    });
+    return cleanup;
+  }, [goNextSlide, goPrevSlide, goNextSection, sendSlide, toBlack, clearText, showLogo]);
 
   // Scroll active slide into view when it changes
   useEffect(() => {

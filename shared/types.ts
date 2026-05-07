@@ -40,6 +40,7 @@ export interface SlidePayload {
   songTitle: string
   sectionLabel: string
   sectionType?: string
+  itemType?: string
   artist?: string
   slideIndex?: number
   totalSlides?: number

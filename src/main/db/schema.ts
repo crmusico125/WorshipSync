@@ -43,12 +43,15 @@ export const lineupItems = sqliteTable('lineup_items', {
   id:                     integer('id').primaryKey({ autoIncrement: true }),
   serviceDateId:          integer('service_date_id').notNull().references(() => serviceDates.id, { onDelete: 'cascade' }),
   songId:                 integer('song_id').references(() => songs.id),
-  itemType:               text('item_type', { enum: ['song', 'countdown'] }).notNull().default('song'),
+  itemType:               text('item_type', { enum: ['song', 'scripture', 'media', 'countdown', 'announcement', 'note'] }).notNull().default('song'),
   orderIndex:             integer('order_index').notNull().default(0),
   selectedSections:       text('selected_sections').notNull().default('[]'),
   overrideThemeId:        integer('override_theme_id'),
   overrideBackgroundPath: text('override_background_path'),
-  notes:                  text('notes')
+  notes:                  text('notes'),
+  title:                  text('title'),
+  scriptureRef:           text('scripture_ref'),
+  mediaPath:              text('media_path'),
 })
 
 // ── Themes ────────────────────────────────────────────────────────────────────

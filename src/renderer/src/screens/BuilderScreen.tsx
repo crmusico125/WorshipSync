@@ -124,6 +124,7 @@ interface Props {
 export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onReturnToPresenter }: Props) {
   const {
     selectedService, lineup, loadLineup, addSongToLineup, addCountdownToLineup,
+    addScriptureToLineup, addMediaToLineup,
     removeSongFromLineup, loadServices, selectService,
     services, reorderLineup, updateStatus, updateService,
   } = useServiceStore()
@@ -192,7 +193,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
 
   const currentItem = lineup[selectedSongIdx] ?? null
   const currentSong = currentItem?.song ?? null
-  const currentItemIsMedia = currentSong?.artist === 'Media'
+  const currentItemIsMedia = currentItem?.itemType === 'media'
 
   const effectiveTheme: ThemeStyle = useMemo(() => {
     const t = (currentSong?.themeId ? themeCache[currentSong.themeId] : null) ?? defaultTheme
@@ -207,7 +208,20 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
     () => currentSong ? buildSlides(currentSong.sections, effectiveTheme.maxLinesPerSlide) : [],
     [currentSong, effectiveTheme.maxLinesPerSlide],
   )
-  const currentSlide = slides[previewSlideIdx] ?? null
+
+  const scriptureVerses = useMemo<{ label: string; text: string }[]>(() => {
+    if (currentItem?.itemType !== 'scripture') return []
+    try { return JSON.parse(currentItem.scriptureRef ?? '{}').verses ?? [] } catch { return [] }
+  }, [currentItem])
+
+  const currentSlide: Slide | null = useMemo(() => {
+    if (currentItem?.itemType === 'scripture') {
+      const v = scriptureVerses[previewSlideIdx]
+      if (!v) return null
+      return { lines: [v.text], sectionLabel: v.label, sectionType: 'verse', sectionId: previewSlideIdx }
+    }
+    return slides[previewSlideIdx] ?? null
+  }, [currentItem, scriptureVerses, slides, previewSlideIdx])
 
   const effectiveBg: string | null = useMemo(() => {
     if (bgOverride !== undefined) return bgOverride
@@ -252,20 +266,13 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
     verses: { number: number; text: string }[],
     ref: { book: string; chapter: number; translation: string }
   ) => {
-    const sections = verses.map((v, i) => ({
-      type: "verse" as const,
-      label: `${ref.book} ${ref.chapter}:${v.number} ${ref.translation}`,
-      lyrics: v.text,
-      orderIndex: i,
-    }))
-    const song = await window.worshipsync.songs.create({
-      title,
-      artist: "Scripture",
-      tags: "",
-      sections,
+    const scriptureRef = JSON.stringify({
+      verses: verses.map(v => ({
+        label: `${ref.book} ${ref.chapter}:${v.number} ${ref.translation}`,
+        text: v.text,
+      }))
     })
-    await loadSongs()
-    await addSongToLineup(song.id)
+    await addScriptureToLineup({ title, scriptureRef })
   }
 
   const handleAddMedia = async (path: string) => {
@@ -273,15 +280,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
     const isVideo = /\.(mp4|webm|mov)$/i.test(path)
     const isAudio = /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(path)
     const label = isVideo ? "Video" : isAudio ? "Audio" : "Image"
-    const song = await window.worshipsync.songs.create({
-      title: `${label}: ${filename}`,
-      artist: "Media",
-      tags: "",
-      sections: [{ type: "interlude" as const, label, lyrics: " ", orderIndex: 0 }],
-    })
-    await window.worshipsync.backgrounds.setBackground(song.id, path)
-    await loadSongs()
-    await addSongToLineup(song.id)
+    await addMediaToLineup({ title: `${label}: ${filename}`, mediaPath: path })
   }
 
   const handleLyricsSave = async (newLyrics: string) => {
@@ -439,10 +438,10 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
                   {lineup.map((item, i) => {
                     const isSelected = selectedSongIdx === i
                     const isCountdown = item.itemType === 'countdown'
-                    const isScripture = item.song?.artist === 'Scripture'
-                    const isMedia = item.song?.artist === 'Media'
+                    const isScripture = item.itemType === 'scripture'
+                    const isMedia = item.itemType === 'media'
                     let slideCount = 0
-                    if (!isCountdown && !isMedia && item.song) {
+                    if (!isCountdown && !isMedia && !isScripture && item.song) {
                       let itemMaxLines = DEFAULT_THEME.maxLinesPerSlide
                       if (item.song.themeId && themeCache[item.song.themeId]?.settings) {
                         try { itemMaxLines = JSON.parse(themeCache[item.song.themeId].settings).maxLinesPerSlide ?? itemMaxLines } catch {}
@@ -455,12 +454,12 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
                         id={item.id}
                         index={i}
                         isSelected={isSelected}
-                        title={isCountdown ? "Countdown Timer" : item.song?.title ?? "—"}
+                        title={isCountdown ? "Countdown Timer" : isScripture || isMedia ? item.title ?? "—" : item.song?.title ?? "—"}
                         subtitle={
                           isCountdown
                             ? "Pre-Service Countdown"
                             : isScripture
-                              ? `Scripture · ${slideCount} slides`
+                              ? "Scripture"
                               : isMedia
                                 ? "Media"
                                 : `${item.song?.artist || "Unknown"}${item.song?.key ? ` · ${item.song.key}` : ""} · ${slideCount} slides`
@@ -468,7 +467,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
                         isPast={isPast}
                         onSelect={() => setSelectedSongIdx(i)}
                         onDelete={() => {
-                          const label = isCountdown ? "Countdown Timer" : item.song?.title ?? "item"
+                          const label = isCountdown ? "Countdown Timer" : isScripture || isMedia ? item.title ?? "item" : item.song?.title ?? "item"
                           if (confirm(`Remove "${label}" from lineup?`)) {
                             removeSongFromLineup(item.id)
                             if (selectedSongIdx >= lineup.length - 1) {
@@ -520,19 +519,69 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
             </div>
           ) : currentItemIsMedia ? (
             <div className="flex-1 flex flex-col items-center justify-center text-center px-8 gap-3">
-              {/^Video:/i.test(currentSong!.title)
+              {/^Video:/i.test(currentItem!.title ?? '')
                 ? <Film className="h-12 w-12 text-muted-foreground" />
                 : <Volume2 className="h-12 w-12 text-muted-foreground" />
               }
               <div>
                 <p className="text-sm font-semibold text-foreground">
-                  {currentSong!.title.replace(/^(Video|Audio|Image):\s*/i, "")}
+                  {(currentItem!.title ?? '').replace(/^(Video|Audio|Image):\s*/i, "")}
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {/^Video:/i.test(currentSong!.title) ? "Video file" : "Audio file"} · playback is controlled in the presenter
+                  {/^Video:/i.test(currentItem!.title ?? '') ? "Video file" : "Audio file"} · playback is controlled in the presenter
                 </p>
               </div>
             </div>
+          ) : currentItem?.itemType === 'scripture' ? (
+            <>
+              <div className="px-6 pt-5 pb-4 border-b border-border shrink-0">
+                <div className="flex items-center gap-2">
+                  <BookOpen className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <h2 className="text-lg font-bold text-foreground truncate">{currentItem.title ?? "Scripture"}</h2>
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto px-6 py-4">
+                {scriptureVerses.length === 0 ? (
+                  <p className="text-xs text-muted-foreground text-center py-8">No verses found.</p>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                        Verses ({scriptureVerses.length})
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">Click to preview on right</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2.5">
+                      {scriptureVerses.map((v, i) => {
+                        const isPreview = previewSlideIdx === i
+                        return (
+                          <button
+                            key={i}
+                            onClick={() => setPreviewSlideIdx(i)}
+                            className={`rounded-lg overflow-hidden border-2 transition-all text-left ${
+                              isPreview
+                                ? "border-primary ring-2 ring-primary/30"
+                                : "border-border hover:border-primary/50"
+                            }`}
+                          >
+                            <div className="bg-gray-900 p-2.5 relative" style={{ aspectRatio: "16/9" }}>
+                              <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase text-white bg-violet-600 max-w-[90%] truncate block">
+                                {v.label}
+                              </span>
+                              <div className="flex items-center justify-center h-full px-1">
+                                <p className="text-[9px] text-white text-center leading-relaxed line-clamp-4">
+                                  {v.text}
+                                </p>
+                              </div>
+                            </div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+            </>
           ) : currentSong ? (
             <>
               {/* Song header */}
@@ -548,7 +597,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
                       {currentSong.key && ` · Key: ${currentSong.key}`}
                     </p>
                   </div>
-                  {currentSong.artist !== 'Media' && currentSong.artist !== 'Scripture' && !isPast && (
+                  {currentItem?.itemType === 'song' && !isPast && (
                     <Button
                       variant="outline" size="sm"
                       className="gap-1.5 h-8 text-xs shrink-0"
@@ -569,7 +618,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
                     <p className="text-xs text-muted-foreground mb-4">
                       Add lyrics and sections to this song to build slides.
                     </p>
-                    {currentSong.artist !== 'Media' && currentSong.artist !== 'Scripture' && !isPast && (
+                    {currentItem?.itemType === 'song' && !isPast && (
                       <Button size="sm" className="gap-1.5" onClick={() => setEditingItemId(currentItem!.id)}>
                         <Pencil className="h-3.5 w-3.5" /> Edit Lyrics
                       </Button>
@@ -675,7 +724,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
             theme={effectiveTheme}
             bg={effectiveBg}
             bgImages={bgImages}
-            canCustomize={!!currentSong}
+            canCustomize={!!currentSong || currentItem?.itemType === 'scripture'}
             readOnly={isPast}
             onThemeChange={(key, value) => setThemeOverrides(p => ({ ...p, [key]: value }))}
             onBgChange={async (path) => {
@@ -683,6 +732,9 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
               if (currentSong) {
                 await window.worshipsync.backgrounds.setBackground(currentSong.id, path)
                 await loadSongs()
+              } else if (currentItem) {
+                await window.worshipsync.lineup.setOverrideBg(currentItem.id, path)
+                if (selectedService) await loadLineup(selectedService.id)
               }
             }}
           />

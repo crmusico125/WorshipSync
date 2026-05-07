@@ -518,7 +518,7 @@ export default function ProjectionWindow() {
       )}
 
       {/* Scripture reference */}
-      {displayState === "slide" && slide && slide.artist === "Scripture" && (
+      {displayState === "slide" && slide && slide.itemType === "scripture" && (
         <div
           style={{
             position: "absolute",

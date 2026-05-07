@@ -14,12 +14,15 @@ interface LineupItemWithSong {
   id: number
   serviceDateId: number
   songId: number | null
-  itemType: 'song' | 'countdown'
+  itemType: 'song' | 'countdown' | 'scripture' | 'media' | 'announcement' | 'note'
   orderIndex: number
   selectedSections: string
   overrideThemeId: number | null
   overrideBackgroundPath: string | null
   notes: string | null
+  title: string | null
+  scriptureRef: string | null
+  mediaPath: string | null
   song: SongWithSections | null
 }
 interface Theme {
@@ -112,11 +115,14 @@ declare global {
         getForService:  (serviceDateId: number) => Promise<LineupItemWithSong[]>
         addSong:        (serviceDateId: number, songId: number) => Promise<unknown>
         addCountdown:   (serviceDateId: number) => Promise<unknown>
+        addScripture:   (serviceDateId: number, data: { title: string; scriptureRef: string }) => Promise<unknown>
+        addMedia:       (serviceDateId: number, data: { title: string; mediaPath: string }) => Promise<unknown>
         removeSong:     (lineupItemId: number) => Promise<boolean>
         reorder:        (serviceDateId: number, ids: number[]) => Promise<boolean>
         toggleSection:  (lineupItemId: number, sectionId: number, included: boolean) => Promise<number[]>
         setSections:    (lineupItemId: number, sectionIds: number[]) => Promise<number[]>
         setNotes:       (lineupItemId: number, notes: string) => Promise<boolean>
+        setOverrideBg:  (lineupItemId: number, path: string | null) => Promise<boolean>
       }
       themes: {
         getAll:     () => Promise<Theme[]>
@@ -155,6 +161,7 @@ declare global {
           port: number
           clients: number
           localIP: string
+          allIPs: { label: string; ip: string; url: string }[]
           clientList: { ip: string; device: string; connectedAt: number; connectedForSeconds: number }[]
         }>
       }

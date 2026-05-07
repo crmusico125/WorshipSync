@@ -782,12 +782,9 @@ ipcMain.handle('services:getAllWithCounts', () => {
   return all.map(service => {
     const songRow = db.select({ count: count() })
       .from(lineupItems)
-      .leftJoin(songs, eq(lineupItems.songId, songs.id))
       .where(and(
         eq(lineupItems.serviceDateId, service.id),
         eq(lineupItems.itemType, 'song'),
-        ne(songs.artist, 'Scripture'),
-        ne(songs.artist, 'Media'),
       )).get()
     const totalRow = db.select({ count: count() }).from(lineupItems)
       .where(eq(lineupItems.serviceDateId, service.id)).get()
@@ -821,25 +818,24 @@ ipcMain.handle('lineup:getForService', (_e, serviceDateId: number) => {
     .orderBy(asc(lineupItems.orderIndex))
     .all()
 
-  // Join with song + sections data (skip for countdown items)
   return items.map(item => {
-    // Ensure itemType is set (might be missing for rows created before migration)
     const itemType = item.itemType || 'song'
 
-    if (itemType === 'countdown' || !item.songId) {
-      return { ...item, itemType: 'countdown', song: null }
-    }
-    const song = db.select().from(songs)
-      .where(eq(songs.id, item.songId))
-      .get()
-    if (!song) {
+    // Non-song types carry their data directly on the item
+    if (itemType !== 'song') {
       return { ...item, itemType, song: null }
     }
+
+    if (!item.songId) return { ...item, itemType: 'song', song: null }
+
+    const song = db.select().from(songs).where(eq(songs.id, item.songId)).get()
+    if (!song) return { ...item, itemType: 'song', song: null }
+
     const songSections = db.select().from(sections)
       .where(eq(sections.songId, item.songId))
       .orderBy(asc(sections.orderIndex))
       .all()
-    return { ...item, itemType, song: { ...song, sections: songSections } }
+    return { ...item, itemType: 'song', song: { ...song, sections: songSections } }
   })
 })
 
@@ -880,6 +876,42 @@ ipcMain.handle('lineup:addCountdown', (_e, serviceDateId: number) => {
     selectedSections: '[]',
   }).returning().all()
 
+  return item
+})
+
+ipcMain.handle('lineup:addScripture', (_e, serviceDateId: number, data: {
+  title: string
+  scriptureRef: string
+}) => {
+  const existing = db.select().from(lineupItems)
+    .where(eq(lineupItems.serviceDateId, serviceDateId))
+    .all()
+  const [item] = db.insert(lineupItems).values({
+    serviceDateId,
+    orderIndex: existing.length,
+    itemType: 'scripture',
+    selectedSections: '[]',
+    title: data.title,
+    scriptureRef: data.scriptureRef,
+  }).returning().all()
+  return item
+})
+
+ipcMain.handle('lineup:addMedia', (_e, serviceDateId: number, data: {
+  title: string
+  mediaPath: string
+}) => {
+  const existing = db.select().from(lineupItems)
+    .where(eq(lineupItems.serviceDateId, serviceDateId))
+    .all()
+  const [item] = db.insert(lineupItems).values({
+    serviceDateId,
+    orderIndex: existing.length,
+    itemType: 'media',
+    selectedSections: '[]',
+    title: data.title,
+    mediaPath: data.mediaPath,
+  }).returning().all()
   return item
 })
 
@@ -933,6 +965,14 @@ ipcMain.handle('lineup:setNotes', (_e, lineupItemId: number, notes: string) => {
   return true
 })
 
+ipcMain.handle('lineup:setOverrideBg', (_e, lineupItemId: number, path: string | null) => {
+  db.update(lineupItems)
+    .set({ overrideBackgroundPath: path || null })
+    .where(eq(lineupItems.id, lineupItemId))
+    .run()
+  return true
+})
+
 // ── Theme IPC handlers ────────────────────────────────────────────────────────
 
 ipcMain.handle('themes:getAll', () => {
@@ -975,7 +1015,6 @@ ipcMain.handle('themes:delete', (_e, id: number) => {
 
 ipcMain.handle('analytics:getSongUsage', () => {
   const allSongs = db.select().from(songs)
-    .where(and(ne(songs.artist, 'Scripture'), ne(songs.artist, 'Media')))
     .orderBy(asc(songs.title)).all()
 
   // Derive usage from lineup_items — always accurate, updates on add/remove
@@ -1113,7 +1152,7 @@ ipcMain.handle('songs:setBackground', (_e, songId: number, backgroundPath: strin
 ipcMain.handle('backgrounds:getUsageCount', (_e, imagePath: string) => {
   const result = db.select({ count: count() })
     .from(songs)
-    .where(and(eq(songs.backgroundPath, imagePath), ne(songs.artist, 'Scripture'), ne(songs.artist, 'Media')))
+    .where(eq(songs.backgroundPath, imagePath))
     .get()
   return result?.count ?? 0
 })
@@ -1121,7 +1160,7 @@ ipcMain.handle('backgrounds:getUsageCount', (_e, imagePath: string) => {
 ipcMain.handle('backgrounds:getUsingSongs', (_e, imagePath: string) => {
   return db.select({ id: songs.id, title: songs.title, artist: songs.artist })
     .from(songs)
-    .where(and(eq(songs.backgroundPath, imagePath), ne(songs.artist, 'Scripture'), ne(songs.artist, 'Media')))
+    .where(eq(songs.backgroundPath, imagePath))
     .all()
 })
 
@@ -1136,6 +1175,7 @@ ipcMain.handle('backgrounds:getUsingServices', (_e, imagePath: string) => {
     .innerJoin(serviceDates, eq(lineupItems.serviceDateId, serviceDates.id))
     .where(or(
       eq(lineupItems.overrideBackgroundPath, imagePath),
+      eq(lineupItems.mediaPath, imagePath),
       eq(songs.backgroundPath, imagePath),
     ))
     .all()
@@ -1148,10 +1188,16 @@ ipcMain.handle('backgrounds:getUsingServices', (_e, imagePath: string) => {
 
 ipcMain.handle('backgrounds:deleteImage', (_e, imagePath: string) => {
   try {
-    // Clear from any songs using it
+    // Clear from any songs using it as a background
     db.update(songs)
       .set({ backgroundPath: null })
       .where(eq(songs.backgroundPath, imagePath))
+      .run()
+
+    // Clear from media lineup items
+    db.update(lineupItems)
+      .set({ mediaPath: null })
+      .where(eq(lineupItems.mediaPath, imagePath))
       .run()
 
     // Also clear from any themes using it

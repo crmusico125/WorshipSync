@@ -88,6 +88,10 @@ contextBridge.exposeInMainWorld('worshipsync', {
     getForService:  (serviceDateId: number)                    => ipcRenderer.invoke('lineup:getForService', serviceDateId),
     addSong:        (serviceDateId: number, songId: number)    => ipcRenderer.invoke('lineup:addSong', serviceDateId, songId),
     addCountdown:   (serviceDateId: number)                    => ipcRenderer.invoke('lineup:addCountdown', serviceDateId),
+    addScripture:   (serviceDateId: number, data: { title: string; scriptureRef: string }) =>
+                        ipcRenderer.invoke('lineup:addScripture', serviceDateId, data),
+    addMedia:       (serviceDateId: number, data: { title: string; mediaPath: string }) =>
+                        ipcRenderer.invoke('lineup:addMedia', serviceDateId, data),
     removeSong:     (lineupItemId: number)                     => ipcRenderer.invoke('lineup:removeSong', lineupItemId),
     reorder:        (serviceDateId: number, ids: number[])     => ipcRenderer.invoke('lineup:reorder', serviceDateId, ids),
     toggleSection:  (lineupItemId: number, sectionId: number, included: boolean) =>
@@ -96,6 +100,8 @@ contextBridge.exposeInMainWorld('worshipsync', {
                         ipcRenderer.invoke('lineup:setSections', lineupItemId, sectionIds),
     setNotes:       (lineupItemId: number, notes: string) =>
                         ipcRenderer.invoke('lineup:setNotes', lineupItemId, notes),
+    setOverrideBg:  (lineupItemId: number, path: string | null) =>
+                        ipcRenderer.invoke('lineup:setOverrideBg', lineupItemId, path),
   },
   themes: {
     getAll:     ()                    => ipcRenderer.invoke('themes:getAll'),
@@ -154,6 +160,7 @@ interface SlidePayload {
   artist?: string
   sectionLabel: string
   sectionType?: string
+  itemType?: string
   slideIndex: number
   totalSlides: number
   backgroundPath?: string

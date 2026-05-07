@@ -120,5 +120,66 @@ export function runMigrations(): void {
     console.error('[db] migration error (lineup_items notes):', e)
   }
 
+  // ── Migration: first-class lineup item types (title, scripture_ref, media_path) ──
+  try {
+    const cols3 = sqlite.prepare("PRAGMA table_info(lineup_items)").all() as { name: string }[]
+    const hasTitle       = cols3.some(c => c.name === 'title')
+    const hasScriptureRef = cols3.some(c => c.name === 'scripture_ref')
+    const hasMediaPath   = cols3.some(c => c.name === 'media_path')
+
+    if (!hasTitle)        sqlite.exec(`ALTER TABLE lineup_items ADD COLUMN title TEXT`)
+    if (!hasScriptureRef) sqlite.exec(`ALTER TABLE lineup_items ADD COLUMN scripture_ref TEXT`)
+    if (!hasMediaPath)    sqlite.exec(`ALTER TABLE lineup_items ADD COLUMN media_path TEXT`)
+
+    if (!hasTitle || !hasScriptureRef || !hasMediaPath) {
+      console.log('[db] migration: added title/scripture_ref/media_path columns to lineup_items')
+
+      // Migrate fake Scripture songs → scripture lineup items
+      const scriptureItems = sqlite.prepare(`
+        SELECT li.id, li.song_id, s.title
+        FROM lineup_items li
+        JOIN songs s ON s.id = li.song_id
+        WHERE s.artist = 'Scripture'
+      `).all() as { id: number; song_id: number; title: string }[]
+
+      const getSections = sqlite.prepare(`SELECT label, lyrics, order_index FROM sections WHERE song_id = ? ORDER BY order_index`)
+      const updateScripture = sqlite.prepare(`
+        UPDATE lineup_items SET item_type = 'scripture', title = ?, scripture_ref = ?, song_id = NULL WHERE id = ?
+      `)
+      for (const row of scriptureItems) {
+        const secs = getSections.all(row.song_id) as { label: string; lyrics: string; order_index: number }[]
+        const verses = secs.map(s => ({ label: s.label, text: s.lyrics }))
+        updateScripture.run(row.title, JSON.stringify({ verses }), row.id)
+      }
+      if (scriptureItems.length > 0)
+        console.log(`[db] migration: converted ${scriptureItems.length} scripture fake-songs to lineup items`)
+
+      // Migrate fake Media songs → media lineup items
+      const mediaItems = sqlite.prepare(`
+        SELECT li.id, li.song_id, s.title, s.background_path
+        FROM lineup_items li
+        JOIN songs s ON s.id = li.song_id
+        WHERE s.artist = 'Media'
+      `).all() as { id: number; song_id: number; title: string; background_path: string | null }[]
+
+      const updateMedia = sqlite.prepare(`
+        UPDATE lineup_items SET item_type = 'media', title = ?, media_path = ?, song_id = NULL WHERE id = ?
+      `)
+      for (const row of mediaItems) {
+        updateMedia.run(row.title, row.background_path, row.id)
+      }
+      if (mediaItems.length > 0)
+        console.log(`[db] migration: converted ${mediaItems.length} media fake-songs to lineup items`)
+
+    }
+
+    // Always clean up any remaining fake Scripture/Media songs (idempotent)
+    const deleted = sqlite.prepare(`DELETE FROM songs WHERE artist IN ('Scripture', 'Media')`).run()
+    if (deleted.changes > 0)
+      console.log(`[db] migration: cleaned up ${deleted.changes} orphaned Scripture/Media fake songs`)
+  } catch (e) {
+    console.error('[db] migration error (lineup_items first-class types):', e)
+  }
+
   console.log('[db] migrations complete')
 }

@@ -50,13 +50,14 @@ interface Slide {
 
 interface LiveSong {
   lineupItemId: number;
-  itemType: "song" | "countdown";
+  itemType: "song" | "countdown" | "scripture" | "media";
   songId: number;
   title: string;
   artist: string;
   key: string | null;
   ccliNumber: string | null;
   backgroundPath: string | null;
+  mediaPath: string | null;
   themeId: number | null;
   notes: string | null;
   slides: Slide[];
@@ -172,6 +173,8 @@ export default function PresenterDashboard({
     selectService,
     addSongToLineup,
     addCountdownToLineup,
+    addScriptureToLineup,
+    addMediaToLineup,
   } = useServiceStore();
 
   const [liveSongs, setLiveSongs] = useState<LiveSong[]>([]);
@@ -187,7 +190,7 @@ export default function PresenterDashboard({
   const [defaultThemeBg, setDefaultThemeBg] = useState<string | null>(null);
   const [showLibrary, setShowLibrary] = useState(false);
   const [showBgPicker, setShowBgPicker] = useState(false);
-  const [pendingBgSave, setPendingBgSave] = useState<{ songId: number; path: string | null } | null>(null);
+  const [pendingBgSave, setPendingBgSave] = useState<{ songId: number; lineupItemId: number; itemType: string; path: string | null } | null>(null);
   const [savingBg, setSavingBg] = useState(false);
   const [showEditLyrics, setShowEditLyrics] = useState(false);
   const [editLyricsInitial, setEditLyricsInitial] = useState("");
@@ -313,6 +316,54 @@ export default function PresenterDashboard({
           key: null,
           ccliNumber: null,
           backgroundPath: null,
+          mediaPath: null,
+          themeId: null,
+          notes: item.notes ?? null,
+          slides: [],
+        };
+      }
+
+      // First-class scripture items — build slides from parsed verses
+      if (item.itemType === "scripture") {
+        let verses: { label: string; text: string }[] = [];
+        try { verses = JSON.parse(item.scriptureRef ?? "{}").verses ?? []; } catch {}
+        let globalIdx = 0;
+        const scriptureSlides: Slide[] = verses.map(v => ({
+          lines: [v.text],
+          sectionLabel: v.label,
+          sectionType: "verse",
+          sectionId: globalIdx,
+          globalIndex: globalIdx++,
+        }));
+        scriptureSlides.push({ lines: [""], sectionLabel: "Blank", sectionType: "blank", sectionId: -1, globalIndex: globalIdx });
+        return {
+          lineupItemId: item.id,
+          itemType: "scripture" as const,
+          songId: 0,
+          title: item.title ?? "Scripture",
+          artist: "",
+          key: null,
+          ccliNumber: null,
+          backgroundPath: item.overrideBackgroundPath ?? null,
+          mediaPath: null,
+          themeId: null,
+          notes: item.notes ?? null,
+          slides: scriptureSlides,
+        };
+      }
+
+      // First-class media items — no slides
+      if (item.itemType === "media") {
+        return {
+          lineupItemId: item.id,
+          itemType: "media" as const,
+          songId: 0,
+          title: item.title ?? "Media",
+          artist: "",
+          key: null,
+          ccliNumber: null,
+          backgroundPath: null,
+          mediaPath: item.mediaPath ?? null,
           themeId: null,
           notes: item.notes ?? null,
           slides: [],
@@ -330,6 +381,7 @@ export default function PresenterDashboard({
           key: null,
           ccliNumber: null,
           backgroundPath: null,
+          mediaPath: null,
           themeId: null,
           notes: item.notes ?? null,
           slides: [],
@@ -357,6 +409,7 @@ export default function PresenterDashboard({
         key: item.song.key ?? null,
         ccliNumber: item.song.ccliNumber ?? null,
         backgroundPath: item.song.backgroundPath ?? null,
+        mediaPath: null,
         themeId: item.song.themeId ?? null,
         notes: item.notes ?? null,
         slides: buildSlidesForSong(filtered, maxLines),
@@ -443,6 +496,7 @@ export default function PresenterDashboard({
           artist: song.artist,
           sectionLabel: slide.sectionLabel,
           sectionType: slide.sectionType,
+          itemType: song.itemType,
           slideIndex: slide.globalIndex,
           totalSlides: song.slides.length,
           backgroundPath: bg,
@@ -646,19 +700,13 @@ export default function PresenterDashboard({
     verses: { number: number; text: string }[],
     ref: { book: string; chapter: number; translation: string },
   ) => {
-    const sections = verses.map((v, i) => ({
-      type: "verse" as const,
-      label: `${ref.book} ${ref.chapter}:${v.number} ${ref.translation}`,
-      lyrics: v.text,
-      orderIndex: i,
-    }));
-    const song = await window.worshipsync.songs.create({
-      title,
-      artist: "Scripture",
-      tags: "",
-      sections,
+    const scriptureRef = JSON.stringify({
+      verses: verses.map(v => ({
+        label: `${ref.book} ${ref.chapter}:${v.number} ${ref.translation}`,
+        text: v.text,
+      }))
     });
-    await addSongToLineup(song.id);
+    await addScriptureToLineup({ title, scriptureRef });
   };
 
   const handleAddMedia = async (path: string) => {
@@ -666,30 +714,28 @@ export default function PresenterDashboard({
     const isVideo = /\.(mp4|webm|mov)$/i.test(path);
     const isAudio = /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(path);
     const label = isVideo ? "Video" : isAudio ? "Audio" : "Image";
-    const song = await window.worshipsync.songs.create({
-      title: `${label}: ${filename}`,
-      artist: "Media",
-      tags: "",
-      sections: [
-        { type: "interlude" as const, label, lyrics: " ", orderIndex: 0 },
-      ],
-    });
-    await window.worshipsync.backgrounds.setBackground(song.id, path);
-    await addSongToLineup(song.id);
+    await addMediaToLineup({ title: `${label}: ${filename}`, mediaPath: path });
   };
 
   // ── Background picker ────────────────────────────────────────────────────
-  const handleBackgroundSelect = useCallback((bg: string | null) => {
+  const handleBackgroundSelect = useCallback(async (bg: string | null) => {
     const song = liveSongs[selectedSongIdx];
     if (!song) return;
-    // Apply immediately to the live session only — do not persist to DB yet
+    // Apply immediately to the live session
     setLiveSongs(prev => prev.map((s, i) =>
       i === selectedSongIdx ? { ...s, backgroundPath: bg } : s
     ));
-    setPendingBgSave({ songId: song.songId, path: bg });
-  }, [liveSongs, selectedSongIdx]);
+    if (song.itemType === 'scripture') {
+      // Scripture items save directly to the lineup item — no "session only" concept
+      await window.worshipsync.lineup.setOverrideBg(song.lineupItemId, bg);
+      if (selectedService) await loadLineup(selectedService.id);
+      setShowBgPicker(false);
+    } else {
+      setPendingBgSave({ songId: song.songId, lineupItemId: song.lineupItemId, itemType: song.itemType, path: bg });
+    }
+  }, [liveSongs, selectedSongIdx, selectedService, loadLineup]);
 
-  const handleSaveBgToSong = useCallback(async () => {
+  const handleSaveBg = useCallback(async () => {
     if (!pendingBgSave) return;
     setSavingBg(true);
     try {
@@ -1096,13 +1142,13 @@ export default function PresenterDashboard({
           {liveSongs.map((song, i) => {
             const isCurrent = selectedSongIdx === i;
             const isCountdown = song.itemType === "countdown";
-            const isScripture = song.artist === "Scripture";
-            const isMedia = song.artist === "Media";
+            const isScripture = song.itemType === "scripture";
+            const isMedia = song.itemType === "media";
             const isAudioItem =
               isMedia &&
-              /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(song.backgroundPath ?? "");
+              /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(song.mediaPath ?? "");
             const isVideoItem =
-              isMedia && /\.(mp4|webm|mov)$/i.test(song.backgroundPath ?? "");
+              isMedia && /\.(mp4|webm|mov)$/i.test(song.mediaPath ?? "");
             const Icon = isCountdown
               ? Timer
               : isScripture
@@ -1267,10 +1313,10 @@ export default function PresenterDashboard({
               It stops automatically when it reaches zero.
             </p>
           </div>
-        ) : currentSong?.artist === "Media" && /\.(mp4|webm|mov)$/i.test(resolveBg(currentSong) ?? "") ? (
+        ) : currentSong?.itemType === "media" && /\.(mp4|webm|mov)$/i.test(currentSong.mediaPath ?? "") ? (
           /* ── Video media — full-panel layout ── */
           (() => {
-            const bg = resolveBg(currentSong)!
+            const bg = currentSong.mediaPath!
             const pct = videoDuration ? (videoCurrentTime / videoDuration) * 100 : 0
             const fmt = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.floor(s % 60)).padStart(2, "0")}`
             const ext = bg.split(".").pop()?.toUpperCase() ?? "VIDEO"
@@ -1388,10 +1434,10 @@ export default function PresenterDashboard({
               </>
             )
           })()
-        ) : currentSong?.artist === "Media" && /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(resolveBg(currentSong) ?? "") ? (
+        ) : currentSong?.itemType === "media" && /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(currentSong.mediaPath ?? "") ? (
           /* ── Audio media — full-panel layout ── */
           (() => {
-            const bg = resolveBg(currentSong)!
+            const bg = currentSong.mediaPath!
             const pct = audioDuration ? (audioCurrentTime / audioDuration) * 100 : 0
             const fmt = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.floor(s % 60)).padStart(2, "0")}`
             const ext = bg.split(".").pop()?.toUpperCase() ?? "AUDIO"
@@ -1545,7 +1591,7 @@ export default function PresenterDashboard({
               </>
             )
           })()
-        ) : currentSong?.artist === "Media" ? (
+        ) : currentSong?.itemType === "media" ? (
           /* ── Image media — centered layout ── */
           <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
             {(() => {
@@ -1596,7 +1642,7 @@ export default function PresenterDashboard({
                 >
                   <ImageIcon className="h-3 w-3" /> Background
                 </Button>
-                {currentSong.artist !== "Scripture" && (
+                {currentSong.itemType === "song" && (
                   <Button size="sm" className="gap-1.5 h-7 text-xs" onClick={handleOpenEditLyrics}>
                     <Pencil className="h-3 w-3" /> Edit Lyrics
                   </Button>
@@ -1786,7 +1832,7 @@ export default function PresenterDashboard({
           </div>
 
           {/* Confidence monitor — only for lyric slides, not scripture */}
-          {currentSong && currentSong.itemType !== "countdown" && currentSong.artist !== "Media" && currentSong.artist !== "Scripture" && <div className="mt-2">
+          {currentSong && currentSong.itemType === "song" && <div className="mt-2">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-1 mb-1">
               Confidence Monitor
             </p>
@@ -1890,7 +1936,7 @@ export default function PresenterDashboard({
               })()}
               <p className="text-[11px] text-muted-foreground mt-2 text-center">Countdown preview</p>
             </div>
-          ) : !(currentSong?.artist === "Media" && /\.(mp4|webm|mov|mp3|wav|ogg|m4a|aac|flac)$/i.test(resolveBg(currentSong) ?? "")) && (
+          ) : currentSong?.itemType !== "media" && (
             /* ── Standard slide preview ── */
             <div className="p-4 border-b border-border">
               <div
@@ -2197,7 +2243,7 @@ export default function PresenterDashboard({
                 >
                   Keep session only
                 </button>
-                <Button size="sm" className="h-7 text-xs gap-1.5" onClick={handleSaveBgToSong} disabled={savingBg}>
+                <Button size="sm" className="h-7 text-xs gap-1.5" onClick={handleSaveBg} disabled={savingBg}>
                   {savingBg ? "Saving…" : "Save to song"}
                 </Button>
               </div>

@@ -105,8 +105,10 @@ contextBridge.exposeInMainWorld('worshipsync', {
                         ipcRenderer.invoke('lineup:setSections', lineupItemId, sectionIds),
     setNotes:       (lineupItemId: number, notes: string) =>
                         ipcRenderer.invoke('lineup:setNotes', lineupItemId, notes),
-    setOverrideBg:  (lineupItemId: number, path: string | null) =>
-                        ipcRenderer.invoke('lineup:setOverrideBg', lineupItemId, path),
+    setOverrideBg:    (lineupItemId: number, path: string | null) =>
+                          ipcRenderer.invoke('lineup:setOverrideBg', lineupItemId, path),
+    setSectionOrder:  (lineupItemId: number, sectionIds: number[]) =>
+                          ipcRenderer.invoke('lineup:setSectionOrder', lineupItemId, sectionIds),
   },
   themes: {
     getAll:     ()                    => ipcRenderer.invoke('themes:getAll'),

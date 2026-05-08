@@ -15,6 +15,7 @@ export interface LineupItem {
   title: string | null
   scriptureRef: string | null
   mediaPath: string | null
+  sectionOrder: string | null
   song: {
     id: number
     title: string
@@ -52,6 +53,7 @@ interface ServiceStore {
   deleteService: (id: number) => Promise<void>
 
   loadLineup: (serviceDateId: number) => Promise<void>
+  patchLineupItemSectionOrder: (lineupItemId: number, sectionIds: number[]) => void
   addSongToLineup: (songId: number) => Promise<void>
   addScriptureToLineup: (data: { title: string; scriptureRef: string }) => Promise<void>
   addMediaToLineup: (data: { title: string; mediaPath: string }) => Promise<void>
@@ -107,6 +109,16 @@ export const useServiceStore = create<ServiceStore>((set, get) => ({
   loadLineup: async (serviceDateId: number) => {
     const lineup = await window.worshipsync.lineup.getForService(serviceDateId) as LineupItem[]
     set({ lineup })
+  },
+
+  patchLineupItemSectionOrder: (lineupItemId: number, sectionIds: number[]) => {
+    set(state => ({
+      lineup: state.lineup.map(item =>
+        item.id === lineupItemId
+          ? { ...item, sectionOrder: JSON.stringify(sectionIds) }
+          : item
+      ),
+    }))
   },
 
   addSongToLineup: async (songId: number) => {

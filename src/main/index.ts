@@ -979,6 +979,14 @@ ipcMain.handle('lineup:setOverrideBg', (_e, lineupItemId: number, path: string |
   return true
 })
 
+ipcMain.handle('lineup:setSectionOrder', (_e, lineupItemId: number, sectionIds: number[]) => {
+  db.update(lineupItems)
+    .set({ sectionOrder: JSON.stringify(sectionIds) })
+    .where(eq(lineupItems.id, lineupItemId))
+    .run()
+  return true
+})
+
 // ── Theme IPC handlers ────────────────────────────────────────────────────────
 
 ipcMain.handle('themes:getAll', () => {

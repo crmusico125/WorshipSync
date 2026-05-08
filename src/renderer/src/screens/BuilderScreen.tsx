@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo, useRef } from "react"
 import {
   Plus, BookOpen, Trash2, Pencil,
   Radio, Eye, Music2, Calendar, Image as ImageIcon,
-  Type, Palette, Monitor, Timer, Film, Volume2, GripVertical,
+  Monitor, Timer, Film, Volume2, GripVertical,
 } from "lucide-react"
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors,
@@ -10,14 +10,13 @@ import {
 } from "@dnd-kit/core"
 import {
   SortableContext, useSortable, verticalListSortingStrategy,
-  arrayMove,
+  horizontalListSortingStrategy, arrayMove,
 } from "@dnd-kit/sortable"
 import { CSS } from "@dnd-kit/utilities"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { useServiceStore } from "../store/useServiceStore"
+import { useServiceStore, type LineupItem as LineupItemWithSong } from "../store/useServiceStore"
 import { useSongStore } from "../store/useSongStore"
 import LibraryModal from "../components/LibraryModal"
 import AddSongModal from "../components/AddSongModal"
@@ -67,6 +66,7 @@ const SECTION_BADGE_COLORS: Record<string, string> = {
   interlude: "bg-slate-600",
 }
 
+
 function buildSlides(
   sections: { id: number; type: string; label: string; lyrics: string }[],
   maxLines = 2,
@@ -112,6 +112,34 @@ function sectionsToLyrics(sections: { label: string; lyrics: string }[]): string
   return sections.map(s => `[${s.label}]\n${s.lyrics}`).join("\n\n")
 }
 
+// ── Duration helpers ─────────────────────────────────────────────────────────
+
+function estimateDuration(item: LineupItemWithSong, themeCache: Record<number, any>): number {
+  if (item.itemType === 'countdown') return 300
+  if (item.itemType === 'scripture') {
+    try { return (JSON.parse(item.scriptureRef ?? '{}').verses ?? []).length * 12 } catch { return 0 }
+  }
+  if (item.itemType === 'media') return 0
+  if (!item.song) return 0
+  let maxLines = 2
+  if (item.song.themeId && themeCache[item.song.themeId]?.settings) {
+    try { maxLines = JSON.parse(themeCache[item.song.themeId].settings).maxLinesPerSlide ?? 2 } catch {}
+  }
+  const sc = buildSlides(item.song.sections, maxLines).length
+  return sc * 15
+}
+
+function fmtDur(sec: number): string | null {
+  if (sec <= 0) return null
+  const m = Math.floor(sec / 60); const s = sec % 60
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
+function fmtTotal(sec: number): string {
+  const h = Math.floor(sec / 3600); const m = Math.floor((sec % 3600) / 60)
+  return h > 0 ? `${h}h ${m > 0 ? `${m}m` : ''}`.trim() : `${m}m`
+}
+
 // ── Main Screen ──────────────────────────────────────────────────────────────
 
 interface Props {
@@ -127,6 +155,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
     addScriptureToLineup, addMediaToLineup,
     removeSongFromLineup, loadServices, selectService,
     services, reorderLineup, updateStatus, updateService,
+    patchLineupItemSectionOrder,
   } = useServiceStore()
   const { loadSongs } = useSongStore()
 
@@ -138,6 +167,8 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
   const [previewSlideIdx, setPreviewSlideIdx] = useState(0)
   const [notesMap, setNotesMap] = useState<Record<number, string>>({})
   const notesTimers = useRef<Record<number, ReturnType<typeof setTimeout>>>({})
+  const themeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingThemeRef = useRef<Partial<ThemeStyle>>({})
 
   // Theme data
   const [themeCache, setThemeCache] = useState<Record<number, any>>({})
@@ -146,6 +177,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
   const [bgImages, setBgImages] = useState<string[]>([])
   const [themeOverrides, setThemeOverrides] = useState<Partial<ThemeStyle>>({})
   const [bgOverride, setBgOverride] = useState<string | null | undefined>(undefined)
+  const [arrangedSectionIds, setArrangedSectionIds] = useState<number[] | null>(null)
 
   // ── Load ─────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -177,7 +209,16 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
     setPreviewSlideIdx(0)
     setThemeOverrides({})
     setBgOverride(undefined)
-  }, [selectedSongIdx])
+    pendingThemeRef.current = {}
+    if (themeTimerRef.current) { clearTimeout(themeTimerRef.current); themeTimerRef.current = null }
+    // Load saved section order for this lineup item if present
+    const item = lineup[selectedSongIdx]
+    if (item?.sectionOrder) {
+      try { setArrangedSectionIds(JSON.parse(item.sectionOrder)) } catch { setArrangedSectionIds(null) }
+    } else {
+      setArrangedSectionIds(null)
+    }
+  }, [selectedSongIdx]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Seed notes from DB whenever lineup changes
   useEffect(() => {
@@ -190,6 +231,11 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
   const isPast = selectedService
     ? new Date(selectedService.date + "T00:00:00") < new Date(new Date().toLocaleDateString("en-CA") + "T00:00:00")
     : false
+
+  const totalDurationSec = useMemo(
+    () => lineup.reduce((sum, item) => sum + estimateDuration(item, themeCache), 0),
+    [lineup, themeCache],
+  )
 
   const currentItem = lineup[selectedSongIdx] ?? null
   const currentSong = currentItem?.song ?? null
@@ -204,10 +250,24 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
     return { ...base, ...themeOverrides }
   }, [currentSong, themeCache, defaultTheme, themeOverrides])
 
+  const arrangedSections = useMemo(() => {
+    if (!currentSong) return []
+    const ids = arrangedSectionIds ?? (() => {
+      if (currentItem?.sectionOrder) {
+        try { return JSON.parse(currentItem.sectionOrder) as number[] } catch {}
+      }
+      return null
+    })()
+    if (!ids) return currentSong.sections
+    const ordered = ids.map(id => currentSong.sections.find(s => s.id === id)).filter(Boolean) as typeof currentSong.sections
+    return ordered.length === currentSong.sections.length ? ordered : currentSong.sections
+  }, [currentSong, arrangedSectionIds, currentItem])
+
   const slides = useMemo(
-    () => currentSong ? buildSlides(currentSong.sections, effectiveTheme.maxLinesPerSlide) : [],
-    [currentSong, effectiveTheme.maxLinesPerSlide],
+    () => arrangedSections.length ? buildSlides(arrangedSections, effectiveTheme.maxLinesPerSlide) : [],
+    [arrangedSections, effectiveTheme.maxLinesPerSlide],
   )
+
 
   const scriptureVerses = useMemo<{ label: string; text: string }[]>(() => {
     if (currentItem?.itemType !== 'scripture') return []
@@ -325,6 +385,64 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
     await updateStatus(selectedService.id, "ready")
   }
 
+  const handleThemeChange = (key: keyof ThemeStyle, value: any) => {
+    setThemeOverrides(prev => ({ ...prev, [key]: value }))
+    pendingThemeRef.current = { ...pendingThemeRef.current, [key]: value }
+    if (!currentSong) return
+    if (themeTimerRef.current) clearTimeout(themeTimerRef.current)
+    themeTimerRef.current = setTimeout(async () => {
+      const overrides = pendingThemeRef.current
+      const base: Partial<ThemeStyle> = currentSong.themeId && themeCache[currentSong.themeId]?.settings
+        ? (() => { try { return JSON.parse(themeCache[currentSong.themeId!].settings) } catch { return {} } })()
+        : {}
+      const fullSettings = { ...DEFAULT_THEME, ...base, ...overrides }
+      const settingsJson = JSON.stringify(fullSettings)
+      if (currentSong.themeId) {
+        await window.worshipsync.themes.update(currentSong.themeId, { settings: settingsJson })
+      } else {
+        const newTheme = await window.worshipsync.themes.create({
+          name: currentSong.title, type: 'per-song', isDefault: false, settings: settingsJson,
+        })
+        await window.worshipsync.songs.update(currentSong.id, { themeId: newTheme.id })
+      }
+      const all = await window.worshipsync.themes.getAll()
+      const c: Record<number, any> = {}
+      all.forEach((t: any) => { c[t.id] = t })
+      setThemeCache(c)
+      await loadSongs()
+    }, 800)
+  }
+
+  const handleSectionDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const currentIds = arrangedSections.map(s => s.id)
+    const oldIdx = currentIds.indexOf(Number(active.id))
+    const newIdx = currentIds.indexOf(Number(over.id))
+    if (oldIdx === -1 || newIdx === -1) return
+    setArrangedSectionIds(arrayMove(currentIds, oldIdx, newIdx))
+  }
+
+  const saveArrangementToSong = async () => {
+    if (!currentSong || !arrangedSectionIds) return
+    const updated = arrangedSectionIds.map((id, idx) => {
+      const sec = currentSong.sections.find(s => s.id === id)!
+      return { type: sec.type, label: sec.label, lyrics: sec.lyrics, orderIndex: idx }
+    })
+    await window.worshipsync.songs.upsertSections(currentSong.id, updated)
+    await loadSongs()
+    setArrangedSectionIds(null)
+  }
+
+  const saveArrangementToLineup = async () => {
+    if (!currentItem || !arrangedSectionIds) return
+    // Patch the store immediately so the presenter picks it up on next mount
+    patchLineupItemSectionOrder(currentItem.id, arrangedSectionIds)
+    setArrangedSectionIds(null)
+    // Persist to DB in the background
+    await window.worshipsync.lineup.setSectionOrder(currentItem.id, arrangedSectionIds)
+  }
+
   // ── Empty state ──────────────────────────────────────────────────────────
   if (!selectedService) {
     return (
@@ -341,67 +459,58 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
   return (
     <div className="h-full flex flex-col overflow-hidden bg-background text-foreground">
 
-      {/* ── Top bar: service info + actions ──────────────────────────── */}
-      <div className="h-14 border-b border-border flex items-center px-5 shrink-0 gap-4">
-        <div className="min-w-0 flex items-center gap-2">
+      {/* ── Top bar ────────────────────────────────────────────────── */}
+      <div
+        className="h-14 border-b border-border flex items-center px-5 shrink-0 gap-3"
+        style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
+      >
+        <div className="min-w-0 flex items-center gap-2" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
           <div className="min-w-0">
-            <h1 className="text-sm font-bold text-foreground truncate">
-              {selectedService.label}
-            </h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-sm font-bold text-foreground truncate">{selectedService.label}</h1>
+              {!isPast && selectedService.status !== "ready" && (
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">DRAFT</span>
+              )}
+              {selectedService.status === "ready" && (
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-green-500/15 text-green-500 shrink-0">READY</span>
+              )}
+            </div>
             <p className="text-xs text-muted-foreground mt-0.5">
               {new Date(selectedService.date + "T00:00:00").toLocaleDateString("en-US", {
-                weekday: "long", month: "long", day: "numeric",
+                weekday: "short", month: "short", day: "numeric", year: "numeric",
               })}
-              {" · "}
-              {lineup.length} {lineup.length === 1 ? "item" : "items"}
+              {totalDurationSec > 0 && <span> · {fmtTotal(totalDurationSec)}</span>}
             </p>
           </div>
           <button
             onClick={() => setShowEditService(true)}
-            title="Edit service name / date"
+            title="Edit service"
             className="shrink-0 h-6 w-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
           >
             <Pencil className="h-3.5 w-3.5" />
           </button>
         </div>
 
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-2" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
           {isPast ? (
-            <span className="text-[11px] font-medium text-muted-foreground bg-muted px-2.5 py-1 rounded-md">
-              View only · past service
-            </span>
+            <span className="text-[11px] font-medium text-muted-foreground bg-muted px-2.5 py-1 rounded-md">View only · past service</span>
           ) : projectionOpen && onReturnToPresenter ? (
             <>
               <span className="inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-md bg-[hsl(var(--success)/0.14)] text-[hsl(var(--success))]">
-                <span className="h-1.5 w-1.5 rounded-full bg-[hsl(var(--success))]" />
-                Show is live
+                <span className="h-1.5 w-1.5 rounded-full bg-[hsl(var(--success))]" /> Show is live
               </span>
-              <Button
-                size="sm"
-                className="gap-1.5 h-8 text-xs bg-red-600 hover:bg-red-700 text-white"
-                onClick={onReturnToPresenter}
-              >
+              <Button size="sm" className="gap-1.5 h-8 text-xs bg-red-600 hover:bg-red-700 text-white" onClick={onReturnToPresenter}>
                 <Monitor className="h-3.5 w-3.5" /> Back to Presenter
               </Button>
             </>
           ) : (
             <>
-              {selectedService.status !== "ready" && lineup.length > 0 && (
+              {selectedService.status !== "ready" && lineup.length > 0 && !isPast && (
                 <Button variant="outline" size="sm" className="gap-1.5 h-8 text-xs" onClick={markReady}>
-                  Mark as ready
+                  Mark Ready
                 </Button>
               )}
-              {selectedService.status === "ready" && (
-                <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-green-500 px-2 py-1 rounded-md bg-green-500/10">
-                  Ready
-                </span>
-              )}
-              <Button
-                size="sm"
-                className="gap-1.5 h-8 text-xs bg-red-600 hover:bg-red-700 text-white"
-                disabled={lineup.length === 0}
-                onClick={onGoLive}
-              >
+              <Button size="sm" className="gap-1.5 h-8 text-xs bg-red-600 hover:bg-red-700 text-white" disabled={lineup.length === 0} onClick={onGoLive}>
                 <Radio className="h-3.5 w-3.5" /> Go Live
               </Button>
             </>
@@ -414,12 +523,10 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
 
         {/* ─── LEFT: Lineup ──────────────────────────────────────────── */}
         <div className="w-64 shrink-0 border-r border-border flex flex-col bg-card">
-          <div className="flex items-center justify-between px-4 py-3 shrink-0">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-              Lineup
-            </span>
-            <span className="text-[10px] text-muted-foreground">
-              {lineup.length} {lineup.length === 1 ? "item" : "items"}
+          <div className="flex items-center justify-between px-4 py-2.5 shrink-0 border-b border-border">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Service Lineup</span>
+            <span className="text-[10px] text-muted-foreground font-medium">
+              {totalDurationSec > 0 ? fmtTotal(totalDurationSec) : `${lineup.length} items`}
             </span>
           </div>
 
@@ -440,14 +547,6 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
                     const isCountdown = item.itemType === 'countdown'
                     const isScripture = item.itemType === 'scripture'
                     const isMedia = item.itemType === 'media'
-                    let slideCount = 0
-                    if (!isCountdown && !isMedia && !isScripture && item.song) {
-                      let itemMaxLines = DEFAULT_THEME.maxLinesPerSlide
-                      if (item.song.themeId && themeCache[item.song.themeId]?.settings) {
-                        try { itemMaxLines = JSON.parse(themeCache[item.song.themeId].settings).maxLinesPerSlide ?? itemMaxLines } catch {}
-                      }
-                      slideCount = buildSlides(item.song.sections, itemMaxLines).length
-                    }
                     return (
                       <SortableLineupItem
                         key={item.id}
@@ -455,15 +554,14 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
                         index={i}
                         isSelected={isSelected}
                         title={isCountdown ? "Countdown Timer" : isScripture || isMedia ? item.title ?? "—" : item.song?.title ?? "—"}
-                        subtitle={
-                          isCountdown
-                            ? "Pre-Service Countdown"
-                            : isScripture
-                              ? "Scripture"
-                              : isMedia
-                                ? "Media"
-                                : `${item.song?.artist || "Unknown"}${item.song?.key ? ` · ${item.song.key}` : ""} · ${slideCount} slides`
-                        }
+                        subtitle={(() => {
+                          const dur = fmtDur(estimateDuration(item, themeCache))
+                          const base = isCountdown ? "Countdown"
+                            : isScripture ? "Scripture"
+                            : isMedia ? "Media"
+                            : `${item.song?.artist || "Unknown"}${item.song?.key ? ` · ${item.song.key}` : ""}`
+                          return dur ? `${base} · ${dur}` : base
+                        })()}
                         isPast={isPast}
                         onSelect={() => setSelectedSongIdx(i)}
                         onDelete={() => {
@@ -585,94 +683,119 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
           ) : currentSong ? (
             <>
               {/* Song header */}
-              <div className="px-6 pt-5 pb-4 border-b border-border shrink-0">
+              <div className="px-5 py-3 border-b border-border bg-card shrink-0">
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
-                    <h2 className="text-lg font-bold text-foreground truncate">
-                      {currentSong.title}
-                    </h2>
+                    <div className="flex items-center gap-2 mb-0.5">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Song</span>
+                      {currentSong.ccliNumber && (
+                        <span className="text-[10px] text-muted-foreground">CCLI #{currentSong.ccliNumber}</span>
+                      )}
+                    </div>
+                    <h2 className="text-lg font-bold text-foreground truncate">{currentSong.title}</h2>
                     <p className="text-xs text-muted-foreground mt-0.5 truncate">
                       {currentSong.artist || "Unknown artist"}
-                      {currentSong.ccliNumber && ` · CCLI: ${currentSong.ccliNumber}`}
                       {currentSong.key && ` · Key: ${currentSong.key}`}
                     </p>
                   </div>
                   {currentItem?.itemType === 'song' && !isPast && (
-                    <Button
-                      variant="outline" size="sm"
-                      className="gap-1.5 h-8 text-xs shrink-0"
-                      onClick={() => setEditingItemId(currentItem!.id)}
-                    >
+                    <Button variant="outline" size="sm" className="gap-1.5 h-8 text-xs shrink-0" onClick={() => setEditingItemId(currentItem!.id)}>
                       <Pencil className="h-3.5 w-3.5" /> Edit Lyrics
                     </Button>
                   )}
                 </div>
               </div>
 
-              {/* Section toggles + slide grid */}
-              <div className="flex-1 overflow-y-auto">
-                {currentSong.sections.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-full text-center px-8">
-                    <Pencil className="h-10 w-10 text-muted-foreground mb-3" />
-                    <p className="text-sm font-medium text-foreground mb-1">No lyrics yet</p>
-                    <p className="text-xs text-muted-foreground mb-4">
-                      Add lyrics and sections to this song to build slides.
-                    </p>
-                    {currentItem?.itemType === 'song' && !isPast && (
-                      <Button size="sm" className="gap-1.5" onClick={() => setEditingItemId(currentItem!.id)}>
-                        <Pencil className="h-3.5 w-3.5" /> Edit Lyrics
-                      </Button>
-                    )}
-                  </div>
-                ) : (
-                  <>
-                    {/* Slide grid preview */}
-                    <div className="px-6 py-4">
-                      <div className="flex items-center justify-between mb-3">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                          Slides ({slides.length})
-                        </span>
-                        <span className="text-[10px] text-muted-foreground">
-                          Click to preview on right
-                        </span>
-                      </div>
-                      {slides.length === 0 ? (
-                        <p className="text-xs text-muted-foreground py-4 text-center">
-                          No slides — add lyrics to this song to generate slides.
-                        </p>
-                      ) : (
-                        <div className="grid grid-cols-3 gap-2.5">
-                          {slides.map((slide, i) => {
-                            const isPreview = previewSlideIdx === i
-                            return (
-                              <button
-                                key={i}
-                                onClick={() => setPreviewSlideIdx(i)}
-                                className={`rounded-lg overflow-hidden border-2 transition-all text-left ${
-                                  isPreview
-                                    ? "border-primary ring-2 ring-primary/30"
-                                    : "border-border hover:border-primary/50"
-                                }`}
-                              >
-                                <div className="bg-gray-900 p-2.5 relative" style={{ aspectRatio: "16/9" }}>
-                                  <span className={`absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase text-white ${SECTION_BADGE_COLORS[slide.sectionType] ?? "bg-slate-600"}`}>
-                                    {slide.sectionLabel}
-                                  </span>
-                                  <div className="flex items-center justify-center h-full px-1">
-                                    <p className="text-[10px] text-white text-center leading-relaxed whitespace-pre-wrap">
-                                      {slide.lines.join("\n") || " "}
-                                    </p>
-                                  </div>
-                                </div>
-                              </button>
-                            )
-                          })}
-                        </div>
-                      )}
+              {currentSong.sections.length === 0 ? (
+                <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
+                  <Pencil className="h-10 w-10 text-muted-foreground mb-3" />
+                  <p className="text-sm font-medium text-foreground mb-1">No lyrics yet</p>
+                  <p className="text-xs text-muted-foreground mb-4">Add lyrics and sections to this song to build slides.</p>
+                  {currentItem?.itemType === 'song' && !isPast && (
+                    <Button size="sm" className="gap-1.5" onClick={() => setEditingItemId(currentItem!.id)}>
+                      <Pencil className="h-3.5 w-3.5" /> Edit Lyrics
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <>
+                  {/* Section tabs — draggable to reorder */}
+                  <div className="px-5 py-2.5 border-b border-border bg-card shrink-0">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Arrangement</span>
+                      <span className="text-[10px] text-muted-foreground">· {slides.length} slides</span>
                     </div>
-                  </>
-                )}
-              </div>
+                    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleSectionDragEnd}>
+                      <SortableContext items={arrangedSections.map(s => s.id)} strategy={horizontalListSortingStrategy}>
+                        <div className="flex gap-1.5 flex-wrap">
+                          {arrangedSections.map(section => (
+                            <SortableSectionTab
+                              key={section.id}
+                              id={section.id}
+                              label={section.label}
+                              color={SECTION_BADGE_COLORS[section.type] ?? 'bg-slate-600'}
+                            />
+                          ))}
+                        </div>
+                      </SortableContext>
+                    </DndContext>
+                  </div>
+
+                  {/* Pending arrangement action bar */}
+                  {arrangedSectionIds && (
+                    <div className="px-5 py-2 border-b border-border bg-amber-500/10 shrink-0 flex items-center gap-2">
+                      <span className="text-[11px] text-amber-400 flex-1 font-medium">Arrangement changed</span>
+                      <button onClick={() => setArrangedSectionIds(null)} className="text-[11px] text-muted-foreground hover:text-foreground transition-colors">Reset</button>
+                      <button onClick={saveArrangementToLineup} className="text-[11px] font-semibold px-2.5 py-1 rounded bg-background border border-border hover:bg-accent transition-colors">
+                        This service only
+                      </button>
+                      <button onClick={saveArrangementToSong} className="text-[11px] font-semibold px-2.5 py-1 rounded bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
+                        Save to song
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Flat slide grid */}
+                  <div className="flex-1 overflow-y-auto px-5 py-4">
+                    <div className="grid grid-cols-3 gap-2.5">
+                      {slides.map((slide, i) => {
+                        const isPreview = previewSlideIdx === i
+                        return (
+                          <button
+                            key={i}
+                            onClick={() => setPreviewSlideIdx(i)}
+                            className={`rounded-lg overflow-hidden border-2 transition-all ${
+                              isPreview ? 'border-primary ring-2 ring-primary/30' : 'border-border hover:border-primary/50'
+                            }`}
+                          >
+                            <div className="relative bg-gray-950" style={{ aspectRatio: '16/9' }}>
+                              {effectiveBg && (
+                                effectiveBg.startsWith('color:') ? (
+                                  <div className="absolute inset-0" style={{ background: effectiveBg.replace('color:', '') }} />
+                                ) : (
+                                  <>
+                                    <img src={`file://${effectiveBg}`} className="absolute inset-0 w-full h-full object-cover" alt="" />
+                                    <div className="absolute inset-0" style={{ background: `rgba(0,0,0,${effectiveTheme.overlayOpacity / 100})` }} />
+                                  </>
+                                )
+                              )}
+                              <span className={`absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase text-white z-10 ${SECTION_BADGE_COLORS[slide.sectionType] ?? 'bg-slate-600'}`}>
+                                {slide.sectionLabel}
+                              </span>
+                              <div className="absolute inset-0 flex items-center justify-center px-2">
+                                <p className="text-[10px] text-white text-center leading-relaxed whitespace-pre-wrap relative z-10"
+                                  style={{ fontFamily: effectiveTheme.fontFamily, textShadow: effectiveTheme.textShadowOpacity > 0 ? `0 1px 3px rgba(0,0,0,${effectiveTheme.textShadowOpacity / 100})` : 'none' }}>
+                                  {slide.lines.join('\n') || ' '}
+                                </p>
+                              </div>
+                            </div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </>
+              )}
             </>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
@@ -687,46 +810,36 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
             </div>
           )}
 
-          {/* Notes / cue strip — pinned at the bottom of the center panel */}
-          {currentItem && (
-            <div className="shrink-0 border-t border-border px-5 py-3 bg-card">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">Notes</p>
-              <textarea
-                value={notesMap[currentItem.id] ?? ""}
-                onChange={(e) => {
-                  const val = e.target.value
-                  setNotesMap(prev => ({ ...prev, [currentItem.id]: val }))
-                  clearTimeout(notesTimers.current[currentItem.id])
-                  notesTimers.current[currentItem.id] = setTimeout(() => {
-                    window.worshipsync.lineup.setNotes(currentItem.id, val)
-                  }, 600)
-                }}
-                onBlur={(e) => {
-                  const id = currentItem.id
-                  clearTimeout(notesTimers.current[id])
-                  delete notesTimers.current[id]
-                  window.worshipsync.lineup.setNotes(id, e.target.value)
-                }}
-                placeholder={isPast ? "No notes." : "Cue notes (e.g. Start in D, skip bridge)…"}
-                readOnly={isPast}
-                rows={2}
-                className="w-full text-xs text-foreground bg-background border border-border rounded-md px-3 py-2 resize-none outline-none placeholder:text-muted-foreground/40 focus:border-primary/50 transition-colors leading-relaxed"
-              />
-            </div>
-          )}
         </div>
 
-        {/* ─── RIGHT: Preview + Appearance (hidden for media items) ──── */}
-        {!currentItemIsMedia && (
-        <div className="w-80 shrink-0 border-l border-border flex flex-col bg-card overflow-hidden">
-          <AppearancePanel
+        {/* ─── RIGHT: Item Settings ──── */}
+        <div className="w-[300px] shrink-0 border-l border-border flex flex-col bg-card overflow-hidden">
+          <ItemSettingsPanel
+            currentItem={currentItem}
+            notes={notesMap[currentItem?.id ?? -1] ?? ""}
+            onNotesChange={(val) => {
+              if (!currentItem) return
+              setNotesMap(prev => ({ ...prev, [currentItem.id]: val }))
+              clearTimeout(notesTimers.current[currentItem.id])
+              notesTimers.current[currentItem.id] = setTimeout(() => {
+                window.worshipsync.lineup.setNotes(currentItem.id, val)
+              }, 600)
+            }}
+            onNotesBlur={(val) => {
+              if (!currentItem) return
+              const id = currentItem.id
+              clearTimeout(notesTimers.current[id])
+              delete notesTimers.current[id]
+              window.worshipsync.lineup.setNotes(id, val)
+            }}
             slide={currentSlide}
             theme={effectiveTheme}
             bg={effectiveBg}
             bgImages={bgImages}
             canCustomize={!!currentSong || currentItem?.itemType === 'scripture'}
             readOnly={isPast}
-            onThemeChange={(key, value) => setThemeOverrides(p => ({ ...p, [key]: value }))}
+            isOverridden={bgOverride !== undefined && bgOverride !== null}
+            onThemeChange={handleThemeChange}
             onBgChange={async (path) => {
               setBgOverride(path)
               if (currentSong) {
@@ -739,7 +852,6 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
             }}
           />
         </div>
-        )}
 
       </div>
 
@@ -784,6 +896,192 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
   )
 }
 
+// ── Sortable Section Tab ─────────────────────────────────────────────────────
+
+function SortableSectionTab({ id, label, color }: { id: number; label: string; color: string }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
+  return (
+    <div
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }}
+      className={`${color} text-white text-[10px] font-bold px-2 py-0.5 rounded cursor-grab active:cursor-grabbing touch-none select-none`}
+    >
+      {label}
+    </div>
+  )
+}
+
+// ── Item Settings Panel (Right Sidebar) ─────────────────────────────────────
+
+function ItemSettingsPanel({
+  currentItem, notes, onNotesChange, onNotesBlur,
+  slide, theme, bg, canCustomize, readOnly, isOverridden,
+  onThemeChange, onBgChange,
+}: {
+  currentItem: LineupItemWithSong | null
+  notes: string
+  onNotesChange: (val: string) => void
+  onNotesBlur: (val: string) => void
+  slide: Slide | null
+  theme: ThemeStyle
+  bg: string | null
+  bgImages: string[]
+  canCustomize: boolean
+  readOnly?: boolean
+  isOverridden: boolean
+  onThemeChange: (key: keyof ThemeStyle, value: any) => void
+  onBgChange: (path: string | null) => void
+}) {
+  return (
+    <div className="flex flex-col h-full overflow-hidden">
+      <div className="px-4 py-2.5 border-b border-border shrink-0">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Item Settings</span>
+      </div>
+      <div className="flex-1 overflow-y-auto">
+
+        {/* Cue Notes */}
+        <div className="px-4 py-3 border-b border-border">
+          <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-2">Cue Notes</label>
+          <textarea
+            value={notes}
+            onChange={e => onNotesChange(e.target.value)}
+            onBlur={e => onNotesBlur(e.target.value)}
+            placeholder={readOnly ? "No notes." : "Keys start softly. Full band on Verse 2…"}
+            readOnly={readOnly || !currentItem}
+            rows={3}
+            className="w-full text-xs text-foreground bg-background border border-border rounded-md px-3 py-2 resize-none outline-none placeholder:text-muted-foreground/40 focus:border-primary/50 transition-colors leading-relaxed"
+          />
+        </div>
+
+        {/* Slide preview */}
+        {canCustomize && (
+          <div className="px-4 py-3 border-b border-border">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Preview</span>
+              <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                <Eye className="h-3 w-3" /> Not broadcasting
+              </span>
+            </div>
+            <div className="rounded-lg overflow-hidden border border-border bg-gray-950 relative" style={{ aspectRatio: "16/9" }}>
+              {bg && slide && <img src={`file://${bg}`} className="absolute inset-0 w-full h-full object-cover" alt="" />}
+              {bg && slide && <div className="absolute inset-0" style={{ background: `rgba(0,0,0,${theme.overlayOpacity / 100})` }} />}
+              {slide ? (
+                <div className={`relative h-full flex p-4 ${
+                  theme.textPosition === "top" ? "items-start" : theme.textPosition === "bottom" ? "items-end" : "items-center"
+                } justify-center`}>
+                  <p className="text-xs leading-relaxed whitespace-pre-wrap"
+                    style={{ color: theme.textColor, fontFamily: theme.fontFamily, fontWeight: Number(theme.fontWeight) || 600, textAlign: theme.textAlign, textShadow: theme.textShadowOpacity > 0 ? `0 2px 4px rgba(0,0,0,${theme.textShadowOpacity / 100})` : "none" }}>
+                    {slide.lines.join("\n")}
+                  </p>
+                </div>
+              ) : (
+                <div className="relative h-full flex items-center justify-center">
+                  <p className="text-[10px] text-gray-600">No slide selected</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Background */}
+        {canCustomize && (
+          <div className="px-4 py-3 border-b border-border">
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Background</label>
+              {isOverridden && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400">Overridden</span>}
+            </div>
+            <div className="flex items-center gap-2.5 p-2 rounded-md bg-background/40 border border-border mb-2">
+              <div className="w-14 h-8 rounded overflow-hidden shrink-0 border border-border bg-black flex items-center justify-center">
+                {bg ? (
+                  bg.startsWith("color:") ? (
+                    <div className="w-full h-full" style={{ background: bg.replace("color:", "") }} />
+                  ) : (
+                    <img src={`file://${bg}`} className="w-full h-full object-cover" alt="" />
+                  )
+                ) : (
+                  <ImageIcon className="h-3.5 w-3.5 text-muted-foreground/40" />
+                )}
+              </div>
+              <p className="text-[11px] font-medium truncate flex-1 min-w-0">
+                {bg ? (bg.split('/').pop() ?? 'Background') : 'No background'}
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={async () => {
+                  const path = await window.worshipsync.backgrounds.pickImage()
+                  if (path) onBgChange(path)
+                }}
+                disabled={readOnly}
+                className="flex-1 py-1.5 text-[11px] font-medium rounded-md border border-border bg-background hover:bg-accent/40 transition-colors disabled:opacity-40"
+              >
+                Change Media
+              </button>
+              {bg && (
+                <button
+                  onClick={() => onBgChange(null)}
+                  disabled={readOnly}
+                  className="flex-1 py-1.5 text-[11px] font-medium rounded-md border border-border bg-background hover:bg-accent/40 transition-colors text-muted-foreground hover:text-destructive disabled:opacity-40"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Theme Styling */}
+        {canCustomize && (
+          <div className={`px-4 py-3 ${readOnly ? "pointer-events-none opacity-50" : ""}`}>
+            <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-3">Theme Styling</label>
+            <div className="space-y-3">
+              <div>
+                <p className="text-[10px] text-muted-foreground mb-1.5">Text Layout</p>
+                <div className="flex gap-1.5">
+                  {(["left", "center", "right"] as const).map(align => (
+                    <button key={align} onClick={() => onThemeChange("textAlign", align)}
+                      className={`flex-1 h-8 rounded-md border flex items-center justify-center text-sm transition-colors ${theme.textAlign === align ? "bg-primary/10 text-primary border-primary/30" : "border-input text-muted-foreground hover:text-foreground hover:bg-accent"}`}>
+                      {align === "left" ? "⫷" : align === "center" ? "☰" : "⫸"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="text-[10px] text-muted-foreground mb-1.5">Position</p>
+                <div className="flex gap-1.5">
+                  {(["top", "middle", "bottom"] as const).map(pos => (
+                    <button key={pos} onClick={() => onThemeChange("textPosition", pos)}
+                      className={`flex-1 h-8 rounded-md border text-xs capitalize transition-colors ${theme.textPosition === pos ? "bg-primary/10 text-primary border-primary/30" : "border-input text-muted-foreground hover:text-foreground hover:bg-accent"}`}>
+                      {pos}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <p className="text-[10px] text-muted-foreground mb-1.5">Font</p>
+                <select className="w-full h-8 rounded-md border border-input bg-background px-2 text-xs"
+                  value={theme.fontFamily} onChange={e => onThemeChange("fontFamily", e.target.value)}>
+                  {FONT_OPTIONS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <p className="text-[10px] text-muted-foreground mb-1.5">Overlay Opacity</p>
+                <div className="flex items-center gap-2">
+                  <input type="range" className="flex-1 h-1 accent-primary" min={0} max={100} step={5}
+                    value={theme.overlayOpacity} onChange={e => onThemeChange("overlayOpacity", Number(e.target.value))} />
+                  <span className="text-xs text-muted-foreground w-10 text-right">{theme.overlayOpacity}%</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Appearance Panel (Right Sidebar) ────────────────────────────────────────
 
 const FONT_OPTIONS = [
@@ -791,12 +1089,6 @@ const FONT_OPTIONS = [
   { value: "Montserrat, sans-serif", label: "Montserrat" },
   { value: "Georgia, serif", label: "Georgia" },
   { value: "Roboto, sans-serif", label: "Roboto" },
-]
-
-const WEIGHT_OPTIONS = [
-  { value: "700", label: "Bold" },
-  { value: "600", label: "Semi-Bold" },
-  { value: "400", label: "Regular" },
 ]
 
 // ── SortableLineupItem ────────────────────────────────────────────────────────
@@ -872,304 +1164,6 @@ function SortableLineupItem({
         )}
       </div>
 
-    </div>
-  )
-}
-
-const COLOR_SWATCHES = ["#ffffff", "#f5a623", "#4d8ef0", "#3ecf8e", "#f05252", "#9b59b6"]
-
-function AppearancePanel({
-  slide, theme, bg, bgImages, canCustomize, readOnly,
-  onThemeChange, onBgChange,
-}: {
-  slide: Slide | null
-  theme: ThemeStyle
-  bg: string | null
-  bgImages: string[]
-  canCustomize: boolean
-  readOnly?: boolean
-  onThemeChange: (key: keyof ThemeStyle, value: any) => void
-  onBgChange: (path: string | null) => void
-}) {
-  const [tab, setTab] = useState("style")
-
-  return (
-    <>
-      {/* Preview */}
-      <div className="px-4 pt-4 pb-3 shrink-0">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-            Slide Preview
-          </span>
-          <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
-            <Eye className="h-3 w-3" /> Not broadcasting
-          </span>
-        </div>
-        <div
-          className="rounded-lg overflow-hidden border border-border bg-gray-950 relative"
-          style={{ aspectRatio: "16/9" }}
-        >
-          {bg && slide && (
-            <img src={`file://${bg}`} className="absolute inset-0 w-full h-full object-cover" alt="" />
-          )}
-          {bg && slide && (
-            <div
-              className="absolute inset-0"
-              style={{ background: `rgba(0,0,0,${theme.overlayOpacity / 100})` }}
-            />
-          )}
-          {slide ? (
-            <div className={`relative h-full flex p-4 ${
-              theme.textPosition === "top" ? "items-start" : theme.textPosition === "bottom" ? "items-end" : "items-center"
-            } ${
-              theme.textAlign === "left" ? "justify-start" : theme.textAlign === "right" ? "justify-end" : "justify-center"
-            }`}>
-              <p
-                className="text-xs leading-relaxed whitespace-pre-wrap"
-                style={{
-                  color: theme.textColor,
-                  fontFamily: theme.fontFamily,
-                  fontWeight: theme.fontWeight === "700" ? 700 : theme.fontWeight === "600" ? 600 : 400,
-                  textAlign: theme.textAlign,
-                  textShadow: theme.textShadowOpacity > 0
-                    ? `0 2px 4px rgba(0,0,0,${theme.textShadowOpacity / 100})` : "none",
-                }}
-              >
-                {slide.lines.join("\n")}
-              </p>
-            </div>
-          ) : (
-            <div className="relative h-full flex items-center justify-center">
-              <p className="text-[10px] text-gray-600">No slide selected</p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Tabs */}
-      <Tabs value={tab} onValueChange={setTab} className="flex flex-col flex-1 min-h-0">
-        <div className="px-4 border-b border-border shrink-0">
-          <TabsList className="h-auto w-full bg-transparent p-0 gap-0 rounded-none">
-            {[
-              { value: "style", label: "Text", icon: Type },
-              { value: "background", label: "Background", icon: ImageIcon },
-              { value: "layout", label: "Layout", icon: Monitor },
-            ].map(t => (
-              <TabsTrigger
-                key={t.value}
-                value={t.value}
-                className="flex-1 gap-1.5 rounded-none border-b-2 border-transparent px-2 py-2 text-[10px] font-medium text-muted-foreground shadow-none data-[state=active]:border-primary data-[state=active]:text-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
-              >
-                <t.icon className="h-3 w-3" />
-                {t.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </div>
-
-        <div className={`flex-1 overflow-y-auto ${readOnly ? "pointer-events-none opacity-50" : ""}`}>
-          {!canCustomize ? (
-            <div className="p-6 text-center">
-              <Palette className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-              <p className="text-xs text-muted-foreground">
-                Select a song to customize its appearance.
-              </p>
-            </div>
-          ) : tab === "style" ? (
-            <StyleTab theme={theme} onChange={onThemeChange} />
-          ) : tab === "background" ? (
-            <BackgroundTab
-              currentBg={bg}
-              bgImages={bgImages}
-              onChange={onBgChange}
-            />
-          ) : (
-            <LayoutTab theme={theme} onChange={onThemeChange} />
-          )}
-        </div>
-      </Tabs>
-    </>
-  )
-}
-
-function StyleTab({ theme, onChange }: {
-  theme: ThemeStyle
-  onChange: (key: keyof ThemeStyle, value: any) => void
-}) {
-  const hasShadow = theme.textShadowOpacity > 0
-
-  return (
-    <div className="p-4 space-y-5">
-      <div>
-        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1.5">Font</label>
-        <select
-          className="w-full h-8 rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          value={theme.fontFamily}
-          onChange={e => onChange("fontFamily", e.target.value)}
-        >
-          {FONT_OPTIONS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
-        </select>
-      </div>
-
-      <div className="flex gap-2">
-        <div className="flex-1">
-          <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1.5">Weight</label>
-          <select
-            className="w-full h-8 rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            value={theme.fontWeight}
-            onChange={e => onChange("fontWeight", e.target.value)}
-          >
-            {WEIGHT_OPTIONS.map(w => <option key={w.value} value={w.value}>{w.label}</option>)}
-          </select>
-        </div>
-        <div className="w-20">
-          <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1.5">Size</label>
-          <Input
-            className="h-8 text-xs"
-            value={theme.fontSize}
-            type="number"
-            min={12} max={120}
-            onChange={e => onChange("fontSize", Number(e.target.value) || 48)}
-          />
-        </div>
-      </div>
-
-      <div>
-        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1.5">Color</label>
-        <div className="flex gap-1.5">
-          {COLOR_SWATCHES.map(color => (
-            <button
-              key={color}
-              onClick={() => onChange("textColor", color)}
-              className={`h-7 w-7 rounded-full border-2 hover:scale-110 transition-transform ${
-                theme.textColor === color ? "border-primary ring-2 ring-primary/30" : "border-border"
-              }`}
-              style={{ background: color }}
-              title={color}
-            />
-          ))}
-        </div>
-      </div>
-
-      <div className="flex items-center justify-between">
-        <span className="text-xs text-foreground">Drop Shadow</span>
-        <button
-          onClick={() => onChange("textShadowOpacity", hasShadow ? 0 : 40)}
-          className={`h-5 w-9 rounded-full relative transition-colors ${hasShadow ? "bg-primary" : "bg-muted"}`}
-        >
-          <div className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-all ${hasShadow ? "right-0.5" : "left-0.5"}`} />
-        </button>
-      </div>
-    </div>
-  )
-}
-
-function BackgroundTab({
-  currentBg, bgImages, onChange,
-}: {
-  currentBg: string | null
-  bgImages: string[]
-  onChange: (path: string | null) => void
-}) {
-  return (
-    <div className="p-4 space-y-4">
-      <div className="flex items-center justify-between">
-        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Background</span>
-        <button
-          className="text-[10px] text-primary hover:underline"
-          onClick={async () => {
-            const path = await window.worshipsync.backgrounds.pickImage()
-            if (path) onChange(path)
-          }}
-        >
-          Upload Image
-        </button>
-      </div>
-
-      <div className="grid grid-cols-3 gap-1.5">
-        <button
-          onClick={() => onChange(null)}
-          className={`rounded-md border aspect-video flex items-center justify-center text-[9px] text-muted-foreground transition-colors ${
-            !currentBg ? "border-primary bg-primary/10 text-primary" : "border-border hover:bg-accent"
-          }`}
-        >
-          None
-        </button>
-        {bgImages.map((img, i) => (
-          <button
-            key={i}
-            onClick={() => onChange(img)}
-            className={`rounded-md overflow-hidden border-2 aspect-video bg-gray-800 transition-all ${
-              currentBg === img ? "border-primary ring-2 ring-primary/30" : "border-border hover:border-primary/50"
-            }`}
-          >
-            <img src={`file://${img}`} className="w-full h-full object-cover" alt="" />
-          </button>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function LayoutTab({ theme, onChange }: {
-  theme: ThemeStyle
-  onChange: (key: keyof ThemeStyle, value: any) => void
-}) {
-  return (
-    <div className="p-4 space-y-5">
-      <div>
-        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1.5">Alignment</label>
-        <div className="flex gap-1.5">
-          {(["left", "center", "right"] as const).map(align => (
-            <button
-              key={align}
-              onClick={() => onChange("textAlign", align)}
-              className={`flex-1 h-8 rounded-md border flex items-center justify-center text-xs transition-colors ${
-                theme.textAlign === align
-                  ? "bg-primary/10 text-primary border-primary/30"
-                  : "border-input text-muted-foreground hover:text-foreground hover:bg-accent"
-              }`}
-            >
-              {align === "left" ? "⫷" : align === "center" ? "☰" : "⫸"}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1.5">Position</label>
-        <div className="flex gap-1.5">
-          {(["top", "middle", "bottom"] as const).map(pos => (
-            <button
-              key={pos}
-              onClick={() => onChange("textPosition", pos)}
-              className={`flex-1 h-8 rounded-md border text-xs capitalize transition-colors ${
-                theme.textPosition === pos
-                  ? "bg-primary/10 text-primary border-primary/30"
-                  : "border-input text-muted-foreground hover:text-foreground hover:bg-accent"
-              }`}
-            >
-              {pos}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1.5">
-          Overlay Opacity
-        </label>
-        <div className="flex items-center gap-2">
-          <input
-            type="range"
-            className="flex-1 h-1 accent-primary"
-            min={0} max={100} step={5}
-            value={theme.overlayOpacity}
-            onChange={e => onChange("overlayOpacity", Number(e.target.value))}
-          />
-          <span className="text-xs text-muted-foreground w-10 text-right">{theme.overlayOpacity}%</span>
-        </div>
-      </div>
     </div>
   )
 }

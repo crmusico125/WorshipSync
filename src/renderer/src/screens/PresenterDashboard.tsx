@@ -400,7 +400,14 @@ export default function PresenterDashboard({
         };
       }
 
-      const filtered = item.song.sections;
+      let filtered = item.song.sections;
+      if (item.sectionOrder) {
+        try {
+          const ids: number[] = JSON.parse(item.sectionOrder);
+          const reordered = ids.map(id => filtered.find(s => s.id === id)).filter(Boolean) as typeof filtered;
+          if (reordered.length === filtered.length) filtered = reordered;
+        } catch {}
+      }
 
       // Resolve per-song maxLinesPerSlide from theme
       let maxLines = DEFAULT_THEME.maxLinesPerSlide;

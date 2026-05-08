@@ -181,5 +181,16 @@ export function runMigrations(): void {
     console.error('[db] migration error (lineup_items first-class types):', e)
   }
 
+  // ── Migration: add section_order column to lineup_items ─────────────────
+  try {
+    const cols4 = sqlite.prepare("PRAGMA table_info(lineup_items)").all() as { name: string }[]
+    if (!cols4.some(c => c.name === 'section_order')) {
+      sqlite.exec(`ALTER TABLE lineup_items ADD COLUMN section_order TEXT`)
+      console.log('[db] migration: added section_order column to lineup_items')
+    }
+  } catch (e) {
+    console.error('[db] migration error (lineup_items section_order):', e)
+  }
+
   console.log('[db] migrations complete')
 }

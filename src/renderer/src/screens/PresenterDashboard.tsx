@@ -13,6 +13,7 @@ import {
   Pencil,
   Cast,
   Play,
+  Pause,
   Square,
   AlertCircle,
   X,
@@ -26,12 +27,23 @@ import {
   Search,
   Calendar,
   Tv,
+  Repeat,
+  SkipBack,
+  SkipForward,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useServiceStore, type ServiceDate } from "../store/useServiceStore";
 import LibraryModal from "../components/LibraryModal";
 import BackgroundPickerPanel from "../components/BackgroundPickerPanel";
 import EditLyricsModal from "../components/EditLyricsModal";
+
+// ── Audio singleton — survives PresenterDashboard unmounts ───────────────────
+const _audio: {
+  el: HTMLAudioElement | null;
+  ctx: AudioContext | null;
+  analyser: AnalyserNode | null;
+  path: string | null;
+} = { el: null, ctx: null, analyser: null, path: null };
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -221,6 +233,7 @@ export default function PresenterDashboard({
   const videoTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const videoPreviewRef = useRef<HTMLVideoElement | null>(null);
   const [audioPlaying, setAudioPlaying] = useState(false);
+  const [audioLoop, setAudioLoop] = useState(false);
   const [audioCurrentTime, setAudioCurrentTime] = useState(0);
   const [audioDuration, setAudioDuration] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -228,7 +241,7 @@ export default function PresenterDashboard({
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const vizFrameRef = useRef<number | null>(null);
-  const [waveformBars, setWaveformBars] = useState<number[]>(new Array(48).fill(0));
+  const [waveformBars, setWaveformBars] = useState<number[]>(new Array(64).fill(0));
   const [serviceTime, setServiceTime] = useState("11:00");
   const [serviceTimezone, setServiceTimezone] = useState("America/Los_Angeles");
   const [serviceSchedules, setServiceSchedules] = useState<Array<{
@@ -601,6 +614,27 @@ export default function PresenterDashboard({
     }
   }, [liveSongs, sendSlide]);
 
+  // ── Audio viz (component-level so they survive song switches / remounts) ───
+  const stopViz = useCallback(() => {
+    if (vizFrameRef.current) { cancelAnimationFrame(vizFrameRef.current); vizFrameRef.current = null; }
+    setWaveformBars(new Array(64).fill(0));
+  }, []);
+
+  const startViz = useCallback(() => {
+    if (!analyserRef.current) return;
+    const analyser = analyserRef.current;
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    const tick = () => {
+      analyser.getByteFrequencyData(data);
+      setWaveformBars(Array.from({ length: 64 }, (_, ii) => {
+        const idx = Math.floor((ii / 64) * data.length);
+        return data[idx] / 255;
+      }));
+      vizFrameRef.current = requestAnimationFrame(tick);
+    };
+    vizFrameRef.current = requestAnimationFrame(tick);
+  }, []);
+
   const goNextSong = useCallback(() => {
     const next = selectedSongIdx + 1;
     if (next < liveSongs.length) jumpToItem(next);
@@ -637,6 +671,14 @@ export default function PresenterDashboard({
     }
     if (confirmEndTimer.current) clearTimeout(confirmEndTimer.current);
     setConfirmEndShow(false);
+    // Stop audio and tear down singleton
+    if (_audio.el) { _audio.el.pause(); _audio.el = null; }
+    if (_audio.ctx) { _audio.ctx.close(); _audio.ctx = null; }
+    _audio.analyser = null; _audio.path = null;
+    audioRef.current = null; audioContextRef.current = null; analyserRef.current = null;
+    if (audioTimerRef.current) { clearInterval(audioTimerRef.current); audioTimerRef.current = null; }
+    stopViz();
+    setAudioPlaying(false); setAudioCurrentTime(0); setAudioDuration(0);
     window.worshipsync.slide.blank(true);
     window.worshipsync.window.closeProjection();
     onProjectionChange(false);
@@ -831,6 +873,43 @@ export default function PresenterDashboard({
     return () => clearInterval(interval);
   }, [projectionOpen]);
 
+  // On mount: restore audio state from singleton if audio was playing before unmount
+  useEffect(() => {
+    if (_audio.el && !_audio.el.paused) {
+      audioRef.current = _audio.el;
+      audioContextRef.current = _audio.ctx;
+      analyserRef.current = _audio.analyser;
+      setAudioPlaying(true);
+      setAudioDuration(_audio.el.duration || 0);
+      setAudioCurrentTime(_audio.el.currentTime);
+      if (audioTimerRef.current) clearInterval(audioTimerRef.current);
+      audioTimerRef.current = setInterval(() => setAudioCurrentTime(_audio.el?.currentTime ?? 0), 100);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // When the selected item changes, stop viz/timer if leaving audio; reconnect if returning
+  useEffect(() => {
+    const song = liveSongs[selectedSongIdx];
+    const isAudio = song?.itemType === "media" &&
+      /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(song?.mediaPath ?? "");
+    if (!isAudio) {
+      stopViz();
+      if (audioTimerRef.current) { clearInterval(audioTimerRef.current); audioTimerRef.current = null; }
+      return;
+    }
+    // Returned to audio item — reconnect singleton and restart viz/timer if playing
+    if (_audio.el && !_audio.el.paused) {
+      audioRef.current = _audio.el;
+      audioContextRef.current = _audio.ctx;
+      analyserRef.current = _audio.analyser;
+      if (!vizFrameRef.current) startViz();
+      if (!audioTimerRef.current) {
+        audioTimerRef.current = setInterval(() => setAudioCurrentTime(_audio.el?.currentTime ?? 0), 100);
+      }
+    }
+  }, [liveSongs, selectedSongIdx, startViz, stopViz]);
+
   const computeCountdownDisplay = useCallback(() => {
     const dateStr = selectedService?.date ?? new Date().toLocaleDateString("en-CA");
     const target = new Date(`${dateStr}T${serviceTime}:00`);
@@ -887,11 +966,10 @@ export default function PresenterDashboard({
       if (videoTimerRef.current) clearInterval(videoTimerRef.current);
       if (audioTimerRef.current) clearInterval(audioTimerRef.current);
       if (vizFrameRef.current) cancelAnimationFrame(vizFrameRef.current);
-      if (audioRef.current) {
-        audioRef.current.pause();
-        audioRef.current = null;
-      }
-      audioContextRef.current?.close();
+      // Don't pause audio or close AudioContext — singleton keeps it alive across navigation
+      audioRef.current = null;
+      audioContextRef.current = null;
+      analyserRef.current = null;
     };
   }, []);
 
@@ -1171,10 +1249,10 @@ export default function PresenterDashboard({
                   if (videoTimerRef.current) { clearInterval(videoTimerRef.current); videoTimerRef.current = null; }
                   if (videoPreviewRef.current) { videoPreviewRef.current.pause(); videoPreviewRef.current.currentTime = 0; }
                   if (vizFrameRef.current) { cancelAnimationFrame(vizFrameRef.current); vizFrameRef.current = null; }
-                  if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; audioRef.current = null; }
-                  if (audioTimerRef.current) { clearInterval(audioTimerRef.current); audioTimerRef.current = null; }
-                  audioContextRef.current?.close(); audioContextRef.current = null; analyserRef.current = null;
-                  setAudioPlaying(false); setAudioCurrentTime(0); setAudioDuration(0); setWaveformBars(new Array(48).fill(0));
+                  // Keep audio playing — viz/timer are handled by the currentSong effect
+                  audioRef.current = null;
+                  audioContextRef.current = null;
+                  analyserRef.current = null;
                 }}
                 className={`w-full text-left flex items-center gap-2 px-3 py-2.5 border-b border-border transition-colors ${
                   isCurrent ? "bg-red-500/[0.08] border-l-2 border-l-red-500" : isFinished ? "opacity-50" : "hover:bg-accent/30"
@@ -1350,38 +1428,55 @@ export default function PresenterDashboard({
             const pct = audioDuration ? (audioCurrentTime / audioDuration) * 100 : 0;
             const fmt = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
             const ext = bg.split(".").pop()?.toUpperCase() ?? "AUDIO";
-            const stopViz = () => { if (vizFrameRef.current) { cancelAnimationFrame(vizFrameRef.current); vizFrameRef.current = null; } setWaveformBars(new Array(48).fill(0)); };
-            const startViz = () => {
-              const analyser = analyserRef.current;
-              if (!analyser) return;
-              const data = new Uint8Array(analyser.frequencyBinCount);
-              const tick = () => {
-                analyser.getByteFrequencyData(data);
-                setWaveformBars(Array.from({ length: 48 }, (_, ii) => { const idx = Math.floor((ii / 48) * data.length); return data[idx] / 255; }));
-                vizFrameRef.current = requestAnimationFrame(tick);
-              };
-              vizFrameRef.current = requestAnimationFrame(tick);
-            };
             const ensureAudio = () => {
               if (!audioRef.current) {
-                audioRef.current = new Audio(`file://${encodeURI(bg)}`);
-                audioRef.current.onloadedmetadata = () => setAudioDuration(audioRef.current?.duration ?? 0);
-                audioRef.current.onended = () => { setAudioPlaying(false); setAudioCurrentTime(0); if (audioTimerRef.current) { clearInterval(audioTimerRef.current); audioTimerRef.current = null; } stopViz(); };
-                const ctx = new AudioContext();
-                const analyser = ctx.createAnalyser();
-                analyser.fftSize = 128;
-                ctx.createMediaElementSource(audioRef.current).connect(analyser);
-                analyser.connect(ctx.destination);
-                audioContextRef.current = ctx;
-                analyserRef.current = analyser;
+                if (_audio.el && _audio.path === bg) {
+                  // Restore from singleton (same file, still alive)
+                  audioRef.current = _audio.el;
+                  audioContextRef.current = _audio.ctx;
+                  analyserRef.current = _audio.analyser;
+                } else {
+                  // New file — tear down any previous singleton
+                  if (_audio.el) { _audio.el.pause(); }
+                  if (_audio.ctx) { _audio.ctx.close(); }
+                  audioRef.current = new Audio(`file://${encodeURI(bg)}`);
+                  audioRef.current.loop = audioLoop;
+                  audioRef.current.onloadedmetadata = () => setAudioDuration(audioRef.current?.duration ?? 0);
+                  audioRef.current.onended = () => { setAudioPlaying(false); setAudioCurrentTime(0); if (audioTimerRef.current) { clearInterval(audioTimerRef.current); audioTimerRef.current = null; } stopViz(); };
+                  const ctx = new AudioContext();
+                  const analyser = ctx.createAnalyser();
+                  analyser.fftSize = 256;
+                  ctx.createMediaElementSource(audioRef.current).connect(analyser);
+                  analyser.connect(ctx.destination);
+                  audioContextRef.current = ctx;
+                  analyserRef.current = analyser;
+                  // Save to singleton
+                  _audio.el = audioRef.current;
+                  _audio.ctx = ctx;
+                  _audio.analyser = analyser;
+                  _audio.path = bg;
+                }
               }
               return audioRef.current;
             };
-            const handlePlay = () => { const audio = ensureAudio(); audioContextRef.current?.resume(); audio.play(); setAudioPlaying(true); if (audioTimerRef.current) clearInterval(audioTimerRef.current); audioTimerRef.current = setInterval(() => setAudioCurrentTime(audioRef.current?.currentTime ?? 0), 100); startViz(); };
+            const handlePlay = () => {
+              window.worshipsync.slide.blank(true);
+              setIsBlank(true);
+              const audio = ensureAudio();
+              audioContextRef.current?.resume();
+              audio.play();
+              setAudioPlaying(true);
+              if (audioTimerRef.current) clearInterval(audioTimerRef.current);
+              audioTimerRef.current = setInterval(() => setAudioCurrentTime(audioRef.current?.currentTime ?? 0), 100);
+              startViz();
+            };
             const handlePause = () => { audioRef.current?.pause(); setAudioPlaying(false); if (audioTimerRef.current) { clearInterval(audioTimerRef.current); audioTimerRef.current = null; } stopViz(); };
-            const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => { if (!audioDuration || !audioRef.current) return; const rect = e.currentTarget.getBoundingClientRect(); audioRef.current.currentTime = ((e.clientX - rect.left) / rect.width) * audioDuration; setAudioCurrentTime(audioRef.current.currentTime); };
+            const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => { if (!audioDuration || !audioRef.current) return; const rect = e.currentTarget.getBoundingClientRect(); audioRef.current.currentTime = Math.max(0, Math.min(audioDuration, ((e.clientX - rect.left) / rect.width) * audioDuration)); setAudioCurrentTime(audioRef.current.currentTime); };
+            const handleSkip = (delta: number) => { if (!audioRef.current) return; audioRef.current.currentTime = Math.max(0, Math.min(audioDuration, audioRef.current.currentTime + delta)); setAudioCurrentTime(audioRef.current.currentTime); };
+            const handleToggleLoop = () => { const next = !audioLoop; setAudioLoop(next); if (audioRef.current) audioRef.current.loop = next; };
             return (
               <>
+                {/* Header */}
                 <div className="px-5 py-3 border-b border-border bg-card flex items-center justify-between gap-4 shrink-0">
                   <div className="min-w-0">
                     <h1 className="text-base font-semibold truncate">{currentSong.title}</h1>
@@ -1393,38 +1488,113 @@ export default function PresenterDashboard({
                     <RefreshCw className="h-3.5 w-3.5" /> Replace
                   </Button>
                 </div>
-                <div className="flex-1 overflow-y-auto bg-muted/30 flex flex-col items-center justify-center p-6">
-                  <div className="w-full max-w-3xl flex flex-col gap-4">
-                    <div className="relative rounded-xl overflow-hidden bg-card border border-border shadow-md" style={{ aspectRatio: "16/9" }}>
-                      <div className="w-full h-full flex items-end justify-center gap-px px-6 pt-6 pb-6">
-                        {waveformBars.map((v, wbi) => (
-                          <div key={wbi} className="flex-1 rounded-sm bg-primary/70" style={{ height: `${Math.max(3, v * 100)}%` }} />
-                        ))}
+
+                {/* Player body */}
+                <div className="flex-1 flex flex-col items-center justify-center p-8 bg-muted/20">
+                  <div className="w-full max-w-2xl flex flex-col gap-6">
+
+                    {/* Waveform — mirrored bars */}
+                    <div className="relative rounded-xl overflow-hidden bg-black/70 border border-border/60" style={{ height: 160 }}>
+                      <div className="absolute inset-0 flex items-center gap-[2px] px-4 py-5">
+                        {waveformBars.map((v, wbi) => {
+                          const h = Math.max(3, v * 100);
+                          return (
+                            <div key={wbi} className="flex-1 flex flex-col" style={{ height: "100%" }}>
+                              {/* Top half — grows up from center */}
+                              <div className="flex-1 flex flex-col justify-end">
+                                <div className="w-full rounded-t-[1px] bg-primary" style={{ height: `${h}%`, opacity: 0.85 }} />
+                              </div>
+                              {/* Bottom half — mirror, shorter + more transparent */}
+                              <div className="flex-1 flex flex-col justify-start">
+                                <div className="w-full rounded-b-[1px] bg-primary" style={{ height: `${h * 0.55}%`, opacity: 0.35 }} />
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
-                      {!audioPlaying && (
-                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                          <Volume2 className="h-16 w-16 text-muted-foreground/40" />
-                        </div>
-                      )}
-                      <button onClick={audioPlaying ? handlePause : handlePlay} className="absolute inset-0 flex items-center justify-center group">
-                        {!audioPlaying && (
-                          <div className="w-16 h-16 rounded-full bg-black/60 border-2 border-white/80 flex items-center justify-center transition-transform group-hover:scale-110">
-                            <Play className="h-8 w-8 text-white fill-white ml-1" />
-                          </div>
-                        )}
-                      </button>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs text-muted-foreground tabular-nums w-10 text-right shrink-0">{fmt(audioCurrentTime)}</span>
-                      <div className="flex-1 relative flex items-center cursor-pointer py-2" onClick={handleSeek}>
+
+                    {/* Seek bar + timestamps */}
+                    <div className="flex flex-col gap-1.5">
+                      <div
+                        className="relative flex items-center cursor-pointer group py-2"
+                        onClick={handleSeek}
+                      >
                         <div className="w-full h-1.5 bg-secondary rounded-full relative">
                           <div className="absolute left-0 top-0 h-full bg-primary rounded-full" style={{ width: `${pct}%` }} />
-                          <div className="absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-background border-2 border-primary rounded-full shadow-sm -translate-x-1/2" style={{ left: `${pct}%` }} />
+                          <div
+                            className="absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-white border-2 border-primary rounded-full shadow-md -translate-x-1/2 transition-opacity opacity-0 group-hover:opacity-100"
+                            style={{ left: `${pct}%` }}
+                          />
                         </div>
                       </div>
-                      <span className="text-xs text-muted-foreground tabular-nums w-10 shrink-0">{fmt(audioDuration)}</span>
+                      <div className="flex justify-between text-[11px] text-muted-foreground tabular-nums px-0.5">
+                        <span>{fmt(audioCurrentTime)}</span>
+                        <span>{fmt(audioDuration)}</span>
+                      </div>
                     </div>
-                    <p className="text-center text-[11px] text-muted-foreground">Audio plays through this computer only. Nothing is shown on the projection screen.</p>
+
+                    {/* Transport controls */}
+                    <div className="flex items-center justify-center gap-5">
+                      {/* Skip to start */}
+                      <button
+                        onClick={() => handleSkip(-audioDuration)}
+                        title="Skip to start"
+                        className="text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        <SkipBack className="h-5 w-5" />
+                      </button>
+
+                      {/* −10s */}
+                      <button
+                        onClick={() => handleSkip(-10)}
+                        title="Back 10 seconds"
+                        className="text-muted-foreground hover:text-foreground transition-colors text-[11px] font-bold w-8 text-center"
+                      >
+                        −10s
+                      </button>
+
+                      {/* Play / Pause */}
+                      <button
+                        onClick={audioPlaying ? handlePause : handlePlay}
+                        className="w-14 h-14 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all shadow-lg"
+                      >
+                        {audioPlaying
+                          ? <Pause className="h-6 w-6 fill-current" />
+                          : <Play className="h-6 w-6 fill-current ml-0.5" />}
+                      </button>
+
+                      {/* +10s */}
+                      <button
+                        onClick={() => handleSkip(10)}
+                        title="Forward 10 seconds"
+                        className="text-muted-foreground hover:text-foreground transition-colors text-[11px] font-bold w-8 text-center"
+                      >
+                        +10s
+                      </button>
+
+                      {/* Skip to end */}
+                      <button
+                        onClick={() => handleSkip(audioDuration)}
+                        title="Skip to end"
+                        className="text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        <SkipForward className="h-5 w-5" />
+                      </button>
+
+                      {/* Loop toggle */}
+                      <button
+                        onClick={handleToggleLoop}
+                        title={audioLoop ? "Loop on" : "Loop off"}
+                        className={`transition-colors ${audioLoop ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
+                      >
+                        <Repeat className="h-5 w-5" />
+                      </button>
+                    </div>
+
+                    <p className="text-center text-[11px] text-muted-foreground">
+                      Audio plays through this computer only · Nothing is shown on the projection screen
+                    </p>
                   </div>
                 </div>
               </>

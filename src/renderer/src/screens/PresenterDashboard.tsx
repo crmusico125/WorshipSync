@@ -7,21 +7,15 @@ import React, {
 } from "react";
 import {
   MonitorOff,
-  ChevronLeft,
   ChevronRight,
   ChevronDown,
   Music,
-  GripVertical,
   Pencil,
-  Plus,
   Cast,
   Play,
   Square,
   AlertCircle,
   X,
-  Type,
-  Tv,
-  Hexagon,
   Image as ImageIcon,
   Timer,
   BookOpen,
@@ -31,6 +25,7 @@ import {
   Keyboard,
   Search,
   Calendar,
+  Tv,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useServiceStore, type ServiceDate } from "../store/useServiceStore";
@@ -241,10 +236,13 @@ export default function PresenterDashboard({
     label: string; timezone?: string;
   }>>([]);
   const [projectionFontSize, setProjectionFontSize] = useState(48);
-  const [churchName, setChurchName] = useState("");
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
     null,
   );
+
+  // Live runtime timer
+  const liveStartRef = useRef<number>(0);
+  const [liveRuntime, setLiveRuntime] = useState("00:00:00");
 
   // ── Load ─────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -278,7 +276,6 @@ export default function PresenterDashboard({
         if (state.serviceTimezone)  setServiceTimezone(state.serviceTimezone);
         if (state.serviceSchedules) setServiceSchedules(state.serviceSchedules);
         if (state.projectionFontSize) setProjectionFontSize(state.projectionFontSize);
-        if (state.churchName)       setChurchName(state.churchName);
       })
       .catch(() => {});
 
@@ -521,10 +518,6 @@ export default function PresenterDashboard({
     },
     [liveSongs, resolveTheme, resolveBg, projectionFontSize],
   );
-
-  useEffect(() => {
-    setActiveSlideIdx(-1);
-  }, [selectedSongIdx]);
 
   // Refs that always hold the latest projection state — used inside the
   // projection:ready callback so display moves restore the correct content.
@@ -822,6 +815,22 @@ export default function PresenterDashboard({
     return cleanup;
   }, [projectionOpen, restoreProjectionState]);
 
+  // Live runtime counter
+  useEffect(() => {
+    if (!projectionOpen) return;
+    liveStartRef.current = Date.now();
+    setLiveRuntime("00:00:00");
+    const interval = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - liveStartRef.current) / 1000);
+      const h = Math.floor(elapsed / 3600);
+      const m = Math.floor((elapsed % 3600) / 60);
+      const s = elapsed % 60;
+      const pad = (n: number) => String(n).padStart(2, "0");
+      setLiveRuntime(`${pad(h)}:${pad(m)}:${pad(s)}`);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [projectionOpen]);
+
   const computeCountdownDisplay = useCallback(() => {
     const dateStr = selectedService?.date ?? new Date().toLocaleDateString("en-CA");
     const target = new Date(`${dateStr}T${serviceTime}:00`);
@@ -947,11 +956,6 @@ export default function PresenterDashboard({
     : DEFAULT_THEME;
   const effectiveBg = currentSong ? resolveBg(currentSong) : undefined;
 
-  const totalSlides = useMemo(
-    () => (currentSong ? currentSong.slides.length : 0),
-    [currentSong],
-  );
-
   const nextUp = useMemo(() => {
     if (!currentSong || activeSlideIdx < 0) return null;
     const nextIdx = activeSlideIdx + 1;
@@ -964,7 +968,29 @@ export default function PresenterDashboard({
     return null;
   }, [currentSong, activeSlideIdx, nextSong]);
 
-  const selectedDisplay = displays.find((d) => d.id === selectedDisplayId);
+  const sectionTabs = useMemo(() => {
+    if (!currentSong || currentSong.slides.length === 0) return [];
+    const seen = new Set<number>();
+    const tabs: { sectionId: number; label: string; firstSlideIdx: number }[] = [];
+    currentSong.slides.forEach((slide, i) => {
+      if (slide.sectionType === "blank" || seen.has(slide.sectionId)) return;
+      seen.add(slide.sectionId);
+      let label: string;
+      if (currentSong.itemType === "scripture") {
+        // Extract verse number from labels like "John 3:16 ESV" → "16"
+        const verseMatch = slide.sectionLabel.match(/:(\d+)/);
+        label = verseMatch ? verseMatch[1] : String(tabs.length + 1);
+      } else {
+        const abbrev = SECTION_ABBREVS[slide.sectionType] ?? slide.sectionLabel[0]?.toUpperCase() ?? "?";
+        const numMatch = slide.sectionLabel.match(/\d+$/);
+        label = numMatch ? abbrev + numMatch[0] : abbrev;
+      }
+      tabs.push({ sectionId: slide.sectionId, label, firstSlideIdx: i });
+    });
+    return tabs;
+  }, [currentSong]);
+
+  const activeSectionId = currentSlide?.sectionId ?? -1;
 
   if (!selectedService) {
     return (
@@ -998,35 +1024,41 @@ export default function PresenterDashboard({
   }
 
   return (
-    <div className="h-full flex overflow-hidden bg-background text-foreground relative">
-      {/* Overlay to close switcher when clicking outside */}
+    <div className="h-full flex flex-col overflow-hidden bg-background text-foreground relative">
+      {/* Click-away overlay for switcher */}
       {showSwitcher && (
-        <div
-          className="fixed inset-0 z-40"
-          onClick={() => { setShowSwitcher(false); setPendingSwitch(null); }}
-        />
+        <div className="fixed inset-0 z-40" onClick={() => { setShowSwitcher(false); setPendingSwitch(null); }} />
       )}
-      {/* ═════ LEFT: Service Lineup Panel (260px) ═════ */}
-      <div className="w-[260px] shrink-0 border-r border-border flex flex-col bg-card">
-        {/* Header — draggable */}
-        <div
-          className="px-4 py-3 border-b border-border relative"
-          style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
-        >
+
+      {/* ═════ TOP HEADER BAR ═════ */}
+      <div
+        className="h-12 shrink-0 border-b border-border bg-card flex items-center px-4 gap-3 relative z-10"
+        style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
+      >
+        {/* ON AIR */}
+        <div className="flex items-center gap-2 shrink-0" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
+          <span className="flex h-2.5 w-2.5 relative">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75" />
+            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500" />
+          </span>
+          <span className="text-[11px] font-bold text-red-400 tracking-widest">ON AIR</span>
+        </div>
+
+        <div className="h-5 w-px bg-border shrink-0" />
+
+        {/* Service name + switcher */}
+        <div className="relative" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
           <button
             onClick={openSwitcher}
-            className="flex items-center gap-1 min-w-0 group hover:text-primary transition-colors"
-            style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+            className="flex items-center gap-1 group hover:text-primary transition-colors"
           >
-            <span className="text-sm font-semibold truncate">{selectedService.label}</span>
-            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground group-hover:text-primary transition-colors" />
+            <span className="text-sm font-semibold truncate max-w-[180px]">{selectedService.label}</span>
+            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground group-hover:text-primary" />
           </button>
 
-          {/* Service switcher dropdown */}
+          {/* Switcher dropdown */}
           {showSwitcher && (
-            <div className="absolute top-full left-0 w-full z-50 bg-card border border-border shadow-xl rounded-b-lg overflow-hidden"
-              style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-            >
+            <div className="absolute top-full left-0 mt-1 w-72 z-50 bg-card border border-border shadow-xl rounded-lg overflow-hidden">
               <div className="p-2 border-b border-border">
                 <div className="relative">
                   <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
@@ -1042,217 +1074,133 @@ export default function PresenterDashboard({
               <div className="max-h-60 overflow-y-auto">
                 {!switcherSearch.trim() ? (
                   <>
-                    <p className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      Upcoming Lineups
-                    </p>
-                    {recentServices.length === 0 && (
-                      <p className="px-3 py-2 text-xs text-muted-foreground">No upcoming services</p>
-                    )}
+                    <p className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Upcoming Lineups</p>
+                    {recentServices.length === 0 && <p className="px-3 py-2 text-xs text-muted-foreground">No upcoming services</p>}
                     {recentServices.map((svc) => (
-                      <SwitcherRow
-                        key={svc.id}
-                        svc={svc}
-                        isCurrent={svc.id === selectedService.id}
-                        isPending={pendingSwitch?.id === svc.id}
-                        onSelect={() => requestSwitch(svc)}
-                      />
+                      <SwitcherRow key={svc.id} svc={svc} isCurrent={svc.id === selectedService.id} isPending={pendingSwitch?.id === svc.id} onSelect={() => requestSwitch(svc)} />
                     ))}
                   </>
                 ) : switcherResults.length === 0 ? (
                   <p className="px-3 py-2 text-xs text-muted-foreground">No results</p>
                 ) : (
                   switcherResults.map((svc) => (
-                    <SwitcherRow
-                      key={svc.id}
-                      svc={svc}
-                      isCurrent={svc.id === selectedService.id}
-                      isPending={pendingSwitch?.id === svc.id}
-                      onSelect={() => requestSwitch(svc)}
-                    />
+                    <SwitcherRow key={svc.id} svc={svc} isCurrent={svc.id === selectedService.id} isPending={pendingSwitch?.id === svc.id} onSelect={() => requestSwitch(svc)} />
                   ))
                 )}
               </div>
-              {/* Confirmation bar */}
               {pendingSwitch && (
                 <div className="border-t border-border bg-amber-500/10 px-3 py-2 flex items-center gap-2">
                   <AlertCircle className="h-3.5 w-3.5 shrink-0 text-amber-500" />
-                  <p className="text-[11px] text-amber-500 font-medium flex-1 truncate min-w-0">
-                    Switch to "{pendingSwitch.label}"?
-                  </p>
-                  <button
-                    onClick={() => { setShowSwitcher(false); setPendingSwitch(null); }}
-                    className="text-[11px] text-muted-foreground hover:text-foreground shrink-0"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={confirmSwitch}
-                    className="text-[11px] font-semibold text-amber-500 hover:text-amber-400 shrink-0"
-                  >
-                    Confirm
-                  </button>
+                  <p className="text-[11px] text-amber-500 font-medium flex-1 truncate min-w-0">Switch to "{pendingSwitch.label}"?</p>
+                  <button onClick={() => { setShowSwitcher(false); setPendingSwitch(null); }} className="text-[11px] text-muted-foreground hover:text-foreground shrink-0">Cancel</button>
+                  <button onClick={confirmSwitch} className="text-[11px] font-semibold text-amber-500 hover:text-amber-400 shrink-0">Confirm</button>
                 </div>
               )}
             </div>
           )}
+        </div>
 
-          <div
-            className="flex gap-2 items-center mt-2"
+        {/* Live Runtime */}
+        <span className="text-[11px] text-muted-foreground shrink-0">Live Runtime: {liveRuntime}</span>
+
+        <div className="flex-1" />
+
+        {/* Keyboard help */}
+        <button
+          onClick={() => setShowHelp(true)}
+          title="Keyboard shortcuts (?)"
+          style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+          className="h-7 w-7 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
+        >
+          <Keyboard className="h-3.5 w-3.5" />
+        </button>
+
+        {/* Edit in Builder */}
+        {onSwitchToBuilder && (
+          <button
+            onClick={onSwitchToBuilder}
             style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+            className="h-7 flex items-center gap-1.5 px-2.5 rounded text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors border border-border"
           >
-            <span className="text-[11px] text-muted-foreground bg-input px-2 py-0.5 rounded font-medium">
-              {new Date(selectedService.date + "T00:00:00").toLocaleDateString(
-                "en-US",
-                {
-                  month: "short",
-                  day: "numeric",
-                  year: "numeric",
-                },
-              )}
-            </span>
-            <span className="text-[11px] text-muted-foreground bg-input px-2 py-0.5 rounded font-medium">
-              Item {selectedSongIdx + 1} of {liveSongs.length}
-            </span>
-            <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded bg-[hsl(var(--success)/0.14)] text-[hsl(var(--success))]">
-              <span className="h-1.5 w-1.5 rounded-full bg-[hsl(var(--success))]" />
-              LIVE
-            </span>
-          </div>
-          {onSwitchToBuilder && (
-            <button
-              onClick={onSwitchToBuilder}
-              style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-              className="w-full flex items-center gap-2 px-4 py-2 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors border-t border-border"
-            >
-              <Pencil className="h-3.5 w-3.5" />
-              Edit in Builder
-            </button>
-          )}
+            <Pencil className="h-3 w-3" /> Builder
+          </button>
+        )}
+
+        {/* End Show */}
+        <button
+          onClick={endShow}
+          style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+          className={`h-7 flex items-center gap-1.5 px-3 rounded text-xs font-semibold transition-colors ${
+            confirmEndShow
+              ? "bg-red-500 text-white hover:bg-red-600"
+              : "bg-destructive/10 text-destructive hover:bg-destructive hover:text-destructive-foreground border border-destructive/30"
+          }`}
+        >
+          {confirmEndShow ? "Confirm?" : "End Show"}
+        </button>
+      </div>
+
+      {/* ═════ BODY: Left + Center + Right ═════ */}
+      <div className="flex-1 flex overflow-hidden min-h-0">
+
+      {/* ═════ LEFT: Run of Show (220px) ═════ */}
+      <div className="w-[220px] shrink-0 border-r border-border flex flex-col bg-card">
+        <div className="px-3 py-2.5 border-b border-border flex items-center justify-between shrink-0">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Run of Show</span>
+          <button onClick={() => setShowLibrary(true)} className="text-[10px] text-muted-foreground hover:text-foreground transition-colors font-medium">+ Add</button>
         </div>
 
-        {/* Lineup tab */}
-        <div className="border-b border-border">
-          <div className="text-center py-2 text-xs font-semibold border-b-2 border-primary text-foreground">
-            Lineup
-          </div>
-        </div>
-
-        {/* Song list */}
         <div className="flex-1 overflow-y-auto">
           {liveSongs.map((song, i) => {
             const isCurrent = selectedSongIdx === i;
+            const isFinished = i < selectedSongIdx;
+            const isNextItem = i === selectedSongIdx + 1;
             const isCountdown = song.itemType === "countdown";
             const isScripture = song.itemType === "scripture";
             const isMedia = song.itemType === "media";
-            const isAudioItem =
-              isMedia &&
-              /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(song.mediaPath ?? "");
-            const isVideoItem =
-              isMedia && /\.(mp4|webm|mov)$/i.test(song.mediaPath ?? "");
-            const Icon = isCountdown
-              ? Timer
-              : isScripture
-                ? BookOpen
-                : isMedia
-                  ? isVideoItem
-                    ? Film
-                    : isAudioItem
-                      ? Volume2
-                      : ImageIcon
-                  : Music;
+            const isAudioItem = isMedia && /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(song.mediaPath ?? "");
+            const isVideoItem = isMedia && /\.(mp4|webm|mov)$/i.test(song.mediaPath ?? "");
+            const Icon = isCountdown ? Timer : isScripture ? BookOpen : isMedia ? (isVideoItem ? Film : isAudioItem ? Volume2 : ImageIcon) : Music;
             return (
-              <React.Fragment key={song.lineupItemId}>
               <button
+                key={song.lineupItemId}
                 onClick={() => {
                   setSelectedSongIdx(i);
-                  setVideoPlaying(false);
-                  setVideoCurrentTime(0);
-                  setVideoDuration(0);
-                  if (videoTimerRef.current) {
-                    clearInterval(videoTimerRef.current);
-                    videoTimerRef.current = null;
-                  }
-                  if (videoPreviewRef.current) {
-                    videoPreviewRef.current.pause();
-                    videoPreviewRef.current.currentTime = 0;
-                  }
-                  // Stop audio when switching songs
-                  if (vizFrameRef.current) { cancelAnimationFrame(vizFrameRef.current); vizFrameRef.current = null }
-                  if (audioRef.current) {
-                    audioRef.current.pause();
-                    audioRef.current.currentTime = 0;
-                    audioRef.current = null;
-                  }
-                  if (audioTimerRef.current) {
-                    clearInterval(audioTimerRef.current);
-                    audioTimerRef.current = null;
-                  }
-                  audioContextRef.current?.close();
-                  audioContextRef.current = null;
-                  analyserRef.current = null;
-                  setAudioPlaying(false);
-                  setAudioCurrentTime(0);
-                  setAudioDuration(0);
-                  setWaveformBars(new Array(48).fill(0));
+                  setActiveSlideIdx(-1);
+                  setVideoPlaying(false); setVideoCurrentTime(0); setVideoDuration(0);
+                  if (videoTimerRef.current) { clearInterval(videoTimerRef.current); videoTimerRef.current = null; }
+                  if (videoPreviewRef.current) { videoPreviewRef.current.pause(); videoPreviewRef.current.currentTime = 0; }
+                  if (vizFrameRef.current) { cancelAnimationFrame(vizFrameRef.current); vizFrameRef.current = null; }
+                  if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; audioRef.current = null; }
+                  if (audioTimerRef.current) { clearInterval(audioTimerRef.current); audioTimerRef.current = null; }
+                  audioContextRef.current?.close(); audioContextRef.current = null; analyserRef.current = null;
+                  setAudioPlaying(false); setAudioCurrentTime(0); setAudioDuration(0); setWaveformBars(new Array(48).fill(0));
                 }}
-                className={`w-full text-left flex items-center gap-2.5 px-3 py-2.5 border-b border-border transition-colors ${
-                  isCurrent
-                    ? "bg-primary/[0.08] border-l-[3px] border-l-primary pl-[9px]"
-                    : "hover:bg-accent/30"
+                className={`w-full text-left flex items-center gap-2 px-3 py-2.5 border-b border-border transition-colors ${
+                  isCurrent ? "bg-red-500/[0.08] border-l-2 border-l-red-500" : isFinished ? "opacity-50" : "hover:bg-accent/30"
                 }`}
               >
-                <div
-                  className={`w-7 h-7 rounded flex items-center justify-center shrink-0 ${
-                    isCurrent
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-input text-muted-foreground"
-                  }`}
-                >
-                  <Icon className="h-3.5 w-3.5" />
+                <div className={`w-6 h-6 rounded flex items-center justify-center shrink-0 ${isCurrent ? "bg-red-500 text-white" : "bg-input text-muted-foreground"}`}>
+                  <Icon className="h-3 w-3" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p
-                    className={`text-[13px] font-medium truncate ${
-                      isCurrent
-                        ? "text-primary font-semibold"
-                        : "text-foreground"
-                    }`}
-                  >
+                  <p className={`text-[12px] font-medium truncate ${isCurrent ? "text-red-400 font-semibold" : isFinished ? "text-muted-foreground" : "text-foreground"}`}>
                     {song.title}
                   </p>
-                  <p className="text-[11px] text-muted-foreground truncate">
-                    {isCountdown
-                      ? "Pre-Service Countdown"
-                      : isScripture
-                        ? "Scripture"
-                        : isMedia
-                          ? isVideoItem
-                            ? "Video"
-                            : isAudioItem
-                              ? "Audio"
-                              : "Image"
-                          : `Song${song.key ? ` · Key: ${song.key}` : ""}`}
+                  <p className="text-[10px] text-muted-foreground truncate">
+                    {isCountdown ? "Countdown" : isScripture ? "Scripture" : isMedia ? (isVideoItem ? "Video" : isAudioItem ? "Audio" : "Image") : song.artist || "Song"}
                   </p>
                 </div>
-                <GripVertical className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                {isFinished && <span className="text-[9px] font-semibold text-muted-foreground/70 shrink-0 bg-muted px-1 py-0.5 rounded leading-none">Done</span>}
+                {isNextItem && <span className="text-[9px] font-semibold text-primary shrink-0 bg-primary/10 px-1 py-0.5 rounded leading-none">NEXT</span>}
+                {isCurrent && <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse shrink-0" />}
               </button>
-              </React.Fragment>
             );
           })}
         </div>
-
-        {/* Add Item */}
-        <div className="p-3 border-t border-border">
-          <button
-            onClick={() => setShowLibrary(true)}
-            className="w-full py-2 border border-dashed border-muted-foreground rounded-md text-muted-foreground text-[13px] font-medium flex items-center justify-center gap-1.5 hover:border-foreground hover:text-foreground transition-colors"
-          >
-            <Plus className="h-3.5 w-3.5" /> Add Item
-          </button>
-        </div>
       </div>
 
-      {/* ═════ CENTER: Slide Grid ═════ */}
+      {/* ═════ CENTER: Main Slide Area ═════ */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-background">
         {currentSong?.itemType === "countdown" ? (
           <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
@@ -1261,142 +1209,117 @@ export default function PresenterDashboard({
             <p className="text-sm text-muted-foreground mb-6">
               Counting down to service at{" "}
               <span className="font-semibold text-foreground">
-                {new Date(`2000-01-01T${serviceTime}`).toLocaleTimeString(
-                  "en-US",
-                  { hour: "numeric", minute: "2-digit", hour12: true },
-                )}
+                {new Date(`2000-01-01T${serviceTime}`).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
               </span>
               {" "}
               <span className="text-xs font-medium bg-muted rounded px-1.5 py-0.5">
                 {(() => {
                   const tz = getEffectiveTz();
                   try {
-                    return new Intl.DateTimeFormat("en-US", { timeZone: tz, timeZoneName: "short" })
-                      .formatToParts(new Date())
-                      .find((p) => p.type === "timeZoneName")?.value ?? tz;
+                    return new Intl.DateTimeFormat("en-US", { timeZone: tz, timeZoneName: "short" }).formatToParts(new Date()).find((p) => p.type === "timeZoneName")?.value ?? tz;
                   } catch { return tz; }
                 })()}
               </span>
             </p>
-
-            {/* Large timer display */}
             <div className="rounded-2xl border border-border bg-card px-12 py-8 mb-8">
               <span className="text-6xl font-mono font-bold tracking-wider text-foreground">
-                {countdownRunning
-                  ? countdownDisplay
-                  : computeCountdownDisplay()}
+                {countdownRunning ? countdownDisplay : computeCountdownDisplay()}
               </span>
             </div>
-
-            {/* Controls */}
             <div className="flex items-center gap-3">
               {!countdownRunning ? (
                 <Button size="lg" className="gap-2" onClick={startCountdown}>
-                  <Play className="h-5 w-5 fill-current" />
-                  Start Countdown
+                  <Play className="h-5 w-5 fill-current" /> Start Countdown
                 </Button>
               ) : (
-                <Button
-                  size="lg"
-                  variant="destructive"
-                  className="gap-2"
-                  onClick={stopCountdown}
-                >
-                  <Square className="h-4 w-4 fill-current" />
-                  Stop Countdown
+                <Button size="lg" variant="destructive" className="gap-2" onClick={stopCountdown}>
+                  <Square className="h-4 w-4 fill-current" /> Stop Countdown
                 </Button>
               )}
             </div>
-
             <p className="text-[11px] text-muted-foreground mt-6 max-w-sm">
-              The countdown will be shown on the projection screen when started.
-              It stops automatically when it reaches zero.
+              The countdown will be shown on the projection screen when started. It stops automatically when it reaches zero.
             </p>
           </div>
         ) : currentSong?.itemType === "media" && /\.(mp4|webm|mov)$/i.test(currentSong.mediaPath ?? "") ? (
-          /* ── Video media — full-panel layout ── */
+          /* ── Video media ── */
           (() => {
-            const bg = currentSong.mediaPath!
-            const pct = videoDuration ? (videoCurrentTime / videoDuration) * 100 : 0
-            const fmt = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.floor(s % 60)).padStart(2, "0")}`
-            const ext = bg.split(".").pop()?.toUpperCase() ?? "VIDEO"
-
+            const bg = currentSong.mediaPath!;
+            const pct = videoDuration ? (videoCurrentTime / videoDuration) * 100 : 0;
+            const fmt = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+            const ext = bg.split(".").pop()?.toUpperCase() ?? "VIDEO";
             const stopVideo = () => {
-              window.worshipsync.slide.videoControl("stop")
-              if (videoPreviewRef.current) { videoPreviewRef.current.pause(); videoPreviewRef.current.currentTime = 0 }
-              setVideoPlaying(false); setVideoCurrentTime(0); setIsBlank(true)
-              if (videoTimerRef.current) { clearInterval(videoTimerRef.current); videoTimerRef.current = null }
-            }
-
+              window.worshipsync.slide.videoControl("stop");
+              if (videoPreviewRef.current) { videoPreviewRef.current.pause(); videoPreviewRef.current.currentTime = 0; }
+              setVideoPlaying(false); setVideoCurrentTime(0); setIsBlank(true);
+              if (videoTimerRef.current) { clearInterval(videoTimerRef.current); videoTimerRef.current = null; }
+            };
             const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
-              if (!videoDuration) return
-              const rect = e.currentTarget.getBoundingClientRect()
-              const seekTo = ((e.clientX - rect.left) / rect.width) * videoDuration
-              if (videoPreviewRef.current) videoPreviewRef.current.currentTime = seekTo
-              setVideoCurrentTime(seekTo)
-              window.worshipsync.slide.videoSeek(seekTo)
-            }
-
+              if (!videoDuration) return;
+              const rect = e.currentTarget.getBoundingClientRect();
+              const seekTo = ((e.clientX - rect.left) / rect.width) * videoDuration;
+              if (videoPreviewRef.current) videoPreviewRef.current.currentTime = seekTo;
+              setVideoCurrentTime(seekTo);
+              window.worshipsync.slide.videoSeek(seekTo);
+            };
             const handlePlay = () => {
-              const preview = videoPreviewRef.current
-              const dur = preview?.duration ?? 0
-              setVideoDuration(dur); setVideoCurrentTime(0)
-              sendSlide(selectedSongIdx, 0)
-              window.worshipsync.slide.videoControl("play")
-              preview?.play()
-              setVideoPlaying(true)
-              if (videoTimerRef.current) clearInterval(videoTimerRef.current)
-              videoTimerRef.current = setInterval(() => {
-                setVideoCurrentTime(videoPreviewRef.current?.currentTime ?? 0)
-              }, 100)
-            }
-
+              const preview = videoPreviewRef.current;
+              const dur = preview?.duration ?? 0;
+              setVideoDuration(dur); setVideoCurrentTime(0);
+              // Send the video path to the projection window before issuing play
+              window.worshipsync.slide.blank(false);
+              window.worshipsync.slide.logo(false);
+              window.worshipsync.slide.show({
+                lines: [],
+                songTitle: currentSong.title,
+                sectionLabel: "",
+                itemType: "media",
+                slideIndex: 0,
+                totalSlides: 1,
+                backgroundPath: bg,
+                theme: {
+                  fontFamily: DEFAULT_THEME.fontFamily,
+                  fontSize: DEFAULT_THEME.fontSize,
+                  fontWeight: DEFAULT_THEME.fontWeight,
+                  textColor: DEFAULT_THEME.textColor,
+                  textAlign: DEFAULT_THEME.textAlign,
+                  textPosition: DEFAULT_THEME.textPosition,
+                  overlayOpacity: 0,
+                  textShadowOpacity: 0,
+                  maxLinesPerSlide: DEFAULT_THEME.maxLinesPerSlide,
+                },
+              });
+              setIsBlank(false);
+              window.worshipsync.slide.videoControl("play");
+              preview?.play();
+              setVideoPlaying(true);
+              if (videoTimerRef.current) clearInterval(videoTimerRef.current);
+              videoTimerRef.current = setInterval(() => { setVideoCurrentTime(videoPreviewRef.current?.currentTime ?? 0); }, 100);
+            };
             const handlePause = () => {
-              window.worshipsync.slide.videoControl("pause")
-              videoPreviewRef.current?.pause()
-              setVideoPlaying(false)
-              if (videoTimerRef.current) { clearInterval(videoTimerRef.current); videoTimerRef.current = null }
-            }
-
+              window.worshipsync.slide.videoControl("pause");
+              videoPreviewRef.current?.pause();
+              setVideoPlaying(false);
+              if (videoTimerRef.current) { clearInterval(videoTimerRef.current); videoTimerRef.current = null; }
+            };
             return (
               <>
-                {/* Header */}
                 <div className="px-5 py-3 border-b border-border bg-card flex items-center justify-between gap-4 shrink-0">
                   <div className="min-w-0">
                     <h1 className="text-base font-semibold truncate">{currentSong.title}</h1>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
-                      <span>Video</span>
-                      <span>·</span>
-                      <span className="tabular-nums">{fmt(videoDuration)}</span>
-                      <span>·</span>
-                      <span>{ext}</span>
+                      <span>Video</span><span>·</span><span className="tabular-nums">{fmt(videoDuration)}</span><span>·</span><span>{ext}</span>
                     </div>
                   </div>
                   <Button variant="secondary" size="sm" className="gap-1.5 h-8 text-xs shrink-0" onClick={() => setShowLibrary(true)}>
                     <RefreshCw className="h-3.5 w-3.5" /> Replace
                   </Button>
                 </div>
-
-                {/* Content */}
                 <div className="flex-1 overflow-y-auto bg-muted/30 flex flex-col items-center justify-center p-6">
                   <div className="w-full max-w-3xl flex flex-col gap-4">
-
-                    {/* Video preview */}
                     <div className="relative rounded-xl overflow-hidden bg-black border border-border shadow-md" style={{ aspectRatio: "16/9" }}>
-                      <video
-                        ref={videoPreviewRef}
-                        src={`file://${encodeURI(bg)}`}
-                        className="w-full h-full object-cover"
-                        muted playsInline preload="metadata"
-                        onLoadedMetadata={() => setVideoDuration(videoPreviewRef.current?.duration ?? 0)}
-                        onEnded={stopVideo}
-                      />
-
-                      {/* Play/Pause overlay */}
-                      <button
-                        onClick={videoPlaying ? handlePause : handlePlay}
-                        className="absolute inset-0 flex items-center justify-center group"
-                      >
+                      <video ref={videoPreviewRef} src={`file://${encodeURI(bg)}`} className="w-full h-full object-cover" muted playsInline preload="metadata" onLoadedMetadata={() => setVideoDuration(videoPreviewRef.current?.duration ?? 0)} onEnded={stopVideo} />
+                      <button onClick={videoPlaying ? handlePause : handlePlay} className="absolute inset-0 flex items-center justify-center group">
                         {!videoPlaying && (
                           <div className="w-16 h-16 rounded-full bg-black/60 border-2 border-white/80 flex items-center justify-center transition-transform group-hover:scale-110">
                             <Play className="h-8 w-8 text-white fill-white ml-1" />
@@ -1404,156 +1327,86 @@ export default function PresenterDashboard({
                         )}
                       </button>
                     </div>
-
-                    {/* Progress bar */}
                     <div className="flex items-center gap-3">
                       <span className="text-xs text-muted-foreground tabular-nums w-10 text-right shrink-0">{fmt(videoCurrentTime)}</span>
-                      <div
-                        className="flex-1 relative flex items-center cursor-pointer py-2"
-                        onClick={handleSeek}
-                      >
+                      <div className="flex-1 relative flex items-center cursor-pointer py-2" onClick={handleSeek}>
                         <div className="w-full h-1.5 bg-secondary rounded-full relative">
-                          <div
-                            className="absolute left-0 top-0 h-full bg-primary rounded-full"
-                            style={{ width: `${pct}%` }}
-                          />
-                          <div
-                            className="absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-background border-2 border-primary rounded-full shadow-sm -translate-x-1/2"
-                            style={{ left: `${pct}%` }}
-                          />
+                          <div className="absolute left-0 top-0 h-full bg-primary rounded-full" style={{ width: `${pct}%` }} />
+                          <div className="absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-background border-2 border-primary rounded-full shadow-sm -translate-x-1/2" style={{ left: `${pct}%` }} />
                         </div>
                       </div>
                       <span className="text-xs text-muted-foreground tabular-nums w-10 shrink-0">{fmt(videoDuration)}</span>
                     </div>
-
-                    <p className="text-center text-[11px] text-muted-foreground">
-                      Preview plays here (muted) · Audio plays on the projection screen
-                    </p>
+                    <p className="text-center text-[11px] text-muted-foreground">Preview plays here (muted) · Audio plays on the projection screen</p>
                   </div>
                 </div>
               </>
-            )
+            );
           })()
         ) : currentSong?.itemType === "media" && /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(currentSong.mediaPath ?? "") ? (
-          /* ── Audio media — full-panel layout ── */
+          /* ── Audio media ── */
           (() => {
-            const bg = currentSong.mediaPath!
-            const pct = audioDuration ? (audioCurrentTime / audioDuration) * 100 : 0
-            const fmt = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.floor(s % 60)).padStart(2, "0")}`
-            const ext = bg.split(".").pop()?.toUpperCase() ?? "AUDIO"
-
-            const stopViz = () => {
-              if (vizFrameRef.current) { cancelAnimationFrame(vizFrameRef.current); vizFrameRef.current = null }
-              setWaveformBars(new Array(48).fill(0))
-            }
-
+            const bg = currentSong.mediaPath!;
+            const pct = audioDuration ? (audioCurrentTime / audioDuration) * 100 : 0;
+            const fmt = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+            const ext = bg.split(".").pop()?.toUpperCase() ?? "AUDIO";
+            const stopViz = () => { if (vizFrameRef.current) { cancelAnimationFrame(vizFrameRef.current); vizFrameRef.current = null; } setWaveformBars(new Array(48).fill(0)); };
             const startViz = () => {
-              const analyser = analyserRef.current
-              if (!analyser) return
-              const data = new Uint8Array(analyser.frequencyBinCount)
+              const analyser = analyserRef.current;
+              if (!analyser) return;
+              const data = new Uint8Array(analyser.frequencyBinCount);
               const tick = () => {
-                analyser.getByteFrequencyData(data)
-                setWaveformBars(
-                  Array.from({ length: 48 }, (_, i) => {
-                    const idx = Math.floor((i / 48) * data.length)
-                    return data[idx] / 255
-                  })
-                )
-                vizFrameRef.current = requestAnimationFrame(tick)
-              }
-              vizFrameRef.current = requestAnimationFrame(tick)
-            }
-
+                analyser.getByteFrequencyData(data);
+                setWaveformBars(Array.from({ length: 48 }, (_, ii) => { const idx = Math.floor((ii / 48) * data.length); return data[idx] / 255; }));
+                vizFrameRef.current = requestAnimationFrame(tick);
+              };
+              vizFrameRef.current = requestAnimationFrame(tick);
+            };
             const ensureAudio = () => {
               if (!audioRef.current) {
-                audioRef.current = new Audio(`file://${encodeURI(bg)}`)
-                audioRef.current.onloadedmetadata = () => setAudioDuration(audioRef.current?.duration ?? 0)
-                audioRef.current.onended = () => {
-                  setAudioPlaying(false); setAudioCurrentTime(0)
-                  if (audioTimerRef.current) { clearInterval(audioTimerRef.current); audioTimerRef.current = null }
-                  stopViz()
-                }
-                // Wire up Web Audio analyser
-                const ctx = new AudioContext()
-                const analyser = ctx.createAnalyser()
-                analyser.fftSize = 128
-                ctx.createMediaElementSource(audioRef.current).connect(analyser)
-                analyser.connect(ctx.destination)
-                audioContextRef.current = ctx
-                analyserRef.current = analyser
+                audioRef.current = new Audio(`file://${encodeURI(bg)}`);
+                audioRef.current.onloadedmetadata = () => setAudioDuration(audioRef.current?.duration ?? 0);
+                audioRef.current.onended = () => { setAudioPlaying(false); setAudioCurrentTime(0); if (audioTimerRef.current) { clearInterval(audioTimerRef.current); audioTimerRef.current = null; } stopViz(); };
+                const ctx = new AudioContext();
+                const analyser = ctx.createAnalyser();
+                analyser.fftSize = 128;
+                ctx.createMediaElementSource(audioRef.current).connect(analyser);
+                analyser.connect(ctx.destination);
+                audioContextRef.current = ctx;
+                analyserRef.current = analyser;
               }
-              return audioRef.current
-            }
-
-            const handlePlay = () => {
-              const audio = ensureAudio()
-              audioContextRef.current?.resume()
-              audio.play()
-              setAudioPlaying(true)
-              if (audioTimerRef.current) clearInterval(audioTimerRef.current)
-              audioTimerRef.current = setInterval(() => setAudioCurrentTime(audioRef.current?.currentTime ?? 0), 100)
-              startViz()
-            }
-
-            const handlePause = () => {
-              audioRef.current?.pause()
-              setAudioPlaying(false)
-              if (audioTimerRef.current) { clearInterval(audioTimerRef.current); audioTimerRef.current = null }
-              stopViz()
-            }
-
-            const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
-              if (!audioDuration || !audioRef.current) return
-              const rect = e.currentTarget.getBoundingClientRect()
-              audioRef.current.currentTime = ((e.clientX - rect.left) / rect.width) * audioDuration
-              setAudioCurrentTime(audioRef.current.currentTime)
-            }
-
+              return audioRef.current;
+            };
+            const handlePlay = () => { const audio = ensureAudio(); audioContextRef.current?.resume(); audio.play(); setAudioPlaying(true); if (audioTimerRef.current) clearInterval(audioTimerRef.current); audioTimerRef.current = setInterval(() => setAudioCurrentTime(audioRef.current?.currentTime ?? 0), 100); startViz(); };
+            const handlePause = () => { audioRef.current?.pause(); setAudioPlaying(false); if (audioTimerRef.current) { clearInterval(audioTimerRef.current); audioTimerRef.current = null; } stopViz(); };
+            const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => { if (!audioDuration || !audioRef.current) return; const rect = e.currentTarget.getBoundingClientRect(); audioRef.current.currentTime = ((e.clientX - rect.left) / rect.width) * audioDuration; setAudioCurrentTime(audioRef.current.currentTime); };
             return (
               <>
-                {/* Header */}
                 <div className="px-5 py-3 border-b border-border bg-card flex items-center justify-between gap-4 shrink-0">
                   <div className="min-w-0">
                     <h1 className="text-base font-semibold truncate">{currentSong.title}</h1>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
-                      <span>Audio</span>
-                      <span>·</span>
-                      <span className="tabular-nums">{fmt(audioDuration)}</span>
-                      <span>·</span>
-                      <span>{ext}</span>
+                      <span>Audio</span><span>·</span><span className="tabular-nums">{fmt(audioDuration)}</span><span>·</span><span>{ext}</span>
                     </div>
                   </div>
                   <Button variant="secondary" size="sm" className="gap-1.5 h-8 text-xs shrink-0" onClick={() => setShowLibrary(true)}>
                     <RefreshCw className="h-3.5 w-3.5" /> Replace
                   </Button>
                 </div>
-
-                {/* Content */}
                 <div className="flex-1 overflow-y-auto bg-muted/30 flex flex-col items-center justify-center p-6">
                   <div className="w-full max-w-3xl flex flex-col gap-4">
-
-                    {/* Audio thumbnail with waveform visualizer + play/pause overlay */}
                     <div className="relative rounded-xl overflow-hidden bg-card border border-border shadow-md" style={{ aspectRatio: "16/9" }}>
-                      {/* Waveform bars */}
                       <div className="w-full h-full flex items-end justify-center gap-px px-6 pt-6 pb-6">
-                        {waveformBars.map((v, i) => (
-                          <div
-                            key={i}
-                            className="flex-1 rounded-sm bg-primary/70"
-                            style={{ height: `${Math.max(3, v * 100)}%` }}
-                          />
+                        {waveformBars.map((v, wbi) => (
+                          <div key={wbi} className="flex-1 rounded-sm bg-primary/70" style={{ height: `${Math.max(3, v * 100)}%` }} />
                         ))}
                       </div>
-                      {/* Idle icon — shown when not playing and no data */}
                       {!audioPlaying && (
                         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                           <Volume2 className="h-16 w-16 text-muted-foreground/40" />
                         </div>
                       )}
-                      <button
-                        onClick={audioPlaying ? handlePause : handlePlay}
-                        className="absolute inset-0 flex items-center justify-center group"
-                      >
+                      <button onClick={audioPlaying ? handlePause : handlePlay} className="absolute inset-0 flex items-center justify-center group">
                         {!audioPlaying && (
                           <div className="w-16 h-16 rounded-full bg-black/60 border-2 border-white/80 flex items-center justify-center transition-transform group-hover:scale-110">
                             <Play className="h-8 w-8 text-white fill-white ml-1" />
@@ -1561,38 +1414,24 @@ export default function PresenterDashboard({
                         )}
                       </button>
                     </div>
-
-                    {/* Progress bar */}
                     <div className="flex items-center gap-3">
                       <span className="text-xs text-muted-foreground tabular-nums w-10 text-right shrink-0">{fmt(audioCurrentTime)}</span>
-                      <div
-                        className="flex-1 relative flex items-center cursor-pointer py-2"
-                        onClick={handleSeek}
-                      >
+                      <div className="flex-1 relative flex items-center cursor-pointer py-2" onClick={handleSeek}>
                         <div className="w-full h-1.5 bg-secondary rounded-full relative">
-                          <div
-                            className="absolute left-0 top-0 h-full bg-primary rounded-full"
-                            style={{ width: `${pct}%` }}
-                          />
-                          <div
-                            className="absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-background border-2 border-primary rounded-full shadow-sm -translate-x-1/2"
-                            style={{ left: `${pct}%` }}
-                          />
+                          <div className="absolute left-0 top-0 h-full bg-primary rounded-full" style={{ width: `${pct}%` }} />
+                          <div className="absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-background border-2 border-primary rounded-full shadow-sm -translate-x-1/2" style={{ left: `${pct}%` }} />
                         </div>
                       </div>
                       <span className="text-xs text-muted-foreground tabular-nums w-10 shrink-0">{fmt(audioDuration)}</span>
                     </div>
-
-                    <p className="text-center text-[11px] text-muted-foreground">
-                      Audio plays through this computer only. Nothing is shown on the projection screen.
-                    </p>
+                    <p className="text-center text-[11px] text-muted-foreground">Audio plays through this computer only. Nothing is shown on the projection screen.</p>
                   </div>
                 </div>
               </>
-            )
+            );
           })()
         ) : currentSong?.itemType === "media" ? (
-          /* ── Image media — centered layout ── */
+          /* ── Image media ── */
           <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
             {(() => {
               const bg = resolveBg(currentSong);
@@ -1620,141 +1459,164 @@ export default function PresenterDashboard({
             })()}
           </div>
         ) : currentSong ? (
+          /* ── Song / Scripture — Banani layout ── */
           <>
-            {/* Song header */}
-            <div className="px-5 py-3 border-b border-border bg-card flex justify-between items-center gap-4">
-              <div className="min-w-0">
-                <h1 className="text-base font-semibold truncate">
-                  {currentSong.title}
-                </h1>
-                <p className="text-xs text-muted-foreground mt-0.5 truncate">
-                  {currentSong.artist || "Unknown artist"}
-                  {currentSong.ccliNumber &&
-                    ` · CCLI #${currentSong.ccliNumber}`}
-                </p>
-              </div>
-              <div className="flex gap-2 shrink-0">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5 h-7 text-xs"
-                  onClick={() => setShowBgPicker(v => !v)}
-                >
-                  <ImageIcon className="h-3 w-3" /> Background
-                </Button>
-                {currentSong.itemType === "song" && (
-                  <Button size="sm" className="gap-1.5 h-7 text-xs" onClick={handleOpenEditLyrics}>
-                    <Pencil className="h-3 w-3" /> Edit Lyrics
-                  </Button>
-                )}
+            {/* Dual Preview */}
+            <div className="shrink-0 border-b border-border bg-card px-4 py-3">
+              <div className="flex gap-3">
+                {/* LIVE */}
+                <div className="flex-1 flex flex-col gap-1.5 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse" />
+                    <span className="text-[10px] font-bold text-red-400 tracking-wider">LIVE: AUDIENCE</span>
+                    <span className="flex-1" />
+                    {currentSlide && <span className="text-[10px] text-muted-foreground">{currentSlide.sectionLabel}</span>}
+                  </div>
+                  <div className="relative overflow-hidden rounded-md border-2 border-red-500/60 bg-black" style={{ aspectRatio: "16/9" }}>
+                    {effectiveBg && currentSlide && !isBlank && (
+                      effectiveBg.startsWith("color:") ? (
+                        <div className="absolute inset-0" style={{ background: effectiveBg.replace("color:", "") }} />
+                      ) : /\.(mp4|webm|mov)$/i.test(effectiveBg) ? (
+                        <video src={`file://${encodeURI(effectiveBg)}`} className="absolute inset-0 w-full h-full object-cover" muted preload="metadata" />
+                      ) : (
+                        <>
+                          <img src={`file://${effectiveBg}`} className="absolute inset-0 w-full h-full object-cover" alt="" />
+                          <div className="absolute inset-0" style={{ background: `rgba(0,0,0,${effectiveTheme.overlayOpacity / 100})` }} />
+                        </>
+                      )
+                    )}
+                    <div className="absolute inset-0 flex items-center justify-center px-3">
+                      {currentSlide && !isBlank ? (
+                        <p className="text-center font-bold text-[18px] leading-snug whitespace-pre-wrap relative z-10 w-full"
+                          style={{ color: effectiveTheme.textColor, fontFamily: effectiveTheme.fontFamily, textAlign: effectiveTheme.textAlign, textShadow: effectiveTheme.textShadowOpacity > 0 ? `0 1px 3px rgba(0,0,0,${effectiveTheme.textShadowOpacity / 100})` : "none" }}>
+                          {isTextCleared ? "" : currentSlide.lines.join("\n")}
+                        </p>
+                      ) : (
+                        <MonitorOff className="h-4 w-4 text-gray-600" />
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* NEXT */}
+                <div className="flex-1 flex flex-col gap-1.5 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-bold text-green-400 tracking-wider">NEXT</span>
+                    <span className="flex-1" />
+                    {nextUp && (
+                      <span className="text-[10px] text-muted-foreground">
+                        {nextUp.songTitle ? `${nextUp.songTitle} — ${nextUp.slide.sectionLabel}` : nextUp.slide.sectionLabel}
+                      </span>
+                    )}
+                  </div>
+                  {(() => {
+                    const nextUpSong = nextUp?.songTitle ? nextSong : currentSong;
+                    const nextUpTheme = nextUpSong ? resolveTheme(nextUpSong) : effectiveTheme;
+                    const nextUpBg = nextUpSong ? resolveBg(nextUpSong) : effectiveBg;
+                    return (
+                      <div className="relative overflow-hidden rounded-md border-2 border-green-500/50 bg-black" style={{ aspectRatio: "16/9" }}>
+                        {nextUpBg && nextUp && nextUp.slide.sectionType !== "blank" && (
+                          nextUpBg.startsWith("color:") ? (
+                            <div className="absolute inset-0" style={{ background: nextUpBg.replace("color:", "") }} />
+                          ) : (
+                            <>
+                              <img src={`file://${nextUpBg}`} className="absolute inset-0 w-full h-full object-cover" alt="" />
+                              <div className="absolute inset-0" style={{ background: `rgba(0,0,0,${nextUpTheme.overlayOpacity / 100})` }} />
+                            </>
+                          )
+                        )}
+                        <div className="absolute inset-0 flex items-center justify-center px-3">
+                          {nextUp && nextUp.slide.sectionType !== "blank" ? (
+                            <p className="text-center font-bold text-[18px] leading-snug whitespace-pre-wrap relative z-10 w-full"
+                              style={{ color: nextUpTheme.textColor, fontFamily: nextUpTheme.fontFamily, textAlign: nextUpTheme.textAlign }}>
+                              {nextUp.slide.lines.join("\n") || ""}
+                            </p>
+                          ) : (
+                            <p className="text-[10px] text-gray-600">No next slide</p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
               </div>
             </div>
 
-            {/* Slide grid */}
-            <div ref={slideGridRef} className="flex-1 overflow-y-auto p-4">
-              <div className="grid grid-cols-3 gap-4">
+            {/* Song header + section tabs */}
+            <div className="shrink-0 px-4 py-2.5 border-b border-border bg-card flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0 flex-wrap">
+                <h2 className="text-sm font-semibold truncate max-w-[160px]">{currentSong.title}</h2>
+                <div className="flex gap-1 flex-wrap">
+                  {sectionTabs.map(tab => (
+                    <button
+                      key={tab.sectionId}
+                      onClick={() => sendSlide(selectedSongIdx, tab.firstSlideIdx)}
+                      className={`text-[10px] font-bold px-1.5 py-0.5 rounded leading-none transition-colors ${
+                        activeSectionId === tab.sectionId
+                          ? "bg-red-500 text-white"
+                          : "bg-muted text-muted-foreground hover:bg-accent hover:text-foreground"
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {currentSong.itemType === "song" && (
+                <Button size="sm" className="h-7 text-xs gap-1 px-2 shrink-0" onClick={handleOpenEditLyrics}>
+                  <Pencil className="h-3 w-3" /> Lyrics
+                </Button>
+              )}
+            </div>
+
+            {/* Slide grid — 4 columns */}
+            <div ref={slideGridRef} className="flex-1 overflow-y-auto p-3">
+              <div className="grid grid-cols-4 gap-3">
                 {currentSong.slides.map((slide, i) => {
                   const isActive = activeSlideIdx === i;
+                  const isNextSlide = activeSlideIdx >= 0 && i === activeSlideIdx + 1;
                   const bg = resolveBg(currentSong);
-                  const abbrev =
-                    SECTION_ABBREVS[slide.sectionType] ?? slide.sectionLabel[0];
+                  const abbrev = SECTION_ABBREVS[slide.sectionType] ?? slide.sectionLabel[0];
                   return (
-                    <div key={i} data-slide-idx={i} className="flex flex-col gap-1.5">
-                      {/* Section label row */}
-                      <div className="flex items-center justify-between gap-2 px-0.5 h-5">
-                        <div className="flex items-center gap-1.5">
-                          <span
-                            className={`text-[10px] font-bold px-1.5 py-0.5 rounded leading-none ${
-                              isActive
-                                ? "bg-primary text-primary-foreground"
-                                : "bg-muted-foreground text-background"
-                            }`}
-                          >
+                    <div key={i} data-slide-idx={i} className="flex flex-col gap-1">
+                      <div className="flex items-center justify-between gap-1 px-0.5 h-4">
+                        <div className="flex items-center gap-1">
+                          <span className={`text-[9px] font-bold px-1 py-0.5 rounded leading-none ${isActive ? "bg-red-500 text-white" : "bg-muted-foreground text-background"}`}>
                             {abbrev}
                           </span>
-                          <span
-                            className={`text-[11px] font-semibold ${
-                              isActive
-                                ? "text-primary"
-                                : "text-muted-foreground"
-                            }`}
-                          >
+                          <span className={`text-[10px] font-semibold ${isActive ? "text-red-400" : "text-muted-foreground"}`}>
                             {slide.sectionLabel}
                           </span>
                         </div>
-                        {isActive && (
-                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-primary/[0.18] text-primary leading-none">
-                            LIVE
-                          </span>
-                        )}
+                        {isActive && <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-red-500/20 text-red-400 leading-none">LIVE</span>}
+                        {isNextSlide && <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-green-500/20 text-green-400 leading-none">NEXT</span>}
                       </div>
-
-                      {/* Slide thumbnail — fixed aspect ratio via padding hack */}
                       <button
-                        onClick={(e) => {
-                          e.currentTarget.blur();
-                          sendSlide(selectedSongIdx, i);
-                        }}
-                        className={`relative w-full overflow-hidden rounded-lg focus:outline-none border-2 transition-colors ${
-                          isActive ? "border-primary" : "border-transparent"
+                        onClick={(e) => { e.currentTarget.blur(); sendSlide(selectedSongIdx, i); }}
+                        className={`relative w-full overflow-hidden rounded-md focus:outline-none border-2 transition-colors ${
+                          isActive ? "border-red-500" : isNextSlide ? "border-green-500/50" : "border-transparent"
                         }`}
-                        style={{
-                          outline: isActive
-                            ? "none"
-                            : "1px solid hsl(var(--border))",
-                        }}
+                        style={{ outline: isActive || isNextSlide ? "none" : "1px solid hsl(var(--border))" }}
                       >
-                        <div
-                          className="w-full"
-                          style={{ paddingBottom: "56.25%" }}
-                        />
+                        <div className="w-full" style={{ paddingBottom: "56.25%" }} />
                         <div className="absolute inset-0 flex items-center justify-center">
                           {bg && slide.sectionType !== "blank" ? (
                             bg.startsWith("color:") ? (
-                              <div
-                                className="absolute inset-0"
-                                style={{ background: bg.replace("color:", "") }}
-                              />
+                              <div className="absolute inset-0" style={{ background: bg.replace("color:", "") }} />
                             ) : /\.(mp4|webm|mov)$/i.test(bg) ? (
-                              <video
-                                src={`file://${encodeURI(bg)}`}
-                                className="absolute inset-0 w-full h-full object-cover"
-                                muted
-                                preload="metadata"
-                              />
+                              <video src={`file://${encodeURI(bg)}`} className="absolute inset-0 w-full h-full object-cover" muted preload="metadata" />
                             ) : (
                               <>
-                                <img
-                                  src={`file://${bg}`}
-                                  className="absolute inset-0 w-full h-full object-cover"
-                                  alt=""
-                                />
-                                <div
-                                  className="absolute inset-0"
-                                  style={{
-                                    background: `rgba(0,0,0,${effectiveTheme.overlayOpacity / 100})`,
-                                  }}
-                                />
+                                <img src={`file://${bg}`} className="absolute inset-0 w-full h-full object-cover" alt="" />
+                                <div className="absolute inset-0" style={{ background: `rgba(0,0,0,${effectiveTheme.overlayOpacity / 100})` }} />
                               </>
                             )
                           ) : (
                             <div className="absolute inset-0 bg-black" />
                           )}
-
-                          <p
-                            className="relative z-10 text-center font-bold text-[13px] leading-snug whitespace-pre-wrap px-3"
-                            style={{
-                              color: effectiveTheme.textColor,
-                              fontFamily: effectiveTheme.fontFamily,
-                              textShadow:
-                                effectiveTheme.textShadowOpacity > 0
-                                  ? `0 1px 3px rgba(0,0,0,${effectiveTheme.textShadowOpacity / 100})`
-                                  : "none",
-                            }}
-                          >
-                            {slide.sectionType === "blank"
-                              ? ""
-                              : slide.lines.join("\n")}
+                          <p className="relative z-10 text-center font-bold text-[11px] leading-snug whitespace-pre-wrap px-2"
+                            style={{ color: effectiveTheme.textColor, fontFamily: effectiveTheme.fontFamily, textShadow: effectiveTheme.textShadowOpacity > 0 ? `0 1px 3px rgba(0,0,0,${effectiveTheme.textShadowOpacity / 100})` : "none" }}>
+                            {slide.sectionType === "blank" ? "" : slide.lines.join("\n")}
                           </p>
                         </div>
                       </button>
@@ -1765,355 +1627,164 @@ export default function PresenterDashboard({
             </div>
           </>
         ) : (
-          <div className="flex-1 flex items-center justify-center text-center">
-            <p className="text-sm text-muted-foreground">
-              Select a song from the lineup
-            </p>
+          <div className="flex-1 flex items-center justify-center">
+            <p className="text-sm text-muted-foreground">Select an item from the lineup</p>
           </div>
         )}
+      </div>
 
-        {/* Notes strip — pinned at the bottom of the slide area */}
-        {currentSong?.notes ? (
-          <div className="shrink-0 border-t border-border px-5 py-3 bg-card">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">Notes</p>
+      {/* ═════ RIGHT: Controls Panel (280px) ═════ */}
+      <div className="w-[280px] shrink-0 border-l border-border flex flex-col bg-card overflow-hidden">
+
+        {/* Quick Actions — 2×2 grid */}
+        <div className="p-4 border-b border-border shrink-0">
+          <h3 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2.5">Quick Actions</h3>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              onClick={() => { if (isBlank) { if (activeSlideIdx >= 0) sendSlide(selectedSongIdx, activeSlideIdx); else { window.worshipsync.slide.blank(false); setIsBlank(false); } } else { toBlack(); } }}
+              className={`py-2.5 px-3 rounded-md text-xs font-semibold border transition-colors text-left ${isBlank ? "bg-zinc-800 text-white border-zinc-600" : "bg-background border-border hover:bg-accent/40 text-foreground"}`}
+            >
+              {isBlank ? "Unblank" : "To Black"}
+            </button>
+            <button
+              onClick={clearText}
+              className={`py-2.5 px-3 rounded-md text-xs font-semibold border transition-colors text-left ${isTextCleared ? "bg-primary/20 text-primary border-primary/40" : "bg-background border-border hover:bg-accent/40 text-foreground"}`}
+            >
+              {isTextCleared ? "Restore Text" : "Clear Text"}
+            </button>
+            <button
+              onClick={clearAll}
+              className="py-2.5 px-3 rounded-md text-xs font-semibold border border-border bg-background hover:bg-accent/40 text-foreground transition-colors text-left"
+            >
+              Clear All
+            </button>
+            <button
+              onClick={showLogo}
+              className="py-2.5 px-3 rounded-md text-xs font-semibold border border-border bg-background hover:bg-accent/40 text-foreground transition-colors text-left"
+            >
+              Show Logo
+            </button>
+          </div>
+        </div>
+
+        {/* Active Background — not shown for audio/video items */}
+        {!(currentSong?.itemType === "media" && /\.(mp4|webm|mov|mp3|wav|ogg|m4a|aac|flac)$/i.test(currentSong.mediaPath ?? "")) && <div className="px-4 py-3 border-b border-border shrink-0">
+          <h3 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">Active Background</h3>
+          <div
+            className="flex items-center gap-2.5 p-2 rounded-md bg-background/40 border border-border cursor-pointer hover:bg-accent/30 transition-colors"
+            onClick={() => setShowBgPicker(v => !v)}
+          >
+            <div className="w-14 h-8 rounded overflow-hidden shrink-0 border border-border bg-black flex items-center justify-center">
+              {effectiveBg ? (
+                effectiveBg.startsWith("color:") ? (
+                  <div className="w-full h-full" style={{ background: effectiveBg.replace("color:", "") }} />
+                ) : (
+                  <img src={`file://${effectiveBg}`} className="w-full h-full object-cover" alt="" />
+                )
+              ) : (
+                <ImageIcon className="h-4 w-4 text-muted-foreground/40" />
+              )}
+            </div>
+            <div className="min-w-0 flex-1">
+              {effectiveBg ? (
+                <>
+                  <p className="text-[11px] font-medium truncate">{effectiveBg.split("/").pop() ?? "Background"}</p>
+                  <p className={`text-[10px] ${/\.(mp4|webm|mov)$/i.test(effectiveBg) ? "text-green-400" : "text-muted-foreground"}`}>
+                    {/\.(mp4|webm|mov)$/i.test(effectiveBg) ? "Playing • Looped" : "Static"}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-[11px] font-medium text-muted-foreground">No background</p>
+                  <p className="text-[10px] text-muted-foreground/60">Click to set one</p>
+                </>
+              )}
+            </div>
+          </div>
+        </div>}
+
+        {/* Cue Notes */}
+        {currentSong?.notes && (
+          <div className="px-4 py-3 border-b border-border shrink-0">
+            <h3 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">Cue Notes (Live)</h3>
             <p className="text-[11px] text-amber-400/90 leading-relaxed whitespace-pre-wrap break-words">
               {currentSong.notes}
             </p>
           </div>
-        ) : null}
-      </div>
+        )}
 
-      {/* ═════ RIGHT: Live Output Panel (300px) ═════ */}
-      <div className="w-[300px] shrink-0 border-l border-border flex flex-col bg-card overflow-hidden">
-        {/* Header + ON AIR */}
-        <div className="px-4 pt-3 pb-3 border-b border-border">
-          <div className="flex justify-between items-center gap-2 mb-3">
-            <h2 className="text-sm font-semibold">Live Output</h2>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setShowHelp(true)}
-                title="Keyboard shortcuts (?)"
-                className="h-5 w-5 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
-              >
-                <Keyboard className="h-3.5 w-3.5" />
-              </button>
-              <span className="inline-flex items-center gap-1.5 text-[10px] font-bold px-2 py-0.5 rounded bg-[hsl(var(--success)/0.16)] text-[hsl(var(--success))]">
-                <span className="h-1.5 w-1.5 rounded-full bg-[hsl(var(--success))]" />
-                ON AIR
-              </span>
-            </div>
-          </div>
+        {/* Output Routing */}
+        <div className="px-4 py-3 border-b border-border flex-1 overflow-y-auto">
+          <h3 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2.5">Output Routing</h3>
 
-          {/* Projection display */}
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-1 mb-1">
-              Projection
-            </p>
-            <div className="flex items-center gap-2 bg-primary/10 border border-primary/20 rounded-md px-3 py-2">
-              <Cast className="h-4 w-4 text-primary shrink-0" />
+          <div className="flex items-center gap-2 mb-2 p-2 rounded-md bg-background/40 border border-border">
+            <span className="h-2 w-2 rounded-full bg-green-500 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] font-semibold text-muted-foreground mb-0.5">Main Projection</p>
               <select
-                className="flex-1 bg-transparent text-xs text-foreground font-medium border-none outline-none cursor-pointer min-w-0"
+                className="w-full bg-transparent text-[11px] text-foreground border-none outline-none cursor-pointer"
                 value={selectedDisplayId ?? ""}
                 onChange={(e) => {
-                  const id = Number(e.target.value)
-                  setSelectedDisplayId(id)
-                  if (projectionOpen) window.worshipsync.window.moveProjection(id)
+                  const id = Number(e.target.value);
+                  setSelectedDisplayId(id);
+                  if (projectionOpen) window.worshipsync.window.moveProjection(id);
                 }}
               >
                 {displays.map((d) => (
                   <option key={d.id} value={d.id}>
-                    {d.label}
-                    {d.isPrimary ? " (Primary)" : ""} — {d.width}x{d.height}
+                    {d.label}{d.isPrimary ? " (Primary)" : ""} — {d.width}×{d.height}
                   </option>
                 ))}
               </select>
-              <span className="text-[10px] font-bold text-primary shrink-0">ACTIVE</span>
             </div>
           </div>
 
-          {/* Confidence monitor — only for lyric slides, not scripture */}
-          {currentSong && currentSong.itemType === "song" && <div className="mt-2">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground px-1 mb-1">
-              Confidence Monitor
-            </p>
-            <div className="flex items-center gap-2 rounded-md px-3 py-2 border border-border bg-background/40">
-              <Tv className="h-4 w-4 text-muted-foreground shrink-0" />
-              <select
-                className="flex-1 bg-transparent text-xs text-foreground font-medium border-none outline-none cursor-pointer min-w-0"
-                value={selectedConfidenceDisplayId ?? ""}
-                onChange={(e) => {
-                  const id = Number(e.target.value) || undefined
-                  setSelectedConfidenceDisplayId(id)
-                  if (confidenceOpen && id !== undefined) window.worshipsync.confidence.move(id)
-                }}
-              >
-                {displays.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.label}
-                    {d.isPrimary ? " (Primary)" : ""} — {d.width}x{d.height}
-                  </option>
-                ))}
-              </select>
+          {currentSong && currentSong.itemType === "song" && (
+            <div className={`flex items-center gap-2 p-2 rounded-md border transition-colors ${confidenceOpen ? "bg-amber-500/10 border-amber-500/30" : "bg-background/40 border-border"}`}>
+              <span className={`h-2 w-2 rounded-full shrink-0 ${confidenceOpen ? "bg-amber-400" : "bg-muted-foreground"}`} />
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] font-semibold text-muted-foreground mb-0.5">Confidence Monitor</p>
+                <select
+                  className="w-full bg-transparent text-[11px] text-foreground border-none outline-none cursor-pointer"
+                  value={selectedConfidenceDisplayId ?? ""}
+                  onChange={(e) => {
+                    const id = Number(e.target.value) || undefined;
+                    setSelectedConfidenceDisplayId(id);
+                    if (confidenceOpen && id !== undefined) window.worshipsync.confidence.move(id);
+                  }}
+                >
+                  {displays.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.label}{d.isPrimary ? " (Primary)" : ""} — {d.width}×{d.height}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <button
                 onClick={() => {
-                  if (confidenceOpen) {
-                    window.worshipsync.confidence.close()
-                    setConfidenceOpen(false)
-                  } else {
-                    window.worshipsync.confidence.open(selectedConfidenceDisplayId)
-                    setConfidenceOpen(true)
-                  }
+                  if (confidenceOpen) { window.worshipsync.confidence.close(); setConfidenceOpen(false); }
+                  else { window.worshipsync.confidence.open(selectedConfidenceDisplayId); setConfidenceOpen(true); }
                 }}
-                className={`text-[10px] font-bold shrink-0 px-1.5 py-0.5 rounded transition-colors ${
-                  confidenceOpen
-                    ? "text-[hsl(var(--success))] hover:text-red-400"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-                title={confidenceOpen ? "Close confidence monitor" : "Open confidence monitor"}
+                className={`text-[9px] font-bold shrink-0 px-1.5 py-0.5 rounded transition-colors ${confidenceOpen ? "text-amber-400 hover:text-red-400" : "text-muted-foreground hover:text-foreground"}`}
               >
                 {confidenceOpen ? "ON" : "OFF"}
               </button>
             </div>
-          </div>}
+          )}
         </div>
 
-        {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto">
-          {/* Preview — conditional by item type */}
-          {currentSong?.itemType === "countdown" ? (
-            /* ── Countdown mini-preview ── */
-            <div className="p-4 border-b border-border">
-              {(() => {
-                const previewTarget = new Date(getTargetTime()).getTime()
-                const previewDiff = Math.max(0, previewTarget - Date.now())
-                const pd = Math.floor(previewDiff / 86400000)
-                const ph = Math.floor((previewDiff % 86400000) / 3600000)
-                const pm = Math.floor((previewDiff % 3600000) / 60000)
-                const ps = Math.floor((previewDiff % 60000) / 1000)
-                const pad = (n: number) => String(n).padStart(2, "0")
-                const showHours = pd > 0 || ph > 0
-
-                const Seg = ({ value, label }: { value: number; label: string }) => (
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                    <div style={{ fontFamily: "Montserrat, sans-serif", fontSize: 160, fontWeight: 800, color: "#fff", lineHeight: 1, letterSpacing: "0.03em" }}>{pad(value)}</div>
-                    <div style={{ fontFamily: "Montserrat, sans-serif", fontSize: 15, fontWeight: 600, color: "rgba(255,255,255,0.5)", letterSpacing: "0.25em", textTransform: "uppercase" as const, marginTop: 8 }}>{label}</div>
-                  </div>
-                )
-                const Col = () => (
-                  <div style={{ fontFamily: "Montserrat, sans-serif", fontSize: 120, fontWeight: 800, color: "rgba(255,255,255,0.4)", lineHeight: 1, paddingBottom: 32, alignSelf: "flex-end" as const, margin: "0 8px" }}>:</div>
-                )
-
-                return (
-                  <div style={{ position: "relative", overflow: "hidden", borderRadius: "6px", aspectRatio: "16/9", border: "1px solid hsl(var(--border))" }}>
-                    <div style={{
-                      position: "absolute", top: 0, left: 0,
-                      width: "1920px", height: "1080px",
-                      transform: "scale(0.14)", transformOrigin: "top left",
-                      background: "linear-gradient(to bottom, rgba(0,0,0,0.52) 0%, rgba(0,0,0,0.62) 100%), linear-gradient(135deg, #1a1a2e 0%, #16213e 60%, #0f3460 100%)",
-                      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-                    }}>
-                      <div style={{ fontFamily: "Montserrat, sans-serif", fontSize: 52, fontWeight: 800, color: "#fff", letterSpacing: "0.38em", textTransform: "uppercase" as const, marginBottom: 14 }}>Welcome</div>
-                      <div style={{ fontFamily: "Montserrat, sans-serif", fontSize: 24, fontWeight: 400, color: "rgba(255,255,255,0.82)", marginBottom: 36 }}>Our Sunday Service will begin in</div>
-                      <div style={{ display: "flex", alignItems: "flex-end", marginBottom: 36 }}>
-                        {pd > 0 && <><Seg value={pd} label="Days" /><Col /></>}
-                        {showHours && <><Seg value={ph} label="Hours" /><Col /></>}
-                        <Seg value={pm} label="Minutes" /><Col />
-                        <Seg value={ps} label="Seconds" />
-                      </div>
-                      <div style={{ fontFamily: "Montserrat, sans-serif", fontSize: 20, fontWeight: 400, color: "rgba(255,255,255,0.65)" }}>Please find your seats and silence your devices</div>
-                      {churchName && (
-                        <div style={{ position: "absolute", bottom: 36, display: "flex", alignItems: "center", gap: 10 }}>
-                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-                            <polyline points="9 22 9 12 15 12 15 22" />
-                          </svg>
-                          <div style={{ fontFamily: "Montserrat, sans-serif", fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.35)", letterSpacing: "0.2em", textTransform: "uppercase" as const }}>{churchName}</div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )
-              })()}
-              <p className="text-[11px] text-muted-foreground mt-2 text-center">Countdown preview</p>
-            </div>
-          ) : currentSong?.itemType !== "media" && (
-            /* ── Standard slide preview ── */
-            <div className="p-4 border-b border-border">
-              <div
-                className="relative overflow-hidden rounded-md border border-border bg-black flex items-center justify-center"
-                style={{ aspectRatio: "16/9", padding: "16px" }}
-              >
-                {effectiveBg && currentSlide && !isBlank && (
-                  <img
-                    src={`file://${effectiveBg}`}
-                    className="absolute inset-0 w-full h-full object-cover"
-                    alt=""
-                  />
-                )}
-                {effectiveBg && currentSlide && !isBlank && (
-                  <div
-                    className="absolute inset-0"
-                    style={{
-                      background: `rgba(0,0,0,${effectiveTheme.overlayOpacity / 100})`,
-                    }}
-                  />
-                )}
-                {currentSlide && !isBlank ? (
-                  <span
-                    className="relative z-10 text-center font-bold text-xs leading-relaxed whitespace-pre-wrap"
-                    style={{
-                      color: effectiveTheme.textColor,
-                      fontFamily: effectiveTheme.fontFamily,
-                      textAlign: effectiveTheme.textAlign,
-                      textShadow: `0 1px 4px rgba(0,0,0,${effectiveTheme.textShadowOpacity / 100})`,
-                      width: "100%",
-                    }}
-                  >
-                    {currentSlide.lines.join("\n")}
-                  </span>
-                ) : (
-                  <div className="relative z-10 flex items-center justify-center h-full">
-                    {isBlank ? (
-                      <MonitorOff className="h-5 w-5 text-gray-700" />
-                    ) : (
-                      <p className="text-xs text-gray-600">No slide active</p>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Info row */}
-              <div className="flex justify-between items-center mt-2 text-[11px] text-muted-foreground font-medium">
-                <span>
-                  {selectedDisplay
-                    ? `${selectedDisplay.width} × ${selectedDisplay.height}`
-                    : "—"}
-                </span>
-                <span>
-                  {activeSlideIdx >= 0
-                    ? `Slide ${activeSlideIdx + 1} / ${totalSlides}`
-                    : "—"}
-                </span>
-              </div>
-
-              {/* Prev / Next */}
-              <div className="flex gap-2 mt-3">
-                <button
-                  onClick={goPrevSlide}
-                  disabled={activeSlideIdx <= 0}
-                  className="flex-1 py-2 bg-background border border-border rounded-md text-xs font-semibold flex items-center justify-center gap-1 hover:bg-accent/40 transition-colors disabled:opacity-40"
-                >
-                  <ChevronLeft className="h-4 w-4" /> Prev
-                </button>
-                <button
-                  onClick={goNextSlide}
-                  className="flex-1 py-2 bg-background border border-border rounded-md text-xs font-semibold flex items-center justify-center gap-1 hover:bg-accent/40 transition-colors"
-                >
-                  Next <ChevronRight className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Quick Actions */}
-          <div className="p-4 border-b border-border">
-            <h3 className="text-xs font-semibold mb-2.5">Quick Actions</h3>
-            <div className="space-y-1.5">
-              <QuickAction
-                icon={X}
-                label="Clear All"
-                iconBg="bg-destructive/14"
-                iconColor="text-destructive"
-                onClick={clearAll}
-              />
-              <QuickAction
-                icon={Type}
-                label={isTextCleared ? "Restore Text" : "Clear Text"}
-                iconBg={isTextCleared ? "bg-primary/20" : undefined}
-                iconColor={isTextCleared ? "text-primary" : undefined}
-                onClick={clearText}
-              />
-              <QuickAction
-                icon={MonitorOff}
-                label={isBlank ? "Unblank" : "To Black"}
-                iconBg={isBlank ? "bg-zinc-800 border border-zinc-600" : "bg-black border border-muted"}
-                iconColor={isBlank ? "text-white" : undefined}
-                onClick={() => {
-                  if (isBlank) {
-                    if (activeSlideIdx >= 0) sendSlide(selectedSongIdx, activeSlideIdx);
-                    else { window.worshipsync.slide.blank(false); setIsBlank(false); }
-                  } else {
-                    toBlack();
-                  }
-                }}
-              />
-              <QuickAction
-                icon={Hexagon}
-                label="Logo Screen"
-                onClick={showLogo}
-              />
-              <QuickAction
-                icon={MonitorOff}
-                label={confirmEndShow ? "Tap to confirm" : "End Show"}
-                iconBg={confirmEndShow ? "bg-destructive" : "bg-destructive/14"}
-                iconColor={confirmEndShow ? "text-white" : "text-destructive"}
-                onClick={endShow}
-              />
-            </div>
-          </div>
-
-          {/* Next Up */}
-          {nextUp && (() => {
-            const nextUpSong = nextUp.songTitle ? nextSong : currentSong;
-            const nextUpTheme = nextUpSong ? resolveTheme(nextUpSong) : effectiveTheme;
-            const nextUpBg = nextUpSong ? resolveBg(nextUpSong) : effectiveBg;
-            return (
-              <div className="p-4">
-                <h3 className="text-xs font-semibold mb-2">
-                  Next Up:{" "}
-                  <span className="text-muted-foreground font-medium">
-                    {nextUp.songTitle
-                      ? `${nextUp.songTitle} — ${nextUp.slide.sectionLabel}`
-                      : nextUp.slide.sectionLabel}
-                  </span>
-                </h3>
-                <div
-                  className="relative overflow-hidden rounded-md border border-border bg-black flex items-center justify-center opacity-[0.86]"
-                  style={{ aspectRatio: "16/9", padding: "12px" }}
-                >
-                  {nextUpBg && nextUp.slide.sectionType !== "blank" && (
-                    <>
-                      <img
-                        src={`file://${nextUpBg}`}
-                        className="absolute inset-0 w-full h-full object-cover"
-                        alt=""
-                      />
-                      <div
-                        className="absolute inset-0"
-                        style={{
-                          background: `rgba(0,0,0,${nextUpTheme.overlayOpacity / 100})`,
-                        }}
-                      />
-                    </>
-                  )}
-                  <span
-                    className="relative z-10 text-center font-bold text-xs leading-relaxed whitespace-pre-wrap"
-                    style={{
-                      color: nextUpTheme.textColor,
-                      fontFamily: nextUpTheme.fontFamily,
-                      textAlign: nextUpTheme.textAlign,
-                      textShadow: `0 1px 4px rgba(0,0,0,${nextUpTheme.textShadowOpacity / 100})`,
-                      width: "100%",
-                    }}
-                  >
-                    {nextUp.slide.lines.join("\n") || " "}
-                  </span>
-                </div>
-              </div>
-            );
-          })()}
+        {/* Next Slide button */}
+        <div className="p-3 shrink-0">
+          <button
+            onClick={goNextSlide}
+            className="w-full py-3 bg-foreground text-background rounded-lg text-sm font-bold hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
+          >
+            Next Slide <ChevronRight className="h-4 w-4" />
+          </button>
         </div>
       </div>
+
+      </div>{/* end BODY */}
 
       {/* Keyboard shortcuts overlay */}
       {showHelp && (
@@ -2262,36 +1933,6 @@ export default function PresenterDashboard({
         />
       )}
     </div>
-  );
-}
-
-// ── Quick Action Button ──────────────────────────────────────────────────────
-
-function QuickAction({
-  icon: Icon,
-  label,
-  iconBg,
-  iconColor,
-  onClick,
-}: {
-  icon: typeof MonitorOff;
-  label: string;
-  iconBg?: string;
-  iconColor?: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className="w-full flex items-center gap-2.5 px-2.5 py-2 bg-background border border-border rounded-md hover:bg-accent/30 transition-colors text-left"
-    >
-      <div
-        className={`w-5 h-5 flex items-center justify-center rounded ${iconBg ?? "bg-secondary"}`}
-      >
-        <Icon className={`h-3 w-3 ${iconColor ?? "text-foreground"}`} />
-      </div>
-      <span className="text-xs font-medium">{label}</span>
-    </button>
   );
 }
 

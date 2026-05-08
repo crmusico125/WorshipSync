@@ -579,6 +579,12 @@ ipcMain.on('slide:videoSeek', (_event, time: number) => {
   }
 })
 
+ipcMain.on('slide:videoLoop', (_event, loop: boolean) => {
+  if (projectionWindow && !projectionWindow.isDestroyed()) {
+    projectionWindow.webContents.send('slide:videoLoop', loop)
+  }
+})
+
 // ── Confidence monitor IPC handlers ──────────────────────────────────────────
 
 ipcMain.on('window:openConfidence', (_event, displayId?: number) => {

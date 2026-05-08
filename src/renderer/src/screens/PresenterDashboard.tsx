@@ -228,10 +228,12 @@ export default function PresenterDashboard({
   const [countdownRunning, setCountdownRunning] = useState(false);
   const [countdownDisplay, setCountdownDisplay] = useState("00:00:00");
   const [videoPlaying, setVideoPlaying] = useState(false);
+  const [videoLoop, setVideoLoop] = useState(false);
   const [videoCurrentTime, setVideoCurrentTime] = useState(0);
   const [videoDuration, setVideoDuration] = useState(0);
   const videoTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const videoPreviewRef = useRef<HTMLVideoElement | null>(null);
+  const videoTimerStoppedAtRef = useRef<number | null>(null);
   const [audioPlaying, setAudioPlaying] = useState(false);
   const [audioLoop, setAudioLoop] = useState(false);
   const [audioCurrentTime, setAudioCurrentTime] = useState(0);
@@ -671,6 +673,10 @@ export default function PresenterDashboard({
     }
     if (confirmEndTimer.current) clearTimeout(confirmEndTimer.current);
     setConfirmEndShow(false);
+    // Stop video
+    if (videoPreviewRef.current) { videoPreviewRef.current.pause(); videoPreviewRef.current.currentTime = 0; }
+    if (videoTimerRef.current) { clearInterval(videoTimerRef.current); videoTimerRef.current = null; }
+    setVideoPlaying(false); setVideoCurrentTime(0); setVideoDuration(0); setVideoLoop(false);
     // Stop audio and tear down singleton
     if (_audio.el) { _audio.el.pause(); _audio.el = null; }
     if (_audio.ctx) { _audio.ctx.close(); _audio.ctx = null; }
@@ -1245,9 +1251,12 @@ export default function PresenterDashboard({
                 onClick={() => {
                   setSelectedSongIdx(i);
                   setActiveSlideIdx(-1);
-                  setVideoPlaying(false); setVideoCurrentTime(0); setVideoDuration(0);
-                  if (videoTimerRef.current) { clearInterval(videoTimerRef.current); videoTimerRef.current = null; }
-                  if (videoPreviewRef.current) { videoPreviewRef.current.pause(); videoPreviewRef.current.currentTime = 0; }
+                  // Stop the timer — stamp when we stopped so restore can calculate elapsed time
+                  if (videoTimerRef.current) {
+                    clearInterval(videoTimerRef.current);
+                    videoTimerRef.current = null;
+                    if (videoPlaying) videoTimerStoppedAtRef.current = Date.now();
+                  }
                   if (vizFrameRef.current) { cancelAnimationFrame(vizFrameRef.current); vizFrameRef.current = null; }
                   // Keep audio playing — viz/timer are handled by the currentSong effect
                   audioRef.current = null;
@@ -1326,25 +1335,32 @@ export default function PresenterDashboard({
             const pct = videoDuration ? (videoCurrentTime / videoDuration) * 100 : 0;
             const fmt = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
             const ext = bg.split(".").pop()?.toUpperCase() ?? "VIDEO";
+
             const stopVideo = () => {
               window.worshipsync.slide.videoControl("stop");
               if (videoPreviewRef.current) { videoPreviewRef.current.pause(); videoPreviewRef.current.currentTime = 0; }
+              videoTimerStoppedAtRef.current = null;
               setVideoPlaying(false); setVideoCurrentTime(0); setIsBlank(true);
               if (videoTimerRef.current) { clearInterval(videoTimerRef.current); videoTimerRef.current = null; }
             };
             const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
               if (!videoDuration) return;
               const rect = e.currentTarget.getBoundingClientRect();
-              const seekTo = ((e.clientX - rect.left) / rect.width) * videoDuration;
+              const seekTo = Math.max(0, Math.min(videoDuration, ((e.clientX - rect.left) / rect.width) * videoDuration));
               if (videoPreviewRef.current) videoPreviewRef.current.currentTime = seekTo;
               setVideoCurrentTime(seekTo);
               window.worshipsync.slide.videoSeek(seekTo);
+            };
+            const handleSkipVideo = (delta: number) => {
+              const newTime = Math.max(0, Math.min(videoDuration, (videoPreviewRef.current?.currentTime ?? 0) + delta));
+              if (videoPreviewRef.current) videoPreviewRef.current.currentTime = newTime;
+              setVideoCurrentTime(newTime);
+              window.worshipsync.slide.videoSeek(newTime);
             };
             const handlePlay = () => {
               const preview = videoPreviewRef.current;
               const dur = preview?.duration ?? 0;
               setVideoDuration(dur); setVideoCurrentTime(0);
-              // Send the video path to the projection window before issuing play
               window.worshipsync.slide.blank(false);
               window.worshipsync.slide.logo(false);
               window.worshipsync.slide.show({
@@ -1367,9 +1383,10 @@ export default function PresenterDashboard({
                   maxLinesPerSlide: DEFAULT_THEME.maxLinesPerSlide,
                 },
               });
+              window.worshipsync.slide.videoLoop(videoLoop);
               setIsBlank(false);
               window.worshipsync.slide.videoControl("play");
-              preview?.play();
+              if (preview) { preview.loop = videoLoop; preview.play(); }
               setVideoPlaying(true);
               if (videoTimerRef.current) clearInterval(videoTimerRef.current);
               videoTimerRef.current = setInterval(() => { setVideoCurrentTime(videoPreviewRef.current?.currentTime ?? 0); }, 100);
@@ -1380,8 +1397,16 @@ export default function PresenterDashboard({
               setVideoPlaying(false);
               if (videoTimerRef.current) { clearInterval(videoTimerRef.current); videoTimerRef.current = null; }
             };
+            const handleToggleLoop = () => {
+              const next = !videoLoop;
+              setVideoLoop(next);
+              if (videoPreviewRef.current) videoPreviewRef.current.loop = next;
+              window.worshipsync.slide.videoLoop(next);
+            };
+
             return (
               <>
+                {/* Header */}
                 <div className="px-5 py-3 border-b border-border bg-card flex items-center justify-between gap-4 shrink-0">
                   <div className="min-w-0">
                     <h1 className="text-base font-semibold truncate">{currentSong.title}</h1>
@@ -1393,29 +1418,92 @@ export default function PresenterDashboard({
                     <RefreshCw className="h-3.5 w-3.5" /> Replace
                   </Button>
                 </div>
-                <div className="flex-1 overflow-y-auto bg-muted/30 flex flex-col items-center justify-center p-6">
-                  <div className="w-full max-w-3xl flex flex-col gap-4">
+
+                {/* Player body */}
+                <div className="flex-1 flex flex-col items-center justify-center p-8 bg-muted/20 overflow-y-auto">
+                  <div className="w-full max-w-2xl flex flex-col gap-5">
+
+                    {/* Video preview */}
                     <div className="relative rounded-xl overflow-hidden bg-black border border-border shadow-md" style={{ aspectRatio: "16/9" }}>
-                      <video ref={videoPreviewRef} src={`file://${encodeURI(bg)}`} className="w-full h-full object-cover" muted playsInline preload="metadata" onLoadedMetadata={() => setVideoDuration(videoPreviewRef.current?.duration ?? 0)} onEnded={stopVideo} />
-                      <button onClick={videoPlaying ? handlePause : handlePlay} className="absolute inset-0 flex items-center justify-center group">
-                        {!videoPlaying && (
-                          <div className="w-16 h-16 rounded-full bg-black/60 border-2 border-white/80 flex items-center justify-center transition-transform group-hover:scale-110">
-                            <Play className="h-8 w-8 text-white fill-white ml-1" />
-                          </div>
-                        )}
-                      </button>
+                      <video
+                        ref={videoPreviewRef}
+                        src={`file://${encodeURI(bg)}`}
+                        className="w-full h-full object-cover"
+                        muted playsInline preload="auto"
+                        loop={videoLoop}
+                        onLoadedMetadata={() => {
+                          const v = videoPreviewRef.current;
+                          if (!v) return;
+                          setVideoDuration(v.duration);
+                          if (videoPlaying) {
+                            // Calculate where the projection currently is
+                            const elapsed = videoTimerStoppedAtRef.current
+                              ? (Date.now() - videoTimerStoppedAtRef.current) / 1000
+                              : 0;
+                            videoTimerStoppedAtRef.current = null;
+                            const seekTo = Math.min(videoCurrentTime + elapsed, v.duration - 0.05);
+                            v.currentTime = seekTo;
+                            window.worshipsync.slide.videoSeek(seekTo);
+                            v.play().catch(() => {});
+                            if (videoTimerRef.current) clearInterval(videoTimerRef.current);
+                            videoTimerRef.current = setInterval(() => setVideoCurrentTime(videoPreviewRef.current?.currentTime ?? 0), 100);
+                          } else {
+                            v.currentTime = videoCurrentTime || 0.001;
+                          }
+                        }}
+                        onEnded={videoLoop ? undefined : stopVideo}
+                      />
                     </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs text-muted-foreground tabular-nums w-10 text-right shrink-0">{fmt(videoCurrentTime)}</span>
-                      <div className="flex-1 relative flex items-center cursor-pointer py-2" onClick={handleSeek}>
+
+                    {/* Seek bar + timestamps */}
+                    <div className="flex flex-col gap-1.5">
+                      <div className="relative flex items-center cursor-pointer group py-2" onClick={handleSeek}>
                         <div className="w-full h-1.5 bg-secondary rounded-full relative">
                           <div className="absolute left-0 top-0 h-full bg-primary rounded-full" style={{ width: `${pct}%` }} />
-                          <div className="absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-background border-2 border-primary rounded-full shadow-sm -translate-x-1/2" style={{ left: `${pct}%` }} />
+                          <div
+                            className="absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-white border-2 border-primary rounded-full shadow-md -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity"
+                            style={{ left: `${pct}%` }}
+                          />
                         </div>
                       </div>
-                      <span className="text-xs text-muted-foreground tabular-nums w-10 shrink-0">{fmt(videoDuration)}</span>
+                      <div className="flex justify-between text-[11px] text-muted-foreground tabular-nums px-0.5">
+                        <span>{fmt(videoCurrentTime)}</span>
+                        <span>{fmt(videoDuration)}</span>
+                      </div>
                     </div>
-                    <p className="text-center text-[11px] text-muted-foreground">Preview plays here (muted) · Audio plays on the projection screen</p>
+
+                    {/* Transport controls */}
+                    <div className="flex items-center justify-center gap-5">
+                      <button onClick={() => handleSkipVideo(-videoDuration)} title="Skip to start" className="text-muted-foreground hover:text-foreground transition-colors">
+                        <SkipBack className="h-5 w-5" />
+                      </button>
+                      <button onClick={() => handleSkipVideo(-10)} title="Back 10s" className="text-muted-foreground hover:text-foreground transition-colors text-[11px] font-bold w-8 text-center">
+                        −10s
+                      </button>
+                      <button
+                        onClick={videoPlaying ? handlePause : handlePlay}
+                        className="w-14 h-14 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all shadow-lg"
+                      >
+                        {videoPlaying ? <Pause className="h-6 w-6 fill-current" /> : <Play className="h-6 w-6 fill-current ml-0.5" />}
+                      </button>
+                      <button onClick={() => handleSkipVideo(10)} title="Forward 10s" className="text-muted-foreground hover:text-foreground transition-colors text-[11px] font-bold w-8 text-center">
+                        +10s
+                      </button>
+                      <button onClick={() => handleSkipVideo(videoDuration)} title="Skip to end" className="text-muted-foreground hover:text-foreground transition-colors">
+                        <SkipForward className="h-5 w-5" />
+                      </button>
+                      <button
+                        onClick={handleToggleLoop}
+                        title={videoLoop ? "Loop on" : "Loop off"}
+                        className={`transition-colors ${videoLoop ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}
+                      >
+                        <Repeat className="h-5 w-5" />
+                      </button>
+                    </div>
+
+                    <p className="text-center text-[11px] text-muted-foreground">
+                      Preview plays here (muted) · Audio plays on the projection screen
+                    </p>
                   </div>
                 </div>
               </>

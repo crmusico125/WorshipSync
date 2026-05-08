@@ -69,12 +69,14 @@ declare global {
         countdown: (data: { targetTime: string; running: boolean }) => void
         videoControl: (action: 'play' | 'pause' | 'stop') => void
         videoSeek: (time: number) => void
+        videoLoop: (loop: boolean) => void
         onShow: (cb: (payload: SlidePayload) => void) => () => void
         onBlank: (cb: (isBlank: boolean) => void) => () => void
         onLogo: (cb: (show: boolean) => void) => () => void
         onCountdown: (cb: (data: { targetTime: string; running: boolean }) => void) => () => void
         onVideoControl: (cb: (action: 'play' | 'pause' | 'stop') => void) => () => void
         onVideoSeek: (cb: (time: number) => void) => () => void
+        onVideoLoop: (cb: (loop: boolean) => void) => () => void
       }
       window: {
         getDisplayCount: () => Promise<number>

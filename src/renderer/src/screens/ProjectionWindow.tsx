@@ -77,6 +77,10 @@ export default function ProjectionWindow() {
       if (wasPlaying) vid.play().catch(() => {});
     });
 
+    const cleanVideoLoop = window.worshipsync.slide.onVideoLoop((loop) => {
+      if (videoRef.current) videoRef.current.loop = loop;
+    });
+
     const cleanVideo = window.worshipsync.slide.onVideoControl((action) => {
       const vid = videoRef.current;
       if (!vid) {
@@ -101,6 +105,7 @@ export default function ProjectionWindow() {
       cleanCountdown,
       cleanVideo,
       cleanVideoSeek,
+      cleanVideoLoop,
     ];
 
     return () => {

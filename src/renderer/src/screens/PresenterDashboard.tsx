@@ -188,6 +188,7 @@ export default function PresenterDashboard({
   const [selectedSongIdx, setSelectedSongIdx] = useState(0);
   const [activeSlideIdx, setActiveSlideIdx] = useState(-1);
   const [isBlank, setIsBlank] = useState(false);
+  const [isLogo, setIsLogo] = useState(false);
   const [isTextCleared, setIsTextCleared] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [confirmEndShow, setConfirmEndShow] = useState(false);
@@ -427,7 +428,7 @@ export default function PresenterDashboard({
         artist: item.song.artist ?? "",
         key: item.song.key ?? null,
         ccliNumber: item.song.ccliNumber ?? null,
-        backgroundPath: item.song.backgroundPath ?? null,
+        backgroundPath: item.overrideBackgroundPath ?? item.song.backgroundPath ?? null,
         mediaPath: null,
         themeId: item.song.themeId ?? null,
         notes: item.notes ?? null,
@@ -483,6 +484,7 @@ export default function PresenterDashboard({
       setSelectedSongIdx(songIdx);
       setActiveSlideIdx(slideIdx);
       setIsBlank(false);
+      setIsLogo(false);
       setIsTextCleared(false);
 
       // Compute next slide for stage display
@@ -547,6 +549,8 @@ export default function PresenterDashboard({
   countdownRunningRef.current = countdownRunning;
   const isBlankRef = useRef(isBlank);
   isBlankRef.current = isBlank;
+  const isLogoRef = useRef(isLogo);
+  isLogoRef.current = isLogo;
   const activeSlideIdxRef = useRef(activeSlideIdx);
   activeSlideIdxRef.current = activeSlideIdx;
   const selectedSongIdxRef = useRef(selectedSongIdx);
@@ -556,6 +560,7 @@ export default function PresenterDashboard({
   const clearAll = useCallback(() => {
     window.worshipsync.slide.blank(true);
     setIsBlank(true);
+    setIsLogo(false);
     setIsTextCleared(false);
     setActiveSlideIdx(-1);
   }, []);
@@ -598,16 +603,19 @@ export default function PresenterDashboard({
       },
     });
     setIsBlank(false);
+    setIsLogo(false);
     setIsTextCleared(true);
   }, [isTextCleared, activeSlideIdx, selectedSongIdx, liveSongs, sendSlide, resolveTheme, resolveBg, projectionFontSize]);
   const toBlack = useCallback(() => {
     window.worshipsync.slide.blank(true);
     setIsBlank(true);
+    setIsLogo(false);
     setIsTextCleared(false);
   }, []);
   const showLogo = useCallback(() => {
     window.worshipsync.slide.logo(true);
     setIsBlank(false);
+    setIsLogo(true);
     setIsTextCleared(false);
   }, []);
 
@@ -851,6 +859,8 @@ export default function PresenterDashboard({
     if (countdownRunningRef.current) {
       window.worshipsync.slide.logo(false);
       window.worshipsync.slide.countdown({ targetTime: getTargetTime(), running: true });
+    } else if (isLogoRef.current) {
+      window.worshipsync.slide.logo(true);
     } else if (activeSlideIdxRef.current >= 0 && !isBlankRef.current) {
       sendSlide(selectedSongIdxRef.current, activeSlideIdxRef.current);
     } else {
@@ -1738,7 +1748,7 @@ export default function PresenterDashboard({
                     {currentSlide && <span className="text-[10px] text-muted-foreground">{currentSlide.sectionLabel}</span>}
                   </div>
                   <div className="relative overflow-hidden rounded-md border-2 border-red-500/60 bg-black" style={{ aspectRatio: "16/9" }}>
-                    {effectiveBg && currentSlide && !isBlank && (
+                    {!isLogo && effectiveBg && currentSlide && !isBlank && (
                       effectiveBg.startsWith("color:") ? (
                         <div className="absolute inset-0" style={{ background: effectiveBg.replace("color:", "") }} />
                       ) : /\.(mp4|webm|mov)$/i.test(effectiveBg) ? (
@@ -1751,7 +1761,13 @@ export default function PresenterDashboard({
                       )
                     )}
                     <div className="absolute inset-0 flex items-center justify-center px-3">
-                      {currentSlide && !isBlank ? (
+                      {isLogo ? (
+                        <div className="absolute inset-0 bg-black flex items-center justify-center">
+                          <span style={{ fontFamily: "Montserrat, sans-serif", fontWeight: 700, color: "rgba(255,255,255,0.15)", letterSpacing: "-0.03em", fontSize: 14 }}>
+                            WorshipSync
+                          </span>
+                        </div>
+                      ) : currentSlide && !isBlank ? (
                         <p className="text-center font-bold text-[18px] leading-snug whitespace-pre-wrap relative z-10 w-full"
                           style={{ color: effectiveTheme.textColor, fontFamily: effectiveTheme.fontFamily, textAlign: effectiveTheme.textAlign, textShadow: effectiveTheme.textShadowOpacity > 0 ? `0 1px 3px rgba(0,0,0,${effectiveTheme.textShadowOpacity / 100})` : "none" }}>
                           {isTextCleared ? "" : currentSlide.lines.join("\n")}

@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo, useRef } from "react"
 import {
   Plus, BookOpen, Trash2, Pencil,
   Radio, Eye, Music2, Calendar, Image as ImageIcon,
-  Monitor, Timer, Film, Volume2, GripVertical,
+  Monitor, Timer, Film, Volume2, GripVertical, X,
 } from "lucide-react"
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors,
@@ -21,6 +21,7 @@ import { useSongStore } from "../store/useSongStore"
 import LibraryModal from "../components/LibraryModal"
 import AddSongModal from "../components/AddSongModal"
 import EditLyricsModal from "../components/EditLyricsModal"
+import BackgroundPickerPanel from "../components/BackgroundPickerPanel"
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -174,10 +175,13 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
   const [themeCache, setThemeCache] = useState<Record<number, any>>({})
   const [defaultTheme, setDefaultTheme] = useState<any>(null)
   const [defaultThemeBg, setDefaultThemeBg] = useState<string | null>(null)
-  const [bgImages, setBgImages] = useState<string[]>([])
+
   const [themeOverrides, setThemeOverrides] = useState<Partial<ThemeStyle>>({})
   const [bgOverride, setBgOverride] = useState<string | null | undefined>(undefined)
+  const [pendingBgPath, setPendingBgPath] = useState<string | null | undefined>(undefined)
+  const [savingBg, setSavingBg] = useState(false)
   const [arrangedSectionIds, setArrangedSectionIds] = useState<number[] | null>(null)
+  const [arrangementChanged, setArrangementChanged] = useState(false)
 
   // ── Load ─────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -194,7 +198,6 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
       all.forEach(t => { c[t.id] = t })
       setThemeCache(c)
     })
-    window.worshipsync.backgrounds.listImages().then(setBgImages).catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -209,15 +212,17 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
     setPreviewSlideIdx(0)
     setThemeOverrides({})
     setBgOverride(undefined)
+    setPendingBgPath(undefined)
     pendingThemeRef.current = {}
     if (themeTimerRef.current) { clearTimeout(themeTimerRef.current); themeTimerRef.current = null }
-    // Load saved section order for this lineup item if present
+    // Load saved section order for this lineup item if present (not a pending change)
     const item = lineup[selectedSongIdx]
     if (item?.sectionOrder) {
       try { setArrangedSectionIds(JSON.parse(item.sectionOrder)) } catch { setArrangedSectionIds(null) }
     } else {
       setArrangedSectionIds(null)
     }
+    setArrangementChanged(false)
   }, [selectedSongIdx]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Seed notes from DB whenever lineup changes
@@ -285,12 +290,13 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
 
   const effectiveBg: string | null = useMemo(() => {
     if (bgOverride !== undefined) return bgOverride
+    if (currentItem?.overrideBackgroundPath) return currentItem.overrideBackgroundPath
     if (currentSong?.backgroundPath) return currentSong.backgroundPath
     if (currentSong?.themeId && themeCache[currentSong.themeId]) {
       try { return JSON.parse(themeCache[currentSong.themeId].settings).backgroundPath ?? null } catch {}
     }
     return defaultThemeBg
-  }, [currentSong, themeCache, defaultThemeBg, bgOverride])
+  }, [currentSong, currentItem, themeCache, defaultThemeBg, bgOverride])
 
   // ── DnD sensors ──────────────────────────────────────────────────────────
   const sensors = useSensors(useSensor(PointerSensor, {
@@ -421,6 +427,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
     const newIdx = currentIds.indexOf(Number(over.id))
     if (oldIdx === -1 || newIdx === -1) return
     setArrangedSectionIds(arrayMove(currentIds, oldIdx, newIdx))
+    setArrangementChanged(true)
   }
 
   const saveArrangementToSong = async () => {
@@ -432,14 +439,14 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
     await window.worshipsync.songs.upsertSections(currentSong.id, updated)
     await loadSongs()
     setArrangedSectionIds(null)
+    setArrangementChanged(false)
   }
 
   const saveArrangementToLineup = async () => {
     if (!currentItem || !arrangedSectionIds) return
-    // Patch the store immediately so the presenter picks it up on next mount
     patchLineupItemSectionOrder(currentItem.id, arrangedSectionIds)
+    setArrangementChanged(false)
     setArrangedSectionIds(null)
-    // Persist to DB in the background
     await window.worshipsync.lineup.setSectionOrder(currentItem.id, arrangedSectionIds)
   }
 
@@ -742,10 +749,10 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
                   </div>
 
                   {/* Pending arrangement action bar */}
-                  {arrangedSectionIds && (
+                  {arrangementChanged && arrangedSectionIds && (
                     <div className="px-5 py-2 border-b border-border bg-amber-500/10 shrink-0 flex items-center gap-2">
                       <span className="text-[11px] text-amber-400 flex-1 font-medium">Arrangement changed</span>
-                      <button onClick={() => setArrangedSectionIds(null)} className="text-[11px] text-muted-foreground hover:text-foreground transition-colors">Reset</button>
+                      <button onClick={() => { setArrangedSectionIds(null); setArrangementChanged(false) }} className="text-[11px] text-muted-foreground hover:text-foreground transition-colors">Reset</button>
                       <button onClick={saveArrangementToLineup} className="text-[11px] font-semibold px-2.5 py-1 rounded bg-background border border-border hover:bg-accent transition-colors">
                         This service only
                       </button>
@@ -835,20 +842,46 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
             slide={currentSlide}
             theme={effectiveTheme}
             bg={effectiveBg}
-            bgImages={bgImages}
             canCustomize={!!currentSong || currentItem?.itemType === 'scripture'}
             readOnly={isPast}
-            isOverridden={bgOverride !== undefined && bgOverride !== null}
+            isOverridden={(bgOverride !== undefined && bgOverride !== null) || !!currentItem?.overrideBackgroundPath}
             onThemeChange={handleThemeChange}
-            onBgChange={async (path) => {
+            onBgChange={(path) => {
               setBgOverride(path)
               if (currentSong) {
-                await window.worshipsync.backgrounds.setBackground(currentSong.id, path)
-                await loadSongs()
+                // Songs: preview immediately, ask where to save
+                setPendingBgPath(path)
               } else if (currentItem) {
-                await window.worshipsync.lineup.setOverrideBg(currentItem.id, path)
-                if (selectedService) await loadLineup(selectedService.id)
+                // Scripture / other non-song items: save to lineup item directly
+                window.worshipsync.lineup.setOverrideBg(currentItem.id, path)
+                  .then(() => { if (selectedService) loadLineup(selectedService.id) })
               }
+            }}
+            pendingBg={pendingBgPath !== undefined}
+            savingBg={savingBg}
+            onSaveBgToSong={currentSong ? async () => {
+              setSavingBg(true)
+              try {
+                await window.worshipsync.backgrounds.setBackground(currentSong.id, pendingBgPath ?? null)
+                // Clear any lineup-level override so the song background wins
+                if (currentItem) await window.worshipsync.lineup.setOverrideBg(currentItem.id, null)
+                await loadSongs()
+                if (selectedService) await loadLineup(selectedService.id)
+                setBgOverride(undefined)
+                setPendingBgPath(undefined)
+              } finally { setSavingBg(false) }
+            } : undefined}
+            onSaveBgToService={currentItem ? async () => {
+              setSavingBg(true)
+              try {
+                await window.worshipsync.lineup.setOverrideBg(currentItem.id, pendingBgPath ?? null)
+                if (selectedService) await loadLineup(selectedService.id)
+                setPendingBgPath(undefined)
+              } finally { setSavingBg(false) }
+            } : undefined}
+            onDiscardBg={() => {
+              setBgOverride(undefined)
+              setPendingBgPath(undefined)
             }}
           />
         </div>
@@ -918,6 +951,7 @@ function SortableSectionTab({ id, label, color }: { id: number; label: string; c
 function ItemSettingsPanel({
   currentItem, notes, onNotesChange, onNotesBlur,
   slide, theme, bg, canCustomize, readOnly, isOverridden,
+  pendingBg, savingBg, onSaveBgToSong, onSaveBgToService, onDiscardBg,
   onThemeChange, onBgChange,
 }: {
   currentItem: LineupItemWithSong | null
@@ -927,13 +961,19 @@ function ItemSettingsPanel({
   slide: Slide | null
   theme: ThemeStyle
   bg: string | null
-  bgImages: string[]
   canCustomize: boolean
   readOnly?: boolean
   isOverridden: boolean
+  pendingBg: boolean
+  savingBg: boolean
+  onSaveBgToSong?: () => void
+  onSaveBgToService?: () => void
+  onDiscardBg: () => void
   onThemeChange: (key: keyof ThemeStyle, value: any) => void
   onBgChange: (path: string | null) => void
 }) {
+  const [showBgPicker, setShowBgPicker] = useState(false)
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
       <div className="px-4 py-2.5 border-b border-border shrink-0">
@@ -1010,14 +1050,11 @@ function ItemSettingsPanel({
             </div>
             <div className="flex gap-2">
               <button
-                onClick={async () => {
-                  const path = await window.worshipsync.backgrounds.pickImage()
-                  if (path) onBgChange(path)
-                }}
+                onClick={() => !readOnly && setShowBgPicker(true)}
                 disabled={readOnly}
                 className="flex-1 py-1.5 text-[11px] font-medium rounded-md border border-border bg-background hover:bg-accent/40 transition-colors disabled:opacity-40"
               >
-                Change Media
+                {bg ? "Change" : "Choose background"}
               </button>
               {bg && (
                 <button
@@ -1029,6 +1066,61 @@ function ItemSettingsPanel({
                 </button>
               )}
             </div>
+
+            {/* Pending save action bar */}
+            {pendingBg && (
+              <div className="mt-2 p-2.5 rounded-md bg-amber-500/10 border border-amber-500/20 flex flex-col gap-2">
+                <p className="text-[10px] text-amber-400 font-medium">Background changed — where should it apply?</p>
+                <div className="flex gap-1.5">
+                  <button
+                    onClick={onDiscardBg}
+                    disabled={savingBg}
+                    className="text-[10px] text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40"
+                  >
+                    Discard
+                  </button>
+                  <div className="flex-1" />
+                  {onSaveBgToService && (
+                    <button
+                      onClick={onSaveBgToService}
+                      disabled={savingBg}
+                      className="text-[10px] font-semibold px-2 py-1 rounded border border-border bg-background hover:bg-accent transition-colors disabled:opacity-40"
+                    >
+                      This service only
+                    </button>
+                  )}
+                  {onSaveBgToSong && (
+                    <button
+                      onClick={onSaveBgToSong}
+                      disabled={savingBg}
+                      className="text-[10px] font-semibold px-2 py-1 rounded bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-40"
+                    >
+                      {savingBg ? "Saving…" : "Save to song"}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {showBgPicker && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowBgPicker(false)}>
+                <div className="bg-card border border-border rounded-xl shadow-2xl w-[420px] max-h-[80vh] flex flex-col overflow-hidden" onClick={e => e.stopPropagation()}>
+                  <div className="flex items-center justify-between p-4 border-b border-border shrink-0">
+                    <span className="text-sm font-semibold">Background</span>
+                    <button onClick={() => setShowBgPicker(false)} className="text-muted-foreground hover:text-foreground transition-colors">
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <div className="overflow-y-auto p-4">
+                    <BackgroundPickerPanel
+                      currentBackground={bg}
+                      previewLabel={currentItem?.title ?? ""}
+                      onSelect={(path) => { onBgChange(path); setShowBgPicker(false); }}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

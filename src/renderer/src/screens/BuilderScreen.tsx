@@ -731,6 +731,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
                     <div className="flex items-center gap-2 mb-2">
                       <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Arrangement</span>
                       <span className="text-[10px] text-muted-foreground">· {slides.length} slides</span>
+                      <span className="ml-auto text-[10px] text-muted-foreground/60 italic">Drag to reorder</span>
                     </div>
                     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleSectionDragEnd}>
                       <SortableContext items={arrangedSections.map(s => s.id)} strategy={horizontalListSortingStrategy}>
@@ -775,23 +776,12 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
                               isPreview ? 'border-primary ring-2 ring-primary/30' : 'border-border hover:border-primary/50'
                             }`}
                           >
-                            <div className="relative bg-gray-950" style={{ aspectRatio: '16/9' }}>
-                              {effectiveBg && (
-                                effectiveBg.startsWith('color:') ? (
-                                  <div className="absolute inset-0" style={{ background: effectiveBg.replace('color:', '') }} />
-                                ) : (
-                                  <>
-                                    <img src={`file://${effectiveBg}`} className="absolute inset-0 w-full h-full object-cover" alt="" />
-                                    <div className="absolute inset-0" style={{ background: `rgba(0,0,0,${effectiveTheme.overlayOpacity / 100})` }} />
-                                  </>
-                                )
-                              )}
+                            <div className="bg-gray-900 relative" style={{ aspectRatio: '16/9' }}>
                               <span className={`absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase text-white z-10 ${SECTION_BADGE_COLORS[slide.sectionType] ?? 'bg-slate-600'}`}>
                                 {slide.sectionLabel}
                               </span>
                               <div className="absolute inset-0 flex items-center justify-center px-2">
-                                <p className="text-[10px] text-white text-center leading-relaxed whitespace-pre-wrap relative z-10"
-                                  style={{ fontFamily: effectiveTheme.fontFamily, textShadow: effectiveTheme.textShadowOpacity > 0 ? `0 1px 3px rgba(0,0,0,${effectiveTheme.textShadowOpacity / 100})` : 'none' }}>
+                                <p className="text-[10px] text-white text-center leading-relaxed whitespace-pre-wrap">
                                   {slide.lines.join('\n') || ' '}
                                 </p>
                               </div>
@@ -1032,7 +1022,10 @@ function ItemSettingsPanel({
               <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Background</label>
               {isOverridden && <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400">Overridden</span>}
             </div>
-            <div className="flex items-center gap-2.5 p-2 rounded-md bg-background/40 border border-border mb-2">
+            <div
+              onClick={() => !readOnly && setShowBgPicker(true)}
+              className={`flex items-center gap-2.5 p-2 rounded-md bg-background/40 border border-border transition-colors ${readOnly ? "opacity-50" : "cursor-pointer hover:bg-accent/30"}`}
+            >
               <div className="w-14 h-8 rounded overflow-hidden shrink-0 border border-border bg-black flex items-center justify-center">
                 {bg ? (
                   bg.startsWith("color:") ? (
@@ -1044,25 +1037,22 @@ function ItemSettingsPanel({
                   <ImageIcon className="h-3.5 w-3.5 text-muted-foreground/40" />
                 )}
               </div>
-              <p className="text-[11px] font-medium truncate flex-1 min-w-0">
-                {bg ? (bg.split('/').pop() ?? 'Background') : 'No background'}
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => !readOnly && setShowBgPicker(true)}
-                disabled={readOnly}
-                className="flex-1 py-1.5 text-[11px] font-medium rounded-md border border-border bg-background hover:bg-accent/40 transition-colors disabled:opacity-40"
-              >
-                {bg ? "Change" : "Choose background"}
-              </button>
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] font-medium truncate">
+                  {bg ? (bg.split('/').pop() ?? 'Background') : 'No background'}
+                </p>
+                <p className={`text-[10px] ${bg ? (/\.(mp4|webm|mov)$/i.test(bg) ? 'text-green-400' : 'text-muted-foreground') : 'text-muted-foreground'}`}>
+                  {bg ? (/\.(mp4|webm|mov)$/i.test(bg) ? 'Playing • Looped' : 'Static') : 'Click to set one'}
+                </p>
+              </div>
               {bg && (
                 <button
-                  onClick={() => onBgChange(null)}
+                  onClick={e => { e.stopPropagation(); onBgChange(null); }}
                   disabled={readOnly}
-                  className="flex-1 py-1.5 text-[11px] font-medium rounded-md border border-border bg-background hover:bg-accent/40 transition-colors text-muted-foreground hover:text-destructive disabled:opacity-40"
+                  className="shrink-0 text-muted-foreground hover:text-destructive transition-colors disabled:opacity-40"
+                  title="Clear background"
                 >
-                  Clear
+                  <X className="h-3.5 w-3.5" />
                 </button>
               )}
             </div>

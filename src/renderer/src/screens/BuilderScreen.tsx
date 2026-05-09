@@ -809,13 +809,30 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
 
               // Image media
               return (
-                <div className="flex-1 flex flex-col items-center justify-center text-center px-8 gap-3">
-                  <ImageIcon className="h-12 w-12 text-muted-foreground" />
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">{currentItem!.title?.replace(/^Image:\s*/i, '') ?? filename}</p>
-                    <p className="text-xs text-muted-foreground mt-1">Image · shown on screen when selected in presenter</p>
+                <>
+                  <div className="px-5 py-3 border-b border-border bg-card flex items-center justify-between gap-4 shrink-0">
+                    <div className="min-w-0">
+                      <h1 className="text-base font-semibold truncate">{currentItem!.title?.replace(/^Image:\s*/i, '') ?? filename}</h1>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
+                        <span>Image</span><span>·</span><span>{ext}</span>
+                      </div>
+                    </div>
                   </div>
-                </div>
+                  <div className="flex-1 flex flex-col items-center justify-center p-8 bg-muted/20">
+                    <div className="w-full max-w-2xl flex flex-col gap-4">
+                      <div className="rounded-xl overflow-hidden border border-border bg-black shadow-md" style={{ aspectRatio: '16/9' }}>
+                        {mediaPath ? (
+                          <img src={`file://${mediaPath}`} className="w-full h-full object-cover" alt="" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <ImageIcon className="h-16 w-16 text-muted-foreground/30" />
+                          </div>
+                        )}
+                      </div>
+                      <p className="text-center text-[11px] text-muted-foreground">This image will be shown full-screen on the projection display</p>
+                    </div>
+                  </div>
+                </>
               )
             })()
           ) : currentItem?.itemType === 'scripture' ? (

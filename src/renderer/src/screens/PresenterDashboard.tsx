@@ -1721,14 +1721,12 @@ export default function PresenterDashboard({
           /* ── Image media ── */
           <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
             {(() => {
-              const bg = resolveBg(currentSong);
-
-              // Image
+              const imgPath = currentSong.mediaPath;
               return (
                 <>
                   <div className="rounded-2xl border border-border overflow-hidden mb-6 w-full max-w-lg" style={{ aspectRatio: "16/9" }}>
-                    {bg ? (
-                      <img src={`file://${bg}`} className="w-full h-full object-cover" alt="" />
+                    {imgPath ? (
+                      <img src={`file://${imgPath}`} className="w-full h-full object-cover" alt="" />
                     ) : (
                       <div className="w-full h-full bg-black flex items-center justify-center">
                         <ImageIcon className="h-12 w-12 text-muted-foreground" />
@@ -1737,7 +1735,33 @@ export default function PresenterDashboard({
                   </div>
                   <h2 className="text-lg font-bold mb-1">{currentSong.title}</h2>
                   <p className="text-sm text-muted-foreground mb-6">Image · Click Show to project</p>
-                  <Button size="lg" className="gap-2" onClick={() => sendSlide(selectedSongIdx, 0)}>
+                  <Button size="lg" className="gap-2" disabled={!imgPath} onClick={() => {
+                    if (!imgPath) return;
+                    window.worshipsync.slide.blank(false);
+                    window.worshipsync.slide.logo(false);
+                    window.worshipsync.slide.show({
+                      lines: [],
+                      songTitle: currentSong.title,
+                      sectionLabel: "",
+                      itemType: "media",
+                      slideIndex: 0,
+                      totalSlides: 1,
+                      backgroundPath: imgPath,
+                      theme: {
+                        fontFamily: DEFAULT_THEME.fontFamily,
+                        fontSize: DEFAULT_THEME.fontSize,
+                        fontWeight: DEFAULT_THEME.fontWeight,
+                        textColor: DEFAULT_THEME.textColor,
+                        textAlign: DEFAULT_THEME.textAlign,
+                        textPosition: DEFAULT_THEME.textPosition,
+                        overlayOpacity: 0,
+                        textShadowOpacity: 0,
+                        maxLinesPerSlide: DEFAULT_THEME.maxLinesPerSlide,
+                      },
+                    });
+                    setIsBlank(false);
+                    setIsLogo(false);
+                  }}>
                     <Cast className="h-5 w-5" /> Show on Screen
                   </Button>
                   <p className="text-[11px] text-muted-foreground mt-6 max-w-sm">The image will be shown full-screen on the projection display.</p>

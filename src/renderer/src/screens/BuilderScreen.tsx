@@ -2,7 +2,8 @@ import { useEffect, useState, useMemo, useRef } from "react"
 import {
   Plus, BookOpen, Trash2, Pencil,
   Radio, Eye, Music2, Calendar, Image as ImageIcon,
-  Monitor, Timer, Film, Volume2, GripVertical, X,
+  Monitor, Timer, GripVertical, X,
+  Play, Pause, SkipBack, SkipForward, Repeat,
 } from "lucide-react"
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors,
@@ -156,7 +157,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
     addScriptureToLineup, addMediaToLineup,
     removeSongFromLineup, loadServices, selectService,
     services, reorderLineup, updateStatus, updateService,
-    patchLineupItemSectionOrder,
+    patchLineupItemSectionOrder, setMediaLoop,
   } = useServiceStore()
   const { loadSongs } = useSongStore()
 
@@ -170,6 +171,23 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
   const notesTimers = useRef<Record<number, ReturnType<typeof setTimeout>>>({})
   const themeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingThemeRef = useRef<Partial<ThemeStyle>>({})
+
+  // Media preview (builder — local only, no projection)
+  const [previewVideoPlaying, setPreviewVideoPlaying] = useState(false)
+  const [previewVideoTime, setPreviewVideoTime] = useState(0)
+  const [previewVideoDuration, setPreviewVideoDuration] = useState(0)
+  const [previewAudioPlaying, setPreviewAudioPlaying] = useState(false)
+  const [previewAudioTime, setPreviewAudioTime] = useState(0)
+  const [previewAudioDuration, setPreviewAudioDuration] = useState(0)
+  const [previewWaveformBars, setPreviewWaveformBars] = useState<number[]>(new Array(64).fill(0))
+  const [previewAudioLoop, setPreviewAudioLoop] = useState(false)
+  const previewVideoRef = useRef<HTMLVideoElement | null>(null)
+  const previewVideoTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null)
+  const previewAudioTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const previewAudioCtxRef = useRef<AudioContext | null>(null)
+  const previewAnalyserRef = useRef<AnalyserNode | null>(null)
+  const previewVizFrameRef = useRef<number | null>(null)
 
   // Theme data
   const [themeCache, setThemeCache] = useState<Record<number, any>>({})
@@ -200,6 +218,18 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
     })
   }, [])
 
+  // Stop all preview media on unmount (e.g. switching to live mode)
+  useEffect(() => {
+    return () => {
+      if (previewVideoRef.current) { previewVideoRef.current.pause(); previewVideoRef.current.currentTime = 0; }
+      if (previewVideoTimerRef.current) { clearInterval(previewVideoTimerRef.current); }
+      if (previewVizFrameRef.current) { cancelAnimationFrame(previewVizFrameRef.current); }
+      if (previewAudioRef.current) { previewAudioRef.current.pause(); previewAudioRef.current = null; }
+      if (previewAudioTimerRef.current) { clearInterval(previewAudioTimerRef.current); }
+      previewAudioCtxRef.current?.close();
+    }
+  }, [])
+
   useEffect(() => {
     if (serviceId && services.length > 0) {
       const service = services.find(s => s.id === serviceId)
@@ -214,6 +244,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
     setBgOverride(undefined)
     setPendingBgPath(undefined)
     pendingThemeRef.current = {}
+    stopPreviewMedia()
     if (themeTimerRef.current) { clearTimeout(themeTimerRef.current); themeTimerRef.current = null }
     // Load saved section order for this lineup item if present (not a pending change)
     const item = lineup[selectedSongIdx]
@@ -417,6 +448,19 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
       setThemeCache(c)
       await loadSongs()
     }, 800)
+  }
+
+  const stopPreviewMedia = () => {
+    if (previewVideoRef.current) { previewVideoRef.current.pause(); previewVideoRef.current.currentTime = 0; }
+    if (previewVideoTimerRef.current) { clearInterval(previewVideoTimerRef.current); previewVideoTimerRef.current = null; }
+    setPreviewVideoPlaying(false); setPreviewVideoTime(0); setPreviewVideoDuration(0);
+    if (previewVizFrameRef.current) { cancelAnimationFrame(previewVizFrameRef.current); previewVizFrameRef.current = null; }
+    if (previewAudioRef.current) { previewAudioRef.current.pause(); previewAudioRef.current = null; }
+    if (previewAudioTimerRef.current) { clearInterval(previewAudioTimerRef.current); previewAudioTimerRef.current = null; }
+    previewAudioCtxRef.current?.close(); previewAudioCtxRef.current = null; previewAnalyserRef.current = null;
+    setPreviewAudioPlaying(false); setPreviewAudioTime(0); setPreviewAudioDuration(0);
+    setPreviewAudioLoop(false);
+    setPreviewWaveformBars(new Array(64).fill(0));
   }
 
   const handleSectionDragEnd = (event: DragEndEvent) => {
@@ -623,20 +667,157 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
               </p>
             </div>
           ) : currentItemIsMedia ? (
-            <div className="flex-1 flex flex-col items-center justify-center text-center px-8 gap-3">
-              {/^Video:/i.test(currentItem!.title ?? '')
-                ? <Film className="h-12 w-12 text-muted-foreground" />
-                : <Volume2 className="h-12 w-12 text-muted-foreground" />
+            (() => {
+              const mediaPath = currentItem!.mediaPath ?? ''
+              const isVideo = /\.(mp4|webm|mov)$/i.test(mediaPath)
+              const isAudio = /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(mediaPath)
+              const filename = mediaPath.split('/').pop() ?? currentItem!.title ?? 'Media'
+              const ext = filename.split('.').pop()?.toUpperCase() ?? ''
+              const fmt = (s: number) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(Math.floor(s % 60)).padStart(2, '0')}`
+
+              if (isVideo) {
+                const pct = previewVideoDuration ? (previewVideoTime / previewVideoDuration) * 100 : 0
+                const handlePlay = () => {
+                  const v = previewVideoRef.current; if (!v) return
+                  v.play(); setPreviewVideoPlaying(true)
+                  if (previewVideoTimerRef.current) clearInterval(previewVideoTimerRef.current)
+                  previewVideoTimerRef.current = setInterval(() => setPreviewVideoTime(previewVideoRef.current?.currentTime ?? 0), 100)
+                }
+                const handlePause = () => { previewVideoRef.current?.pause(); setPreviewVideoPlaying(false); if (previewVideoTimerRef.current) { clearInterval(previewVideoTimerRef.current); previewVideoTimerRef.current = null } }
+                const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => { if (!previewVideoDuration || !previewVideoRef.current) return; const r = e.currentTarget.getBoundingClientRect(); previewVideoRef.current.currentTime = Math.max(0, Math.min(previewVideoDuration, ((e.clientX - r.left) / r.width) * previewVideoDuration)); setPreviewVideoTime(previewVideoRef.current.currentTime) }
+                const handleSkip = (d: number) => { if (!previewVideoRef.current) return; previewVideoRef.current.currentTime = Math.max(0, Math.min(previewVideoDuration, previewVideoRef.current.currentTime + d)); setPreviewVideoTime(previewVideoRef.current.currentTime) }
+                return (
+                  <>
+                    <div className="px-5 py-3 border-b border-border bg-card flex items-center justify-between gap-4 shrink-0">
+                      <div className="min-w-0">
+                        <h1 className="text-base font-semibold truncate">{currentItem!.title?.replace(/^Video:\s*/i, '') ?? filename}</h1>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
+                          <span>Video</span><span>·</span><span className="tabular-nums">{fmt(previewVideoDuration)}</span><span>·</span><span>{ext}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex-1 flex flex-col items-center justify-center p-8 bg-muted/20 overflow-y-auto">
+                      <div className="w-full max-w-2xl flex flex-col gap-5">
+                        <div className="relative rounded-xl overflow-hidden bg-black border border-border shadow-md" style={{ aspectRatio: '16/9' }}>
+                          <video ref={previewVideoRef} src={`file://${encodeURI(mediaPath)}`} className="w-full h-full object-cover" playsInline preload="auto"
+                            onLoadedMetadata={() => { const v = previewVideoRef.current; if (!v) return; setPreviewVideoDuration(v.duration); v.currentTime = 0.001 }}
+                            onEnded={() => { setPreviewVideoPlaying(false); setPreviewVideoTime(0); if (previewVideoTimerRef.current) { clearInterval(previewVideoTimerRef.current); previewVideoTimerRef.current = null } }} />
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                          <div className="relative flex items-center cursor-pointer group py-2" onClick={handleSeek}>
+                            <div className="w-full h-1.5 bg-secondary rounded-full relative">
+                              <div className="absolute left-0 top-0 h-full bg-primary rounded-full" style={{ width: `${pct}%` }} />
+                              <div className="absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-white border-2 border-primary rounded-full shadow-md -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity" style={{ left: `${pct}%` }} />
+                            </div>
+                          </div>
+                          <div className="flex justify-between text-[11px] text-muted-foreground tabular-nums px-0.5">
+                            <span>{fmt(previewVideoTime)}</span><span>{fmt(previewVideoDuration)}</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-center gap-5">
+                          <button onClick={() => handleSkip(-previewVideoDuration)} className="text-muted-foreground hover:text-foreground transition-colors"><SkipBack className="h-5 w-5" /></button>
+                          <button onClick={() => handleSkip(-10)} className="text-muted-foreground hover:text-foreground transition-colors text-[11px] font-bold w-8 text-center">−10s</button>
+                          <button onClick={previewVideoPlaying ? handlePause : handlePlay} className="w-14 h-14 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all shadow-lg">
+                            {previewVideoPlaying ? <Pause className="h-6 w-6 fill-current" /> : <Play className="h-6 w-6 fill-current ml-0.5" />}
+                          </button>
+                          <button onClick={() => handleSkip(10)} className="text-muted-foreground hover:text-foreground transition-colors text-[11px] font-bold w-8 text-center">+10s</button>
+                          <button onClick={() => handleSkip(previewVideoDuration)} className="text-muted-foreground hover:text-foreground transition-colors"><SkipForward className="h-5 w-5" /></button>
+                        </div>
+                        <p className="text-center text-[11px] text-muted-foreground">Preview with audio · playback will stop when going live</p>
+                      </div>
+                    </div>
+                  </>
+                )
               }
-              <div>
-                <p className="text-sm font-semibold text-foreground">
-                  {(currentItem!.title ?? '').replace(/^(Video|Audio|Image):\s*/i, "")}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {/^Video:/i.test(currentItem!.title ?? '') ? "Video file" : "Audio file"} · playback is controlled in the presenter
-                </p>
-              </div>
-            </div>
+
+              if (isAudio) {
+                const pct = previewAudioDuration ? (previewAudioTime / previewAudioDuration) * 100 : 0
+                const stopViz = () => { if (previewVizFrameRef.current) { cancelAnimationFrame(previewVizFrameRef.current); previewVizFrameRef.current = null } setPreviewWaveformBars(new Array(64).fill(0)) }
+                const startViz = () => {
+                  const analyser = previewAnalyserRef.current; if (!analyser) return
+                  const data = new Uint8Array(analyser.frequencyBinCount)
+                  const tick = () => { analyser.getByteFrequencyData(data); setPreviewWaveformBars(Array.from({ length: 64 }, (_, ii) => data[Math.floor((ii / 64) * data.length)] / 255)); previewVizFrameRef.current = requestAnimationFrame(tick) }
+                  previewVizFrameRef.current = requestAnimationFrame(tick)
+                }
+                const ensureAudio = () => {
+                  if (!previewAudioRef.current) {
+                    previewAudioRef.current = new Audio(`file://${encodeURI(mediaPath)}`)
+                    previewAudioRef.current.onloadedmetadata = () => setPreviewAudioDuration(previewAudioRef.current?.duration ?? 0)
+                    previewAudioRef.current.onended = () => { setPreviewAudioPlaying(false); setPreviewAudioTime(0); if (previewAudioTimerRef.current) { clearInterval(previewAudioTimerRef.current); previewAudioTimerRef.current = null } stopViz() }
+                    const ctx = new AudioContext(); const analyser = ctx.createAnalyser(); analyser.fftSize = 256
+                    ctx.createMediaElementSource(previewAudioRef.current).connect(analyser); analyser.connect(ctx.destination)
+                    previewAudioCtxRef.current = ctx; previewAnalyserRef.current = analyser
+                  }
+                  return previewAudioRef.current
+                }
+                const handlePlay = () => { const a = ensureAudio(); previewAudioCtxRef.current?.resume(); a.loop = previewAudioLoop; a.play(); setPreviewAudioPlaying(true); if (previewAudioTimerRef.current) clearInterval(previewAudioTimerRef.current); previewAudioTimerRef.current = setInterval(() => setPreviewAudioTime(previewAudioRef.current?.currentTime ?? 0), 100); startViz() }
+                const handlePause = () => { previewAudioRef.current?.pause(); setPreviewAudioPlaying(false); if (previewAudioTimerRef.current) { clearInterval(previewAudioTimerRef.current); previewAudioTimerRef.current = null } stopViz() }
+                const handleToggleLoop = () => { const next = !previewAudioLoop; setPreviewAudioLoop(next); if (previewAudioRef.current) previewAudioRef.current.loop = next; setMediaLoop(currentItem!.id, next) }
+                const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => { if (!previewAudioDuration || !previewAudioRef.current) return; const r = e.currentTarget.getBoundingClientRect(); previewAudioRef.current.currentTime = Math.max(0, Math.min(previewAudioDuration, ((e.clientX - r.left) / r.width) * previewAudioDuration)); setPreviewAudioTime(previewAudioRef.current.currentTime) }
+                const handleSkip = (d: number) => { if (!previewAudioRef.current) return; previewAudioRef.current.currentTime = Math.max(0, Math.min(previewAudioDuration, previewAudioRef.current.currentTime + d)); setPreviewAudioTime(previewAudioRef.current.currentTime) }
+                return (
+                  <>
+                    <div className="px-5 py-3 border-b border-border bg-card flex items-center justify-between gap-4 shrink-0">
+                      <div className="min-w-0">
+                        <h1 className="text-base font-semibold truncate">{currentItem!.title?.replace(/^Audio:\s*/i, '') ?? filename}</h1>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
+                          <span>Audio</span><span>·</span><span className="tabular-nums">{fmt(previewAudioDuration)}</span><span>·</span><span>{ext}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex-1 flex flex-col items-center justify-center p-8 bg-muted/20 overflow-y-auto">
+                      <div className="w-full max-w-2xl flex flex-col gap-6">
+                        <div className="relative rounded-xl overflow-hidden bg-black/70 border border-border/60" style={{ height: 160 }}>
+                          <div className="absolute inset-0 flex items-center gap-[2px] px-4 py-5">
+                            {previewWaveformBars.map((v, i) => (
+                              <div key={i} className="flex-1 flex flex-col" style={{ height: '100%' }}>
+                                <div className="flex-1 flex flex-col justify-end"><div className="w-full rounded-t-[1px] bg-primary" style={{ height: `${Math.max(3, v * 100)}%`, opacity: 0.85 }} /></div>
+                                <div className="flex-1 flex flex-col justify-start"><div className="w-full rounded-b-[1px] bg-primary" style={{ height: `${Math.max(3, v * 100) * 0.55}%`, opacity: 0.35 }} /></div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                          <div className="relative flex items-center cursor-pointer group py-2" onClick={handleSeek}>
+                            <div className="w-full h-1.5 bg-secondary rounded-full relative">
+                              <div className="absolute left-0 top-0 h-full bg-primary rounded-full" style={{ width: `${pct}%` }} />
+                              <div className="absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-white border-2 border-primary rounded-full shadow-md -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity" style={{ left: `${pct}%` }} />
+                            </div>
+                          </div>
+                          <div className="flex justify-between text-[11px] text-muted-foreground tabular-nums px-0.5">
+                            <span>{fmt(previewAudioTime)}</span><span>{fmt(previewAudioDuration)}</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-center gap-5">
+                          <button onClick={() => handleSkip(-previewAudioDuration)} className="text-muted-foreground hover:text-foreground transition-colors"><SkipBack className="h-5 w-5" /></button>
+                          <button onClick={() => handleSkip(-10)} className="text-muted-foreground hover:text-foreground transition-colors text-[11px] font-bold w-8 text-center">−10s</button>
+                          <button onClick={previewAudioPlaying ? handlePause : handlePlay} className="w-14 h-14 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all shadow-lg">
+                            {previewAudioPlaying ? <Pause className="h-6 w-6 fill-current" /> : <Play className="h-6 w-6 fill-current ml-0.5" />}
+                          </button>
+                          <button onClick={() => handleSkip(10)} className="text-muted-foreground hover:text-foreground transition-colors text-[11px] font-bold w-8 text-center">+10s</button>
+                          <button onClick={() => handleSkip(previewAudioDuration)} className="text-muted-foreground hover:text-foreground transition-colors"><SkipForward className="h-5 w-5" /></button>
+                          <button onClick={handleToggleLoop} title={previewAudioLoop ? "Loop on" : "Loop off"} className={`transition-colors ${previewAudioLoop ? "text-primary" : "text-muted-foreground hover:text-foreground"}`}>
+                            <Repeat className="h-5 w-5" />
+                          </button>
+                        </div>
+                        <p className="text-center text-[11px] text-muted-foreground">Preview only · loop setting carries over to the presenter</p>
+                      </div>
+                    </div>
+                  </>
+                )
+              }
+
+              // Image media
+              return (
+                <div className="flex-1 flex flex-col items-center justify-center text-center px-8 gap-3">
+                  <ImageIcon className="h-12 w-12 text-muted-foreground" />
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">{currentItem!.title?.replace(/^Image:\s*/i, '') ?? filename}</p>
+                    <p className="text-xs text-muted-foreground mt-1">Image · shown on screen when selected in presenter</p>
+                  </div>
+                </div>
+              )
+            })()
           ) : currentItem?.itemType === 'scripture' ? (
             <>
               <div className="px-6 pt-5 pb-4 border-b border-border shrink-0">

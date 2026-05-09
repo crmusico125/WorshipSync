@@ -61,6 +61,8 @@ interface ServiceStore {
   removeSongFromLineup: (lineupItemId: number) => Promise<void>
   toggleSection: (lineupItemId: number, sectionId: number, included: boolean) => Promise<void>
   reorderLineup: (orderedIds: number[]) => Promise<void>
+  mediaLoopPrefs: Record<number, boolean>
+  setMediaLoop: (lineupItemId: number, loop: boolean) => void
 }
 
 export const useServiceStore = create<ServiceStore>((set, get) => ({
@@ -68,6 +70,8 @@ export const useServiceStore = create<ServiceStore>((set, get) => ({
   selectedService: null,
   lineup: [],
   loading: false,
+  mediaLoopPrefs: {},
+  setMediaLoop: (lineupItemId, loop) => set(state => ({ mediaLoopPrefs: { ...state.mediaLoopPrefs, [lineupItemId]: loop } })),
 
   loadServices: async () => {
     set({ loading: true })

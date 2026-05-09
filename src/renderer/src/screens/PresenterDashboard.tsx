@@ -182,6 +182,7 @@ export default function PresenterDashboard({
     addCountdownToLineup,
     addScriptureToLineup,
     addMediaToLineup,
+    mediaLoopPrefs,
   } = useServiceStore();
 
   const [liveSongs, setLiveSongs] = useState<LiveSong[]>([]);
@@ -910,6 +911,17 @@ export default function PresenterDashboard({
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Sync audioLoop from builder preference when selecting an audio item
+  useEffect(() => {
+    const song = liveSongs[selectedSongIdx];
+    if (song?.itemType === "media" && /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(song.mediaPath ?? "")) {
+      const saved = mediaLoopPrefs[song.lineupItemId] ?? false;
+      setAudioLoop(saved);
+      if (audioRef.current) audioRef.current.loop = saved;
+      if (_audio.el) _audio.el.loop = saved;
+    }
+  }, [selectedSongIdx, liveSongs, mediaLoopPrefs]);
 
   // When the selected item changes, stop viz/timer if leaving audio; reconnect if returning
   useEffect(() => {

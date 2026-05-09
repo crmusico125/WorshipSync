@@ -1776,14 +1776,14 @@ export default function PresenterDashboard({
             <div className="shrink-0 border-b border-border bg-card px-4 py-3">
               <div className="flex gap-3">
                 {/* LIVE */}
-                <div className="flex-1 flex flex-col gap-1.5 min-w-0">
+                <div className="flex-[72] flex flex-col gap-1.5 min-w-0">
                   <div className="flex items-center gap-1.5">
                     <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse" />
                     <span className="text-[10px] font-bold text-red-400 tracking-wider">LIVE: AUDIENCE</span>
                     <span className="flex-1" />
                     {currentSlide && <span className="text-[10px] text-muted-foreground">{currentSlide.sectionLabel}</span>}
                   </div>
-                  <div className="relative overflow-hidden rounded-md border-2 border-red-500/60 bg-black" style={{ aspectRatio: "16/9" }}>
+                  <div className="relative overflow-hidden rounded-md border-2 border-red-500/60 bg-black" style={{ aspectRatio: "16/9", containerType: "inline-size" }}>
                     {!isLogo && effectiveBg && currentSlide && !isBlank && (
                       effectiveBg.startsWith("color:") ? (
                         <div className="absolute inset-0" style={{ background: effectiveBg.replace("color:", "") }} />
@@ -1804,8 +1804,8 @@ export default function PresenterDashboard({
                           </span>
                         </div>
                       ) : currentSlide && !isBlank ? (
-                        <p className="text-center font-bold text-[18px] leading-snug whitespace-pre-wrap relative z-10 w-full"
-                          style={{ color: effectiveTheme.textColor, fontFamily: effectiveTheme.fontFamily, textAlign: effectiveTheme.textAlign, textShadow: effectiveTheme.textShadowOpacity > 0 ? `0 1px 3px rgba(0,0,0,${effectiveTheme.textShadowOpacity / 100})` : "none" }}>
+                        <p className="text-center font-bold leading-snug whitespace-pre-wrap relative z-10 w-full"
+                          style={{ fontSize: "5cqw", color: effectiveTheme.textColor, fontFamily: effectiveTheme.fontFamily, textAlign: effectiveTheme.textAlign, textShadow: effectiveTheme.textShadowOpacity > 0 ? `0 1px 3px rgba(0,0,0,${effectiveTheme.textShadowOpacity / 100})` : "none" }}>
                           {isTextCleared ? "" : currentSlide.lines.join("\n")}
                         </p>
                       ) : (
@@ -1816,7 +1816,7 @@ export default function PresenterDashboard({
                 </div>
 
                 {/* NEXT */}
-                <div className="flex-1 flex flex-col gap-1.5 min-w-0">
+                <div className="flex-[28] flex flex-col gap-1.5 min-w-0 opacity-75">
                   <div className="flex items-center gap-1.5">
                     <span className="text-[10px] font-bold text-green-400 tracking-wider">NEXT</span>
                     <span className="flex-1" />
@@ -1831,7 +1831,7 @@ export default function PresenterDashboard({
                     const nextUpTheme = nextUpSong ? resolveTheme(nextUpSong) : effectiveTheme;
                     const nextUpBg = nextUpSong ? resolveBg(nextUpSong) : effectiveBg;
                     return (
-                      <div className="relative overflow-hidden rounded-md border-2 border-green-500/50 bg-black" style={{ aspectRatio: "16/9" }}>
+                      <div className="relative overflow-hidden rounded-md border-2 border-green-500/50 bg-black" style={{ aspectRatio: "16/9", containerType: "inline-size" }}>
                         {nextUpBg && nextUp && nextUp.slide.sectionType !== "blank" && (
                           nextUpBg.startsWith("color:") ? (
                             <div className="absolute inset-0" style={{ background: nextUpBg.replace("color:", "") }} />
@@ -1844,8 +1844,8 @@ export default function PresenterDashboard({
                         )}
                         <div className="absolute inset-0 flex items-center justify-center px-3">
                           {nextUp && nextUp.slide.sectionType !== "blank" ? (
-                            <p className="text-center font-bold text-[18px] leading-snug whitespace-pre-wrap relative z-10 w-full"
-                              style={{ color: nextUpTheme.textColor, fontFamily: nextUpTheme.fontFamily, textAlign: nextUpTheme.textAlign }}>
+                            <p className="text-center font-bold leading-snug whitespace-pre-wrap relative z-10 w-full"
+                              style={{ fontSize: "5cqw", color: nextUpTheme.textColor, fontFamily: nextUpTheme.fontFamily, textAlign: nextUpTheme.textAlign }}>
                               {nextUp.slide.lines.join("\n") || ""}
                             </p>
                           ) : (

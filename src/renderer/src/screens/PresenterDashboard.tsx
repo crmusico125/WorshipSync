@@ -31,6 +31,7 @@ import {
   SkipBack,
   SkipForward,
   Megaphone,
+  Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useServiceStore, type ServiceDate } from "../store/useServiceStore";
@@ -220,6 +221,21 @@ export default function PresenterDashboard({
   const [confidenceOpen, setConfidenceOpen] = useState(false);
   const [selectedConfidenceDisplayId, setSelectedConfidenceDisplayId] = useState<number | undefined>(undefined);
   const slideGridRef = useRef<HTMLDivElement>(null);
+
+  // ── Run-of-show inline search ────────────────────────────────────────────
+  const [rosSearch, setRosSearch] = useState("")
+  const [rosResults, setRosResults] = useState<{ id: number; title: string; artist: string }[]>([])
+  const rosSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const handleRosSearch = useCallback((q: string) => {
+    setRosSearch(q)
+    if (rosSearchTimer.current) clearTimeout(rosSearchTimer.current)
+    if (!q.trim()) { setRosResults([]); return }
+    rosSearchTimer.current = setTimeout(async () => {
+      const results = await window.worshipsync.songs.search(q)
+      setRosResults(results as { id: number; title: string; artist: string }[])
+    }, 200)
+  }, [])
 
   // ── Service switcher ─────────────────────────────────────────────────────
   const [showSwitcher, setShowSwitcher] = useState(false);
@@ -1301,6 +1317,53 @@ export default function PresenterDashboard({
           <button onClick={() => setShowLibrary(true)} className="text-[10px] text-muted-foreground hover:text-foreground transition-colors font-medium">+ Add</button>
         </div>
 
+        {/* Inline song search */}
+        <div className="px-2 py-2 border-b border-border shrink-0">
+          <div className="relative">
+            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
+            <input
+              value={rosSearch}
+              onChange={e => handleRosSearch(e.target.value)}
+              placeholder="Quick-add song…"
+              className="w-full pl-6 pr-6 py-1.5 text-xs bg-input border border-border rounded focus:outline-none focus:border-primary/50 transition-colors placeholder:text-muted-foreground/50"
+            />
+            {rosSearch && (
+              <button
+                onClick={() => { setRosSearch(""); setRosResults([]); }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
+          </div>
+          {rosResults.length > 0 && (
+            <div className="mt-1.5 border border-border rounded-md bg-background shadow-lg overflow-hidden">
+              {rosResults.slice(0, 6).map(song => (
+                <button
+                  key={song.id}
+                  onClick={async () => {
+                    await addSongToLineup(song.id)
+                    setRosSearch("")
+                    setRosResults([])
+                    setSelectedSongIdx(liveSongs.length)
+                  }}
+                  className="w-full flex items-center gap-2 px-2.5 py-2 hover:bg-accent/40 transition-colors border-b border-border last:border-0 text-left"
+                >
+                  <Music className="h-3 w-3 text-muted-foreground shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[11px] font-medium truncate">{song.title}</p>
+                    <p className="text-[10px] text-muted-foreground truncate">{song.artist || "Unknown"}</p>
+                  </div>
+                  <Plus className="h-3 w-3 text-primary shrink-0" />
+                </button>
+              ))}
+            </div>
+          )}
+          {rosSearch.trim() && rosResults.length === 0 && (
+            <p className="text-[10px] text-muted-foreground mt-1.5 px-1">No songs found</p>
+          )}
+        </div>
+
         <div className="flex-1 overflow-y-auto">
           {liveSongs.map((song, i) => {
             const isCurrent = selectedSongIdx === i;
@@ -1937,11 +2000,18 @@ export default function PresenterDashboard({
                   ))}
                 </div>
               </div>
-              {currentSong.itemType === "song" && (
-                <Button size="sm" className="h-7 text-xs gap-1 px-2 shrink-0" onClick={handleOpenEditLyrics}>
-                  <Pencil className="h-3 w-3" /> Lyrics
-                </Button>
-              )}
+              <div className="flex items-center gap-2 shrink-0">
+                {activeSlideIdx >= 0 && currentSong.slides.length > 1 && (
+                  <span className="text-[10px] tabular-nums text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
+                    {activeSlideIdx + 1} / {currentSong.slides.filter(s => s.sectionType !== "blank").length}
+                  </span>
+                )}
+                {currentSong.itemType === "song" && (
+                  <Button size="sm" className="h-7 text-xs gap-1 px-2" onClick={handleOpenEditLyrics}>
+                    <Pencil className="h-3 w-3" /> Lyrics
+                  </Button>
+                )}
+              </div>
             </div>
 
             {/* Slide grid — 4 columns */}
@@ -2011,33 +2081,62 @@ export default function PresenterDashboard({
       {/* ═════ RIGHT: Controls Panel (280px) ═════ */}
       <div className="w-[280px] shrink-0 border-l border-border flex flex-col bg-card overflow-hidden">
 
-        {/* Quick Actions — 2×2 grid */}
-        <div className="p-4 border-b border-border shrink-0">
-          <h3 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2.5">Quick Actions</h3>
-          <div className="grid grid-cols-2 gap-2">
+        {/* TO BLACK — primary safety button */}
+        <div className="p-3 border-b border-border shrink-0">
+          {isBlank ? (
             <button
-              onClick={() => { if (isBlank) { if (activeSlideIdx >= 0) sendSlide(selectedSongIdx, activeSlideIdx); else { window.worshipsync.slide.blank(false); setIsBlank(false); } } else { toBlack(); } }}
-              className={`py-2.5 px-3 rounded-md text-xs font-semibold border transition-colors text-left ${isBlank ? "bg-zinc-800 text-white border-zinc-600" : "bg-background border-border hover:bg-accent/40 text-foreground"}`}
+              onClick={() => {
+                if (activeSlideIdx >= 0) sendSlide(selectedSongIdx, activeSlideIdx);
+                else { window.worshipsync.slide.blank(false); setIsBlank(false); }
+              }}
+              className="w-full py-3 rounded-lg text-sm font-bold flex items-center gap-2.5 px-3.5 transition-all bg-amber-500/15 border border-amber-500/50 text-amber-300 hover:bg-amber-500/25"
             >
-              {isBlank ? "Unblank" : "To Black"}
+              <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
+              <span>Screen Blanked</span>
+              <span className="ml-auto text-[10px] font-semibold bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded">Unblank [B]</span>
             </button>
+          ) : (
+            <button
+              onClick={toBlack}
+              className="w-full py-3 rounded-lg text-sm font-bold flex items-center gap-2.5 px-3.5 transition-all bg-background border border-border text-muted-foreground hover:bg-zinc-800 hover:text-white hover:border-zinc-600"
+            >
+              <MonitorOff className="h-4 w-4 shrink-0" />
+              <span>To Black</span>
+              <span className="ml-auto text-[10px] font-normal opacity-40">[B]</span>
+            </button>
+          )}
+        </div>
+
+        {/* Quick Actions — 3-up row */}
+        <div className="p-3 border-b border-border shrink-0">
+          <h3 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">Quick Actions</h3>
+          <div className="grid grid-cols-3 gap-1.5">
             <button
               onClick={clearText}
-              className={`py-2.5 px-3 rounded-md text-xs font-semibold border transition-colors text-left ${isTextCleared ? "bg-primary/20 text-primary border-primary/40" : "bg-background border-border hover:bg-accent/40 text-foreground"}`}
+              className={`py-2 px-2 rounded-md text-[11px] font-semibold border transition-colors text-center ${isTextCleared ? "bg-primary/20 text-primary border-primary/40" : "bg-background border-border hover:bg-accent/40 text-foreground"}`}
             >
-              {isTextCleared ? "Restore Text" : "Clear Text"}
+              {isTextCleared ? "Restore" : "Clear Text"}
             </button>
             <button
               onClick={clearAll}
-              className="py-2.5 px-3 rounded-md text-xs font-semibold border border-border bg-background hover:bg-accent/40 text-foreground transition-colors text-left"
+              className="py-2 px-2 rounded-md text-[11px] font-semibold border border-border bg-background hover:bg-accent/40 text-foreground transition-colors text-center"
             >
               Clear All
             </button>
             <button
-              onClick={showLogo}
-              className="py-2.5 px-3 rounded-md text-xs font-semibold border border-border bg-background hover:bg-accent/40 text-foreground transition-colors text-left"
+              onClick={() => {
+                if (isLogo) {
+                  window.worshipsync.slide.logo(false);
+                  setIsLogo(false);
+                  window.worshipsync.slide.blank(true);
+                  setIsBlank(true);
+                } else {
+                  showLogo();
+                }
+              }}
+              className={`py-2 px-2 rounded-md text-[11px] font-semibold border transition-colors text-center ${isLogo ? "bg-amber-500/20 text-amber-400 border-amber-500/40" : "bg-background border-border hover:bg-accent/40 text-foreground"}`}
             >
-              Show Logo
+              {isLogo ? "Hide Logo" : "Show Logo"}
             </button>
           </div>
         </div>

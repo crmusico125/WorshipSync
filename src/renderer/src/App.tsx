@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react"
+import React, { useEffect, useState, useCallback, useRef } from "react"
 import type { AppScreen } from "../../../shared/types"
 import type { ServiceMode } from "./screens/ServiceScreen"
 import Sidebar from "./components/layout/Sidebar"
@@ -17,6 +17,9 @@ export default function App() {
   const [projectionOpen, setProjectionOpen] = useState(false)
   const [activeServiceId, setActiveServiceId] = useState<number | null>(null)
   const [serviceLaunchMode, setServiceLaunchMode] = useState<ServiceMode>("prepare")
+  const [liveRuntime, setLiveRuntime] = useState("00:00:00")
+  const liveStartRef = useRef<number>(0)
+  const liveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Reset projectionOpen when the user closes the projection window from the OS
   useEffect(() => {
@@ -25,6 +28,26 @@ export default function App() {
     })
     return cleanup
   }, [])
+
+  // Track live runtime globally so any screen can show the live bar
+  useEffect(() => {
+    if (projectionOpen) {
+      liveStartRef.current = Date.now()
+      setLiveRuntime("00:00:00")
+      liveIntervalRef.current = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - liveStartRef.current) / 1000)
+        const h = Math.floor(elapsed / 3600)
+        const m = Math.floor((elapsed % 3600) / 60)
+        const s = elapsed % 60
+        const pad = (n: number) => String(n).padStart(2, "0")
+        setLiveRuntime(`${pad(h)}:${pad(m)}:${pad(s)}`)
+      }, 1000)
+    } else {
+      if (liveIntervalRef.current) clearInterval(liveIntervalRef.current)
+      setLiveRuntime("00:00:00")
+    }
+    return () => { if (liveIntervalRef.current) clearInterval(liveIntervalRef.current) }
+  }, [projectionOpen])
 
   // On startup, restore last active service
   useEffect(() => {
@@ -92,15 +115,36 @@ export default function App() {
         onReturnToLive={() => setCurrentScreen("service")}
       />
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Draggable title bar region */}
-        <div
-          className="h-8 shrink-0 bg-card border-b border-border flex items-center px-4"
-          style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
-        >
-          <span className="text-[11px] font-medium text-muted-foreground">
-            {currentScreen === "service" ? "" : currentScreen.charAt(0).toUpperCase() + currentScreen.slice(1)}
-          </span>
-        </div>
+        {/* Title bar / persistent live indicator */}
+        {projectionOpen && currentScreen !== "service" ? (
+          <div
+            className="h-8 shrink-0 border-b border-red-900/50 bg-red-950/40 flex items-center px-4 gap-3"
+            style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
+          >
+            <span className="flex items-center gap-1.5 shrink-0" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
+              <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse" />
+              <span className="text-[11px] font-bold text-red-400 tracking-widest">LIVE</span>
+              <span className="text-[11px] text-red-300/60 tabular-nums ml-1">{liveRuntime}</span>
+            </span>
+            <div className="flex-1" />
+            <button
+              onClick={() => setCurrentScreen("service")}
+              style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+              className="text-[11px] font-semibold text-red-300 hover:text-white bg-red-600/30 hover:bg-red-600/60 px-2.5 py-0.5 rounded transition-colors"
+            >
+              Return to Stage →
+            </button>
+          </div>
+        ) : (
+          <div
+            className="h-8 shrink-0 bg-card border-b border-border flex items-center px-4"
+            style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
+          >
+            <span className="text-[11px] font-medium text-muted-foreground">
+              {currentScreen === "service" ? "" : currentScreen.charAt(0).toUpperCase() + currentScreen.slice(1)}
+            </span>
+          </div>
+        )}
         <div className="flex-1 overflow-hidden">
           {currentScreen === "overview" && (
             <OverviewScreen

@@ -35,6 +35,9 @@ const NAV_TOP: NavItem[] = [
   { id: "analytics",icon: BarChart3,       label: "Analytics"},
 ];
 
+// Nav items that are non-essential during a live show
+const LIVE_DIMMED: AppScreen[] = ["library", "media", "themes", "analytics"]
+
 export default function Sidebar({ current, onChange, projectionOpen: _projectionOpen, isLive, onReturnToLive }: Props) {
   return (
     <nav className="w-[64px] shrink-0 bg-sidebar border-r border-border flex flex-col items-center">
@@ -43,7 +46,7 @@ export default function Sidebar({ current, onChange, projectionOpen: _projection
         className="w-full flex items-center justify-center pt-12 pb-4 text-sidebar-foreground"
         style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
       >
-        <Church className="h-6 w-6" />
+        <Church className={`h-6 w-6 transition-opacity ${isLive ? "opacity-30" : ""}`} />
       </div>
 
       {/* Nav icons */}
@@ -53,6 +56,7 @@ export default function Sidebar({ current, onChange, projectionOpen: _projection
       >
         {NAV_TOP.map((item) => {
           const isActive = current === item.id;
+          const isDimmed = isLive && LIVE_DIMMED.includes(item.id);
           const Icon = item.icon;
           return (
             <button
@@ -62,7 +66,9 @@ export default function Sidebar({ current, onChange, projectionOpen: _projection
               className={`w-10 h-10 flex items-center justify-center rounded-lg transition-all ${
                 isActive
                   ? "bg-sidebar-primary text-sidebar-primary-foreground"
-                  : "text-muted-foreground hover:text-foreground hover:bg-sidebar-primary/50"
+                  : isDimmed
+                    ? "text-muted-foreground/30 hover:text-muted-foreground hover:bg-sidebar-primary/30"
+                    : "text-muted-foreground hover:text-foreground hover:bg-sidebar-primary/50"
               }`}
             >
               <Icon className="h-5 w-5" />
@@ -76,7 +82,7 @@ export default function Sidebar({ current, onChange, projectionOpen: _projection
         {isLive && (
           <button
             onClick={onReturnToLive}
-            title="Return to Live"
+            title="Return to Stage"
             className="w-10 h-10 flex items-center justify-center rounded-lg bg-red-600 hover:bg-red-500 text-white transition-all relative"
           >
             <Radio className="h-5 w-5" />
@@ -89,7 +95,9 @@ export default function Sidebar({ current, onChange, projectionOpen: _projection
           className={`w-10 h-10 flex items-center justify-center rounded-lg transition-all ${
             current === "settings"
               ? "bg-sidebar-primary text-sidebar-primary-foreground"
-              : "text-muted-foreground hover:text-foreground hover:bg-sidebar-primary/50"
+              : isLive
+                ? "text-muted-foreground/30 hover:text-muted-foreground hover:bg-sidebar-primary/30"
+                : "text-muted-foreground hover:text-foreground hover:bg-sidebar-primary/50"
           }`}
         >
           <Settings className="h-5 w-5" />

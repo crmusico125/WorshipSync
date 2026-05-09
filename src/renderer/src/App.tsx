@@ -49,23 +49,37 @@ export default function App() {
     return () => { if (liveIntervalRef.current) clearInterval(liveIntervalRef.current) }
   }, [projectionOpen])
 
-  // On startup, restore last active service
+  // On startup: prefer today's service, fall back to last used service
   useEffect(() => {
-    window.worshipsync.appState.get()
-      .then(async (state: Record<string, any>) => {
-        if (state.lastServiceId) {
-          const { loadServices, selectService } = useServiceStore.getState()
-          await loadServices()
-          const lastService = useServiceStore.getState().services.find(
-            (s) => s.id === state.lastServiceId,
-          )
-          if (lastService) {
-            await selectService(lastService)
-            setActiveServiceId(lastService.id)
-          }
+    const init = async () => {
+      const { loadServices, selectService } = useServiceStore.getState()
+      await loadServices()
+      const services = useServiceStore.getState().services
+
+      // Priority 1: a service scheduled for today — auto-select and open it
+      const todayResult = await window.worshipsync.appState.getTodayService().catch(() => null)
+      if (todayResult && todayResult.daysAway === 0) {
+        const svc = services.find((s) => s.id === todayResult.service.id)
+        if (svc) {
+          await selectService(svc)
+          setActiveServiceId(svc.id)
+          setCurrentScreen("service")
+          window.worshipsync.appState.set({ lastServiceId: svc.id })
+          return
         }
-      })
-      .catch(() => {})
+      }
+
+      // Priority 2: last service the operator had open
+      const state = await window.worshipsync.appState.get().catch(() => ({} as Record<string, any>))
+      if (state.lastServiceId) {
+        const lastService = services.find((s) => s.id === state.lastServiceId)
+        if (lastService) {
+          await selectService(lastService)
+          setActiveServiceId(lastService.id)
+        }
+      }
+    }
+    init().catch(() => {})
   }, [])
 
   // Open a service in prepare (builder) mode

@@ -2016,7 +2016,7 @@ export default function PresenterDashboard({
 
             {/* Slide grid — 4 columns */}
             <div ref={slideGridRef} className="flex-1 overflow-y-auto p-3">
-              <div className="grid grid-cols-4 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 {currentSong.slides.map((slide, i) => {
                   const isActive = activeSlideIdx === i;
                   const isNextSlide = activeSlideIdx >= 0 && i === activeSlideIdx + 1;

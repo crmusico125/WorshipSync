@@ -903,6 +903,37 @@ ipcMain.handle('lineup:addScripture', (_e, serviceDateId: number, data: {
   return item
 })
 
+ipcMain.handle('lineup:addAnnouncement', (_e, serviceDateId: number, data: {
+  title: string
+  content: string
+}) => {
+  const existing = db.select().from(lineupItems)
+    .where(eq(lineupItems.serviceDateId, serviceDateId))
+    .all()
+  const [item] = db.insert(lineupItems).values({
+    serviceDateId,
+    orderIndex: existing.length,
+    itemType: 'announcement',
+    selectedSections: '[]',
+    title: data.title,
+    scriptureRef: data.content,
+  }).returning().all()
+  return item
+})
+
+ipcMain.handle('lineup:updateAnnouncement', (_e, lineupItemId: number, data: {
+  title?: string
+  content?: string
+}) => {
+  if (data.title !== undefined) {
+    db.update(lineupItems).set({ title: data.title }).where(eq(lineupItems.id, lineupItemId)).run()
+  }
+  if (data.content !== undefined) {
+    db.update(lineupItems).set({ scriptureRef: data.content }).where(eq(lineupItems.id, lineupItemId)).run()
+  }
+  return true
+})
+
 ipcMain.handle('lineup:addMedia', (_e, serviceDateId: number, data: {
   title: string
   mediaPath: string
@@ -974,6 +1005,14 @@ ipcMain.handle('lineup:setNotes', (_e, lineupItemId: number, notes: string) => {
 ipcMain.handle('lineup:setOverrideBg', (_e, lineupItemId: number, path: string | null) => {
   db.update(lineupItems)
     .set({ overrideBackgroundPath: path || null })
+    .where(eq(lineupItems.id, lineupItemId))
+    .run()
+  return true
+})
+
+ipcMain.handle('lineup:setItemStyle', (_e, lineupItemId: number, style: string) => {
+  db.update(lineupItems)
+    .set({ itemStyle: style })
     .where(eq(lineupItems.id, lineupItemId))
     .run()
   return true

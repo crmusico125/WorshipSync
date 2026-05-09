@@ -53,6 +53,7 @@ export const lineupItems = sqliteTable('lineup_items', {
   scriptureRef:           text('scripture_ref'),
   mediaPath:              text('media_path'),
   sectionOrder:           text('section_order'),
+  itemStyle:              text('item_style'),
 })
 
 // ── Themes ────────────────────────────────────────────────────────────────────

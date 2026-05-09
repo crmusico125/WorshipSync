@@ -181,6 +181,17 @@ export function runMigrations(): void {
     console.error('[db] migration error (lineup_items first-class types):', e)
   }
 
+  // ── Migration: add item_style column to lineup_items ────────────────────
+  try {
+    const colsStyle = sqlite.prepare("PRAGMA table_info(lineup_items)").all() as { name: string }[]
+    if (!colsStyle.some(c => c.name === 'item_style')) {
+      sqlite.exec(`ALTER TABLE lineup_items ADD COLUMN item_style TEXT`)
+      console.log('[db] migration: added item_style column to lineup_items')
+    }
+  } catch (e) {
+    console.error('[db] migration error (lineup_items item_style):', e)
+  }
+
   // ── Migration: add section_order column to lineup_items ─────────────────
   try {
     const cols4 = sqlite.prepare("PRAGMA table_info(lineup_items)").all() as { name: string }[]

@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo, useRef } from "react"
 import {
   Plus, BookOpen, Trash2, Pencil,
   Radio, Eye, Music2, Calendar, Image as ImageIcon,
-  Monitor, Timer, GripVertical, X,
+  Monitor, Timer, GripVertical, X, Megaphone,
   Play, Pause, SkipBack, SkipForward, Repeat,
 } from "lucide-react"
 import {
@@ -114,6 +114,36 @@ function sectionsToLyrics(sections: { label: string; lyrics: string }[]): string
   return sections.map(s => `[${s.label}]\n${s.lyrics}`).join("\n\n")
 }
 
+// ── Announcement style ────────────────────────────────────────────────────────
+
+interface AnnouncementStyle {
+  fontSize: number
+  fontWeight: string
+  textColor: string
+  textAlign: 'left' | 'center' | 'right'
+}
+
+const DEFAULT_ANNOUNCEMENT_STYLE: AnnouncementStyle = {
+  fontSize: 48,
+  fontWeight: '600',
+  textColor: '#ffffff',
+  textAlign: 'center',
+}
+
+const ANNOUNCEMENT_FONT_SIZES = [
+  { label: 'S', value: 32 },
+  { label: 'M', value: 48 },
+  { label: 'L', value: 64 },
+  { label: 'XL', value: 80 },
+]
+
+const ANNOUNCEMENT_COLORS = ['#ffffff', '#fef08a', '#93c5fd', '#86efac', '#fca5a5', '#e879f9']
+
+function parseAnnouncementStyle(json: string | null | undefined): AnnouncementStyle {
+  if (!json) return DEFAULT_ANNOUNCEMENT_STYLE
+  try { return { ...DEFAULT_ANNOUNCEMENT_STYLE, ...JSON.parse(json) } } catch { return DEFAULT_ANNOUNCEMENT_STYLE }
+}
+
 // ── Duration helpers ─────────────────────────────────────────────────────────
 
 function estimateDuration(item: LineupItemWithSong, themeCache: Record<number, any>): number {
@@ -157,7 +187,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
     addScriptureToLineup, addMediaToLineup,
     removeSongFromLineup, loadServices, selectService,
     services, reorderLineup, updateStatus, updateService,
-    patchLineupItemSectionOrder, setMediaLoop,
+    patchLineupItemSectionOrder, setMediaLoop, addAnnouncementToLineup,
   } = useServiceStore()
   const { loadSongs } = useSongStore()
 
@@ -171,6 +201,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
   const notesTimers = useRef<Record<number, ReturnType<typeof setTimeout>>>({})
   const themeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingThemeRef = useRef<Partial<ThemeStyle>>({})
+  const announcementTimers = useRef<{ title?: ReturnType<typeof setTimeout>; content?: ReturnType<typeof setTimeout> }>({})
 
   // Media preview (builder — local only, no projection)
   const [previewVideoPlaying, setPreviewVideoPlaying] = useState(false)
@@ -598,18 +629,20 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
                     const isCountdown = item.itemType === 'countdown'
                     const isScripture = item.itemType === 'scripture'
                     const isMedia = item.itemType === 'media'
+                    const isAnnouncement = item.itemType === 'announcement'
                     return (
                       <SortableLineupItem
                         key={item.id}
                         id={item.id}
                         index={i}
                         isSelected={isSelected}
-                        title={isCountdown ? "Countdown Timer" : isScripture || isMedia ? item.title ?? "—" : item.song?.title ?? "—"}
+                        title={isCountdown ? "Countdown Timer" : isScripture || isMedia || isAnnouncement ? item.title ?? "—" : item.song?.title ?? "—"}
                         subtitle={(() => {
                           const dur = fmtDur(estimateDuration(item, themeCache))
                           const base = isCountdown ? "Countdown"
                             : isScripture ? "Scripture"
                             : isMedia ? "Media"
+                            : isAnnouncement ? "Announcement"
                             : `${item.song?.artist || "Unknown"}${item.song?.key ? ` · ${item.song.key}` : ""}`
                           return dur ? `${base} · ${dur}` : base
                         })()}
@@ -648,6 +681,17 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
               >
                 <Plus className="h-3.5 w-3.5" /> Create new song
               </Button>
+              <Button
+                variant="ghost" size="sm"
+                className="w-full gap-1.5 h-8 text-xs text-muted-foreground hover:text-foreground"
+                onClick={async () => {
+                  const newIdx = lineup.length
+                  await addAnnouncementToLineup({ title: 'Announcement', content: '' })
+                  setSelectedSongIdx(newIdx)
+                }}
+              >
+                <Megaphone className="h-3.5 w-3.5" /> Add announcement
+              </Button>
             </div>
           )}
         </div>
@@ -666,6 +710,154 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
                 The countdown must be started manually in the Presenter screen to avoid accidental projection.
               </p>
             </div>
+          ) : currentItem?.itemType === 'announcement' ? (
+            <>
+              <div className="px-5 py-3 border-b border-border bg-card flex items-center gap-3 shrink-0">
+                <Megaphone className="h-4 w-4 text-muted-foreground shrink-0" />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Announcement</span>
+              </div>
+              <div className="flex-1 overflow-y-auto p-5 bg-muted/10">
+                <div className="max-w-2xl flex flex-col gap-4">
+                  {/* Title */}
+                  <div>
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1.5">Title</label>
+                    <input
+                      type="text"
+                      defaultValue={currentItem.title ?? ''}
+                      readOnly={isPast}
+                      placeholder="e.g. This Sunday's Events"
+                      onChange={(e) => {
+                        const val = e.target.value
+                        clearTimeout(announcementTimers.current.title)
+                        announcementTimers.current.title = setTimeout(() => {
+                          window.worshipsync.lineup.updateAnnouncement(currentItem.id, { title: val })
+                            .then(() => { if (selectedService) loadLineup(selectedService.id) })
+                        }, 600)
+                      }}
+                      className="w-full h-9 px-3 text-sm bg-background border border-border rounded-md outline-none focus:border-primary/50 transition-colors placeholder:text-muted-foreground/40"
+                    />
+                  </div>
+                  {/* Content */}
+                  <div>
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1.5">Content</label>
+                    <textarea
+                      defaultValue={currentItem.scriptureRef ?? ''}
+                      readOnly={isPast}
+                      rows={8}
+                      placeholder={"Sunday 6pm — Youth Night\nMonday 7pm — Prayer Meeting\n\nVisit worshipsync.com for more info"}
+                      onChange={(e) => {
+                        const val = e.target.value
+                        clearTimeout(announcementTimers.current.content)
+                        announcementTimers.current.content = setTimeout(() => {
+                          window.worshipsync.lineup.updateAnnouncement(currentItem.id, { content: val })
+                            .then(() => { if (selectedService) loadLineup(selectedService.id) })
+                        }, 600)
+                      }}
+                      className="w-full px-3 py-2.5 text-sm bg-background border border-border rounded-md outline-none focus:border-primary/50 transition-colors resize-none placeholder:text-muted-foreground/40 leading-relaxed"
+                    />
+                    <p className="text-[10px] text-muted-foreground mt-1.5">Each line becomes a line on the projection screen. Use blank lines to add spacing.</p>
+                  </div>
+                  {/* Formatting toolbar */}
+                  {(() => {
+                    const annStyle = parseAnnouncementStyle(currentItem.itemStyle)
+                    const saveStyle = (patch: Partial<AnnouncementStyle>) => {
+                      const next = { ...annStyle, ...patch }
+                      window.worshipsync.lineup.setItemStyle(currentItem.id, JSON.stringify(next))
+                        .then(() => { if (selectedService) loadLineup(selectedService.id) })
+                    }
+                    return (
+                      <div>
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1.5">Formatting</label>
+                        <div className="flex flex-wrap items-center gap-2 p-3 bg-background border border-border rounded-lg">
+                          {/* Bold */}
+                          <button
+                            onClick={() => saveStyle({ fontWeight: annStyle.fontWeight === '700' ? '400' : '700' })}
+                            className={`w-8 h-8 rounded flex items-center justify-center text-sm font-bold transition-colors ${annStyle.fontWeight === '700' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}
+                            title="Bold"
+                          >B</button>
+                          <div className="w-px h-6 bg-border" />
+                          {/* Font size */}
+                          {ANNOUNCEMENT_FONT_SIZES.map(({ label, value }) => (
+                            <button
+                              key={value}
+                              onClick={() => saveStyle({ fontSize: value })}
+                              className={`px-2.5 h-8 rounded text-xs font-semibold transition-colors ${annStyle.fontSize === value ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}
+                            >{label}</button>
+                          ))}
+                          <div className="w-px h-6 bg-border" />
+                          {/* Alignment */}
+                          {(['left', 'center', 'right'] as const).map(align => (
+                            <button
+                              key={align}
+                              onClick={() => saveStyle({ textAlign: align })}
+                              title={align.charAt(0).toUpperCase() + align.slice(1)}
+                              className={`w-8 h-8 rounded flex items-center justify-center transition-colors ${annStyle.textAlign === align ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}
+                            >
+                              {align === 'left' && <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><rect x="0" y="1" width="14" height="2" rx="1"/><rect x="0" y="5" width="10" height="2" rx="1"/><rect x="0" y="9" width="12" height="2" rx="1"/></svg>}
+                              {align === 'center' && <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><rect x="0" y="1" width="14" height="2" rx="1"/><rect x="2" y="5" width="10" height="2" rx="1"/><rect x="1" y="9" width="12" height="2" rx="1"/></svg>}
+                              {align === 'right' && <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><rect x="0" y="1" width="14" height="2" rx="1"/><rect x="4" y="5" width="10" height="2" rx="1"/><rect x="2" y="9" width="12" height="2" rx="1"/></svg>}
+                            </button>
+                          ))}
+                          <div className="w-px h-6 bg-border" />
+                          {/* Color swatches */}
+                          {ANNOUNCEMENT_COLORS.map(color => (
+                            <button
+                              key={color}
+                              onClick={() => saveStyle({ textColor: color })}
+                              title={color}
+                              className="w-6 h-6 rounded-full border-2 transition-all"
+                              style={{
+                                background: color,
+                                borderColor: annStyle.textColor === color ? 'hsl(var(--primary))' : 'transparent',
+                                boxShadow: annStyle.textColor === color ? '0 0 0 2px hsl(var(--background))' : 'none',
+                              }}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })()}
+                  {/* Preview */}
+                  <div>
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1.5">Preview</label>
+                    <div className="rounded-lg overflow-hidden border border-border bg-gray-950 relative" style={{ aspectRatio: '16/9' }}>
+                      {effectiveBg && (
+                        effectiveBg.startsWith('color:') ? (
+                          <div className="absolute inset-0" style={{ background: effectiveBg.replace('color:', '') }} />
+                        ) : (
+                          <>
+                            <img src={`file://${effectiveBg}`} className="absolute inset-0 w-full h-full object-cover" alt="" />
+                            <div className="absolute inset-0" style={{ background: `rgba(0,0,0,0.5)` }} />
+                          </>
+                        )
+                      )}
+                      {(() => {
+                        const annStyle = parseAnnouncementStyle(currentItem.itemStyle)
+                        const previewFontSize = `${(annStyle.fontSize / 80) * 5}cqw`
+                        return (
+                          <div
+                            className="absolute inset-0 flex items-center px-6"
+                            style={{ containerType: 'inline-size', justifyContent: annStyle.textAlign === 'left' ? 'flex-start' : annStyle.textAlign === 'right' ? 'flex-end' : 'center' }}
+                          >
+                            <p
+                              className="leading-relaxed whitespace-pre-wrap"
+                              style={{
+                                fontSize: previewFontSize,
+                                fontWeight: annStyle.fontWeight,
+                                color: annStyle.textColor,
+                                textAlign: annStyle.textAlign,
+                              }}
+                            >
+                              {currentItem.scriptureRef || <span style={{ color: 'rgba(255,255,255,0.3)', fontStyle: 'italic', fontWeight: '400' }}>No content yet</span>}
+                            </p>
+                          </div>
+                        )
+                      })()}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
           ) : currentItemIsMedia ? (
             (() => {
               const mediaPath = currentItem!.mediaPath ?? ''

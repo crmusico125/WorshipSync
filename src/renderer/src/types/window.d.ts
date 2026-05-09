@@ -24,6 +24,7 @@ interface LineupItemWithSong {
   scriptureRef: string | null
   mediaPath: string | null
   sectionOrder: string | null
+  itemStyle: string | null
   song: SongWithSections | null
 }
 interface Theme {
@@ -125,8 +126,11 @@ declare global {
         toggleSection:  (lineupItemId: number, sectionId: number, included: boolean) => Promise<number[]>
         setSections:    (lineupItemId: number, sectionIds: number[]) => Promise<number[]>
         setNotes:       (lineupItemId: number, notes: string) => Promise<boolean>
-        setOverrideBg:    (lineupItemId: number, path: string | null) => Promise<boolean>
-        setSectionOrder:  (lineupItemId: number, sectionIds: number[]) => Promise<boolean>
+        setOverrideBg:      (lineupItemId: number, path: string | null) => Promise<boolean>
+        setSectionOrder:    (lineupItemId: number, sectionIds: number[]) => Promise<boolean>
+        addAnnouncement:    (serviceDateId: number, data: { title: string; content: string }) => Promise<unknown>
+        updateAnnouncement: (lineupItemId: number, data: { title?: string; content?: string }) => Promise<boolean>
+        setItemStyle:       (lineupItemId: number, style: string) => Promise<boolean>
       }
       themes: {
         getAll:     () => Promise<Theme[]>

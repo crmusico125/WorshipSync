@@ -97,6 +97,10 @@ contextBridge.exposeInMainWorld('worshipsync', {
                         ipcRenderer.invoke('lineup:addScripture', serviceDateId, data),
     addMedia:       (serviceDateId: number, data: { title: string; mediaPath: string }) =>
                         ipcRenderer.invoke('lineup:addMedia', serviceDateId, data),
+    addAnnouncement: (serviceDateId: number, data: { title: string; content: string }) =>
+                        ipcRenderer.invoke('lineup:addAnnouncement', serviceDateId, data),
+    updateAnnouncement: (lineupItemId: number, data: { title?: string; content?: string }) =>
+                        ipcRenderer.invoke('lineup:updateAnnouncement', lineupItemId, data),
     removeSong:     (lineupItemId: number)                     => ipcRenderer.invoke('lineup:removeSong', lineupItemId),
     reorder:        (serviceDateId: number, ids: number[])     => ipcRenderer.invoke('lineup:reorder', serviceDateId, ids),
     toggleSection:  (lineupItemId: number, sectionId: number, included: boolean) =>
@@ -109,6 +113,8 @@ contextBridge.exposeInMainWorld('worshipsync', {
                           ipcRenderer.invoke('lineup:setOverrideBg', lineupItemId, path),
     setSectionOrder:  (lineupItemId: number, sectionIds: number[]) =>
                           ipcRenderer.invoke('lineup:setSectionOrder', lineupItemId, sectionIds),
+    setItemStyle:     (lineupItemId: number, style: string) =>
+                          ipcRenderer.invoke('lineup:setItemStyle', lineupItemId, style),
   },
   themes: {
     getAll:     ()                    => ipcRenderer.invoke('themes:getAll'),

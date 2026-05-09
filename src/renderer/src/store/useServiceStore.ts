@@ -16,6 +16,7 @@ export interface LineupItem {
   scriptureRef: string | null
   mediaPath: string | null
   sectionOrder: string | null
+  itemStyle: string | null
   song: {
     id: number
     title: string
@@ -58,6 +59,7 @@ interface ServiceStore {
   addScriptureToLineup: (data: { title: string; scriptureRef: string }) => Promise<void>
   addMediaToLineup: (data: { title: string; mediaPath: string }) => Promise<void>
   addCountdownToLineup: () => Promise<void>
+  addAnnouncementToLineup: (data: { title: string; content: string }) => Promise<void>
   removeSongFromLineup: (lineupItemId: number) => Promise<void>
   toggleSection: (lineupItemId: number, sectionId: number, included: boolean) => Promise<void>
   reorderLineup: (orderedIds: number[]) => Promise<void>
@@ -153,6 +155,14 @@ export const useServiceStore = create<ServiceStore>((set, get) => ({
     const { selectedService } = get()
     if (!selectedService) return
     await window.worshipsync.lineup.addCountdown(selectedService.id)
+    await get().loadLineup(selectedService.id)
+    if (selectedService.status === 'empty') await get().updateStatus(selectedService.id, 'in-progress')
+  },
+
+  addAnnouncementToLineup: async (data) => {
+    const { selectedService } = get()
+    if (!selectedService) return
+    await window.worshipsync.lineup.addAnnouncement(selectedService.id, data)
     await get().loadLineup(selectedService.id)
     if (selectedService.status === 'empty') await get().updateStatus(selectedService.id, 'in-progress')
   },

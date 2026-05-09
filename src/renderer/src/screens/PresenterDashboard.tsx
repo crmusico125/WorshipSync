@@ -30,6 +30,7 @@ import {
   Repeat,
   SkipBack,
   SkipForward,
+  Megaphone,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useServiceStore, type ServiceDate } from "../store/useServiceStore";
@@ -57,7 +58,7 @@ interface Slide {
 
 interface LiveSong {
   lineupItemId: number;
-  itemType: "song" | "countdown" | "scripture" | "media";
+  itemType: "song" | "countdown" | "scripture" | "media" | "announcement";
   songId: number;
   title: string;
   artist: string;
@@ -67,6 +68,7 @@ interface LiveSong {
   mediaPath: string | null;
   themeId: number | null;
   notes: string | null;
+  itemStyle: string | null;
   slides: Slide[];
 }
 
@@ -333,6 +335,7 @@ export default function PresenterDashboard({
           mediaPath: null,
           themeId: null,
           notes: item.notes ?? null,
+          itemStyle: null,
           slides: [],
         };
       }
@@ -362,7 +365,37 @@ export default function PresenterDashboard({
           mediaPath: null,
           themeId: null,
           notes: item.notes ?? null,
+          itemStyle: null,
           slides: scriptureSlides,
+        };
+      }
+
+      // Announcement items — single slide from body content
+      if (item.itemType === "announcement") {
+        const content = item.scriptureRef ?? "";
+        const lines = content.split("\n");
+        const announcementSlides: Slide[] = lines.filter(l => l.trim()).length > 0 ? [{
+          lines,
+          sectionLabel: "Announcement",
+          sectionType: "announcement",
+          sectionId: 0,
+          globalIndex: 0,
+        }] : [];
+        announcementSlides.push({ lines: [""], sectionLabel: "Blank", sectionType: "blank", sectionId: -1, globalIndex: announcementSlides.length });
+        return {
+          lineupItemId: item.id,
+          itemType: "announcement" as const,
+          songId: 0,
+          title: item.title ?? "Announcement",
+          artist: "",
+          key: null,
+          ccliNumber: null,
+          backgroundPath: item.overrideBackgroundPath ?? null,
+          mediaPath: null,
+          themeId: null,
+          notes: item.notes ?? null,
+          itemStyle: item.itemStyle ?? null,
+          slides: announcementSlides,
         };
       }
 
@@ -380,6 +413,7 @@ export default function PresenterDashboard({
           mediaPath: item.mediaPath ?? null,
           themeId: null,
           notes: item.notes ?? null,
+          itemStyle: null,
           slides: [],
         };
       }
@@ -398,6 +432,7 @@ export default function PresenterDashboard({
           mediaPath: null,
           themeId: null,
           notes: item.notes ?? null,
+          itemStyle: null,
           slides: [],
         };
       }
@@ -433,6 +468,7 @@ export default function PresenterDashboard({
         mediaPath: null,
         themeId: item.song.themeId ?? null,
         notes: item.notes ?? null,
+        itemStyle: null,
         slides: buildSlidesForSong(filtered, maxLines),
       };
     });
@@ -480,7 +516,9 @@ export default function PresenterDashboard({
       if (!song) return;
       const slide = song.slides[slideIdx];
       if (!slide) return;
-      const theme = resolveTheme(song);
+      const baseTheme = resolveTheme(song);
+      const itemStyleOverride = song.itemStyle ? (() => { try { return JSON.parse(song.itemStyle); } catch { return {}; } })() : {};
+      const theme = { ...baseTheme, ...itemStyleOverride };
       const bg = resolveBg(song);
       setSelectedSongIdx(songIdx);
       setActiveSlideIdx(slideIdx);
@@ -1273,7 +1311,8 @@ export default function PresenterDashboard({
             const isMedia = song.itemType === "media";
             const isAudioItem = isMedia && /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(song.mediaPath ?? "");
             const isVideoItem = isMedia && /\.(mp4|webm|mov)$/i.test(song.mediaPath ?? "");
-            const Icon = isCountdown ? Timer : isScripture ? BookOpen : isMedia ? (isVideoItem ? Film : isAudioItem ? Volume2 : ImageIcon) : Music;
+            const isAnnouncement = song.itemType === "announcement";
+            const Icon = isCountdown ? Timer : isScripture ? BookOpen : isMedia ? (isVideoItem ? Film : isAudioItem ? Volume2 : ImageIcon) : isAnnouncement ? Megaphone : Music;
             return (
               <button
                 key={song.lineupItemId}
@@ -1304,7 +1343,7 @@ export default function PresenterDashboard({
                     {song.title}
                   </p>
                   <p className="text-[10px] text-muted-foreground truncate">
-                    {isCountdown ? "Countdown" : isScripture ? "Scripture" : isMedia ? (isVideoItem ? "Video" : isAudioItem ? "Audio" : "Image") : song.artist || "Song"}
+                    {isCountdown ? "Countdown" : isScripture ? "Scripture" : isMedia ? (isVideoItem ? "Video" : isAudioItem ? "Audio" : "Image") : isAnnouncement ? "Announcement" : song.artist || "Song"}
                   </p>
                 </div>
                 {isFinished && <span className="text-[9px] font-semibold text-muted-foreground/70 shrink-0 bg-muted px-1 py-0.5 rounded leading-none">Done</span>}
@@ -1318,7 +1357,26 @@ export default function PresenterDashboard({
 
       {/* ═════ CENTER: Main Slide Area ═════ */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-background">
-        {currentSong?.itemType === "countdown" ? (
+        {currentSong?.itemType === "announcement" ? (
+          /* ── Announcement ── */
+          <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
+            <Megaphone className="h-16 w-16 text-muted-foreground mb-6" />
+            <h2 className="text-lg font-bold mb-1">{currentSong.title}</h2>
+            <p className="text-sm text-muted-foreground mb-6 max-w-md whitespace-pre-wrap">
+              {currentSong.slides[0]?.lines.join("\n") || "No content — edit in the builder."}
+            </p>
+            <Button
+              size="lg" className="gap-2"
+              disabled={!currentSong.slides[0]?.lines.filter(Boolean).length}
+              onClick={() => sendSlide(selectedSongIdx, 0)}
+            >
+              <Cast className="h-5 w-5" /> Show on Screen
+            </Button>
+            <p className="text-[11px] text-muted-foreground mt-6 max-w-sm">
+              The announcement will be shown full-screen on the projection display.
+            </p>
+          </div>
+        ) : currentSong?.itemType === "countdown" ? (
           <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
             <Timer className="h-16 w-16 text-muted-foreground mb-6" />
             <h2 className="text-lg font-bold mb-2">Countdown Timer</h2>

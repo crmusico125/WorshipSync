@@ -3,7 +3,7 @@ import {
   Plus, BookOpen, Trash2, Pencil,
   Radio, Eye, Music2, Calendar, Image as ImageIcon,
   Monitor, Timer, GripVertical, X, Megaphone,
-  Play, Pause, SkipBack, SkipForward, Repeat,
+  Play, Pause, SkipBack, SkipForward, Repeat, ListTodo,
 } from "lucide-react"
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors,
@@ -144,6 +144,22 @@ function parseAnnouncementStyle(json: string | null | undefined): AnnouncementSt
   try { return { ...DEFAULT_ANNOUNCEMENT_STYLE, ...JSON.parse(json) } } catch { return DEFAULT_ANNOUNCEMENT_STYLE }
 }
 
+// ── Setlist templates ──────────────────────────────────────────────────────────
+
+interface SetlistTemplateItem {
+  itemType: string
+  songId?: number
+  songTitle?: string
+  title?: string
+}
+
+interface SetlistTemplate {
+  id: string
+  name: string
+  createdAt: string
+  items: SetlistTemplateItem[]
+}
+
 // ── Duration helpers ─────────────────────────────────────────────────────────
 
 function estimateDuration(item: LineupItemWithSong, themeCache: Record<number, any>): number {
@@ -194,6 +210,11 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
   const [showLibrary, setShowLibrary] = useState(false)
   const [showEditService, setShowEditService] = useState(false)
   const [showAddSong, setShowAddSong] = useState(false)
+  const [showTemplates, setShowTemplates] = useState(false)
+  const [templates, setTemplates] = useState<SetlistTemplate[]>([])
+  const [savingTemplate, setSavingTemplate] = useState(false)
+  const [newTemplateName, setNewTemplateName] = useState("")
+  const [applyingTemplate, setApplyingTemplate] = useState(false)
   const [editingItemId, setEditingItemId] = useState<number | null>(null)
   const [selectedSongIdx, setSelectedSongIdx] = useState(0)
   const [previewSlideIdx, setPreviewSlideIdx] = useState(0)
@@ -247,6 +268,12 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
       all.forEach(t => { c[t.id] = t })
       setThemeCache(c)
     })
+  }, [])
+
+  useEffect(() => {
+    window.worshipsync.appState.get().then((state: any) => {
+      if (Array.isArray(state.setlistTemplates)) setTemplates(state.setlistTemplates)
+    }).catch(() => {})
   }, [])
 
   // Stop all preview media on unmount (e.g. switching to live mode)
@@ -525,6 +552,49 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
     await window.worshipsync.lineup.setSectionOrder(currentItem.id, arrangedSectionIds)
   }
 
+  // ── Setlist template handlers ────────────────────────────────────────────
+
+  const handleSaveTemplate = async () => {
+    if (!newTemplateName.trim()) return
+    setSavingTemplate(true)
+    const items: SetlistTemplateItem[] = lineup.map(item => ({
+      itemType: item.itemType,
+      songId: item.songId ?? undefined,
+      songTitle: item.song?.title ?? item.title ?? undefined,
+      title: item.title ?? undefined,
+    }))
+    const tpl: SetlistTemplate = {
+      id: Date.now().toString(),
+      name: newTemplateName.trim(),
+      createdAt: new Date().toISOString(),
+      items,
+    }
+    const updated = [...templates, tpl]
+    setTemplates(updated)
+    await window.worshipsync.appState.set({ setlistTemplates: updated })
+    setNewTemplateName("")
+    setSavingTemplate(false)
+  }
+
+  const handleApplyTemplate = async (tpl: SetlistTemplate) => {
+    setApplyingTemplate(true)
+    for (const item of tpl.items) {
+      if (item.itemType === 'song' && item.songId) {
+        await addSongToLineup(item.songId).catch(() => {})
+      } else if (item.itemType === 'countdown') {
+        await addCountdownToLineup().catch(() => {})
+      }
+    }
+    setApplyingTemplate(false)
+    setShowTemplates(false)
+  }
+
+  const handleDeleteTemplate = async (id: string) => {
+    const updated = templates.filter(t => t.id !== id)
+    setTemplates(updated)
+    await window.worshipsync.appState.set({ setlistTemplates: updated })
+  }
+
   // ── Empty state ──────────────────────────────────────────────────────────
   if (!selectedService) {
     return (
@@ -592,6 +662,13 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
                   Mark Ready
                 </Button>
               )}
+              <Button
+                variant="outline" size="sm"
+                className="gap-1.5 h-8 text-xs"
+                onClick={() => setShowTemplates(true)}
+              >
+                <ListTodo className="h-3.5 w-3.5" /> Templates
+              </Button>
               <Button size="sm" className="gap-1.5 h-8 text-xs bg-red-600 hover:bg-red-700 text-white" disabled={lineup.length === 0} onClick={onGoLive}>
                 <Radio className="h-3.5 w-3.5" /> Go Live
               </Button>
@@ -1304,6 +1381,83 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
             setShowEditService(false)
           }}
         />
+      )}
+      {showTemplates && (
+        <Dialog open onOpenChange={(open) => !open && setShowTemplates(false)}>
+          <DialogContent
+            className="p-0 gap-0 overflow-hidden rounded-xl border border-border shadow-2xl"
+            style={{ width: 480, maxWidth: "95vw" }}
+          >
+            <div className="flex flex-col bg-background text-foreground max-h-[80vh]">
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-border shrink-0">
+                <DialogTitle className="text-base font-semibold">Setlist Templates</DialogTitle>
+              </div>
+
+              <div className="overflow-y-auto flex-1">
+                {/* Save current lineup */}
+                <div className="px-5 py-4 border-b border-border">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Save current lineup as template</p>
+                  {lineup.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">Lineup is empty — add items before saving as template.</p>
+                  ) : (
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={newTemplateName}
+                        onChange={(e) => setNewTemplateName(e.target.value)}
+                        placeholder="e.g. Sunday Morning Flow"
+                        onKeyDown={(e) => e.key === 'Enter' && !savingTemplate && newTemplateName.trim() && handleSaveTemplate()}
+                        className="flex-1 h-9 px-3 text-sm bg-background border border-border rounded-md outline-none focus:border-primary/50 transition-colors placeholder:text-muted-foreground/40"
+                      />
+                      <Button
+                        size="sm"
+                        disabled={!newTemplateName.trim() || savingTemplate}
+                        onClick={handleSaveTemplate}
+                      >
+                        Save
+                      </Button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Saved templates */}
+                <div className="px-5 py-4">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Saved templates</p>
+                  {templates.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">No templates saved yet.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {templates.map((tpl) => (
+                        <div key={tpl.id} className="flex items-center gap-3 p-3 rounded-lg border border-border bg-card">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-medium truncate">{tpl.name}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              {tpl.items.length} items · {new Date(tpl.createdAt).toLocaleDateString()}
+                            </p>
+                          </div>
+                          <Button
+                            size="sm" variant="outline"
+                            disabled={applyingTemplate}
+                            onClick={() => handleApplyTemplate(tpl)}
+                          >
+                            Apply
+                          </Button>
+                          <button
+                            onClick={() => handleDeleteTemplate(tpl.id)}
+                            className="h-7 w-7 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors shrink-0"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   )

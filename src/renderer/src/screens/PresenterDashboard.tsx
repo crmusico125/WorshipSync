@@ -34,10 +34,12 @@ import {
   Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+
 import { useServiceStore, type ServiceDate } from "../store/useServiceStore";
 import LibraryModal from "../components/LibraryModal";
 import BackgroundPickerPanel from "../components/BackgroundPickerPanel";
 import EditLyricsModal from "../components/EditLyricsModal";
+
 
 // ── Audio singleton — survives PresenterDashboard unmounts ───────────────────
 const _audio: {
@@ -221,6 +223,9 @@ export default function PresenterDashboard({
   const [confidenceOpen, setConfidenceOpen] = useState(false);
   const [selectedConfidenceDisplayId, setSelectedConfidenceDisplayId] = useState<number | undefined>(undefined);
   const slideGridRef = useRef<HTMLDivElement>(null);
+
+  // ── Scripture picker ─────────────────────────────────────────────────────
+
 
   // ── Run-of-show inline search ────────────────────────────────────────────
   const [rosSearch, setRosSearch] = useState("")

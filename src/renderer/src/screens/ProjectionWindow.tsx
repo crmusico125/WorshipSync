@@ -18,6 +18,8 @@ const DEFAULT_THEME = {
 export default function ProjectionWindow() {
   const [slide, setSlide] = useState<SlidePayload | null>(null);
   const [displayState, setDisplayState] = useState<DisplayState>("blank");
+  const [slideTransitionMs, setSlideTransitionMs] = useState(300);
+  const [slideVersion, setSlideVersion] = useState(0);
   const [countdownTarget, setCountdownTarget] = useState<string>("");
   const [countdownParts, setCountdownParts] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
   const [churchName, setChurchName] = useState("");
@@ -34,11 +36,17 @@ export default function ProjectionWindow() {
     window.worshipsync.projection.ready();
     window.worshipsync.appState.get().then((s) => {
       if (s.churchName) setChurchName(s.churchName);
+      if (s.slideTransitionMs !== undefined) setSlideTransitionMs(s.slideTransitionMs);
     }).catch(() => {});
+
+    const styleEl = document.createElement("style");
+    styleEl.textContent = `@keyframes wsSlideIn { from { opacity: 0 } to { opacity: 1 } }`;
+    document.head.appendChild(styleEl);
 
     const cleanSlide = window.worshipsync.slide.onShow((payload) => {
       setSlide(payload);
       setDisplayState("slide");
+      setSlideVersion((v) => v + 1);
     });
 
     const cleanBlank = window.worshipsync.slide.onBlank((isBlank) => {
@@ -111,6 +119,7 @@ export default function ProjectionWindow() {
     return () => {
       cleanupRef.current.forEach((fn) => fn());
       if (countdownRef.current) clearInterval(countdownRef.current);
+      styleEl.remove();
     };
   }, []);
 
@@ -490,6 +499,7 @@ export default function ProjectionWindow() {
       {/* Lyrics */}
       {displayState === "slide" && slide && (
         <div
+          key={slideVersion}
           ref={lyricsContainerRef}
           style={{
             position: "absolute",
@@ -500,6 +510,7 @@ export default function ProjectionWindow() {
             alignItems: "center",
             justifyContent: alignItems,
             padding: "8% 10%",
+            animation: slideTransitionMs > 0 ? `wsSlideIn ${slideTransitionMs}ms ease forwards` : "none",
           }}
         >
           <div

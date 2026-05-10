@@ -195,6 +195,8 @@ export default function SettingsScreen() {
   // Projection
   const [projectionFontSize, setProjectionFontSize] = useState(48)
   const [fontSizeSaved, setFontSizeSaved]            = useState(false)
+  const [slideTransitionMs, setSlideTransitionMs]    = useState(300)
+  const [transitionSaved, setTransitionSaved]        = useState(false)
 
   // Stage display
   const [stageRunning, setStageRunning]     = useState(false)
@@ -225,6 +227,7 @@ export default function SettingsScreen() {
       if (state.serviceTime)        setServiceTime(state.serviceTime)
       if (state.serviceTimezone)  { setServiceTimezone(state.serviceTimezone); setNewTimezone(state.serviceTimezone) }
       if (state.projectionFontSize) setProjectionFontSize(state.projectionFontSize)
+      if (state.slideTransitionMs !== undefined) setSlideTransitionMs(state.slideTransitionMs)
     }).catch(() => {})
     refreshStageStatus().catch(() => {})
   }, [refreshStageStatus])
@@ -274,6 +277,12 @@ export default function SettingsScreen() {
     await window.worshipsync.appState.set({ projectionFontSize })
     setFontSizeSaved(true)
     setTimeout(() => setFontSizeSaved(false), 2000)
+  }
+
+  const handleSaveTransition = async () => {
+    await window.worshipsync.appState.set({ slideTransitionMs })
+    setTransitionSaved(true)
+    setTimeout(() => setTransitionSaved(false), 2000)
   }
 
   const handleExport = async () => {
@@ -530,6 +539,30 @@ export default function SettingsScreen() {
               <div className="flex items-center gap-3">
                 <Button size="sm" onClick={handleSaveFontSize}>Save</Button>
                 {fontSizeSaved && (
+                  <span className="text-xs text-green-500 flex items-center gap-1">
+                    <CheckCircle2 className="h-3.5 w-3.5" /> Saved
+                  </span>
+                )}
+              </div>
+            </Card>
+            <Card>
+              <CardHeader icon={Monitor} title="Slide transitions"
+                description="Crossfade duration when switching between slides on the projection screen. Set to 0 to disable." />
+              <div className="flex items-center gap-3 mb-4">
+                <select
+                  value={slideTransitionMs}
+                  onChange={(e) => setSlideTransitionMs(Number(e.target.value))}
+                  className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                >
+                  <option value={0}>Off (instant cut)</option>
+                  <option value={150}>Fast (150ms)</option>
+                  <option value={300}>Normal (300ms)</option>
+                  <option value={500}>Slow (500ms)</option>
+                </select>
+              </div>
+              <div className="flex items-center gap-3">
+                <Button size="sm" onClick={handleSaveTransition}>Save</Button>
+                {transitionSaved && (
                   <span className="text-xs text-green-500 flex items-center gap-1">
                     <CheckCircle2 className="h-3.5 w-3.5" /> Saved
                   </span>

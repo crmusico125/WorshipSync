@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from "react"
 import {
   Calendar, ChevronRight, Plus, Music2, CheckCircle2,
-  Circle, AlertCircle, Trash2, ArrowRight, Sparkles, Pencil,
+  Circle, AlertCircle, Trash2, ArrowRight, Sparkles, Pencil, Clock,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -48,6 +48,19 @@ function daysAwayLabel(d: number): string {
   return `In ${d} days`
 }
 
+function estimateLineupMinutes(items: any[]): number {
+  return items.reduce((acc: number, item: any) => {
+    switch (item.itemType) {
+      case 'countdown': return acc + 10
+      case 'song': return acc + 4
+      case 'scripture': return acc + 2
+      case 'media': return acc + 3
+      case 'announcement': return acc + 2
+      default: return acc + 1
+    }
+  }, 0)
+}
+
 // ── Main Screen ──────────────────────────────────────────────────────────────
 
 interface Props {
@@ -64,6 +77,7 @@ export default function PlannerScreen({ onOpenService, onGoLive }: Props) {
   const [initializing, setInitializing] = useState(false)
   const [songCounts, setSongCounts] = useState<Record<number, number>>({})
   const [itemCounts, setItemCounts] = useState<Record<number, number>>({})
+  const [nextServiceLineup, setNextServiceLineup] = useState<any[]>([])
 
   useEffect(() => { loadServices() }, [])
 
@@ -87,6 +101,17 @@ export default function PlannerScreen({ onOpenService, onGoLive }: Props) {
   }, [services])
 
   const nextService = sortedUpcoming[0] ?? null
+
+  useEffect(() => {
+    if (nextService) {
+      window.worshipsync.lineup.getForService(nextService.id)
+        .then((items: any) => setNextServiceLineup(items))
+        .catch(() => {})
+    } else {
+      setNextServiceLineup([])
+    }
+  }, [nextService?.id])
+
   const pastServices = useMemo(() =>
     [...services]
       .filter((s) => getDaysAway(s.date) < 0)
@@ -129,6 +154,7 @@ export default function PlannerScreen({ onOpenService, onGoLive }: Props) {
             service={nextService}
             songCount={songCounts[nextService.id] ?? 0}
             itemCount={itemCounts[nextService.id] ?? 0}
+            lineup={nextServiceLineup}
             onPrepare={() => openInBuilder(nextService)}
             onGoLive={() => goLive(nextService)}
             onEdit={() => setEditingService(nextService)}
@@ -222,11 +248,12 @@ export default function PlannerScreen({ onOpenService, onGoLive }: Props) {
 // ── Next Service Hero ────────────────────────────────────────────────────────
 
 function NextServiceHero({
-  service, songCount, itemCount, onPrepare, onGoLive, onEdit,
+  service, songCount, itemCount, lineup, onPrepare, onGoLive, onEdit,
 }: {
   service: any
   songCount: number
   itemCount: number
+  lineup: any[]
   onPrepare: () => void
   onGoLive: () => void
   onEdit: () => void
@@ -234,6 +261,8 @@ function NextServiceHero({
   const daysAway = getDaysAway(service.date)
   const isToday = daysAway === 0
   const isSoon = daysAway <= 3 && daysAway > 0
+
+  const estimatedMin = useMemo(() => estimateLineupMinutes(lineup), [lineup])
 
   const checks = useMemo(() => [
     { label: "Service date created", done: true },
@@ -345,6 +374,15 @@ function NextServiceHero({
               </span>
             </span>
           </div>
+          {estimatedMin > 0 && (
+            <div className="flex items-center gap-2">
+              <Clock className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm text-foreground">
+                <span className="font-semibold">~{estimatedMin}</span>{" "}
+                <span className="text-muted-foreground">min estimated</span>
+              </span>
+            </div>
+          )}
           {itemCount === 0 && (
             <span className="flex items-center gap-1.5 text-xs text-amber-400">
               <AlertCircle className="h-3.5 w-3.5" />
@@ -392,7 +430,7 @@ function ServiceRow({
         <p className="text-xs text-muted-foreground mt-0.5">
           {past ? formatShort(service.date) : daysAwayLabel(daysAway)}
           {" · "}
-          {itemCount} {itemCount === 1 ? "item" : "items"}
+          {itemCount} {itemCount === 1 ? "item" : "items"}{itemCount > 0 ? ` · ~${Math.round(itemCount * 3.5)} min` : ""}
         </p>
       </div>
 

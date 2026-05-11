@@ -132,6 +132,7 @@ contextBridge.exposeInMainWorld('worshipsync', {
   backgrounds: {
     getDir:      ()               => ipcRenderer.invoke('backgrounds:getDir'),
     pickImage:   ()               => ipcRenderer.invoke('backgrounds:pickImage'),
+    pickImages:  ()               => ipcRenderer.invoke('backgrounds:pickImages') as Promise<string[]>,
     setBackground: (songId: number, path: string | null) =>
       ipcRenderer.invoke('songs:setBackground', songId, path),
     listImages: () => ipcRenderer.invoke('backgrounds:listImages'),

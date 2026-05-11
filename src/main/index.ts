@@ -1145,24 +1145,10 @@ ipcMain.handle('backgrounds:getDir', () => {
   return dir
 })
 
-ipcMain.handle('backgrounds:pickImage', async () => {
-  const result = await dialog.showOpenDialog({
-    title: 'Choose media file',
-    filters: [
-      { name: 'All Media', extensions: ['jpg', 'jpeg', 'png', 'webp', 'mp4', 'webm', 'mov', 'mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac'] },
-      { name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp'] },
-      { name: 'Videos', extensions: ['mp4', 'webm', 'mov'] },
-      { name: 'Audio', extensions: ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac'] },
-    ],
-    properties: ['openFile']
-  })
-  if (result.canceled || result.filePaths.length === 0) return null
-
-  const srcPath = result.filePaths[0]
+function copyMediaFile(srcPath: string): string | null {
   const ext = extname(srcPath).toLowerCase()
   const dir = mediaDir(ext)
   const base = basename(srcPath, extname(srcPath))
-  // Use original filename; append _2, _3, … if it already exists
   let filename = `${base}${ext}`
   let destPath = join(dir, filename)
   let counter = 2
@@ -1173,12 +1159,38 @@ ipcMain.handle('backgrounds:pickImage', async () => {
   }
   try {
     copyFileSync(srcPath, destPath)
+    return destPath
   } catch (e) {
     console.error('[backgrounds] copy failed:', e)
     return null
   }
+}
 
-  return destPath
+const MEDIA_DIALOG_FILTERS = [
+  { name: 'All Media', extensions: ['jpg', 'jpeg', 'png', 'webp', 'mp4', 'webm', 'mov', 'mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac'] },
+  { name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp'] },
+  { name: 'Videos', extensions: ['mp4', 'webm', 'mov'] },
+  { name: 'Audio', extensions: ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac'] },
+]
+
+ipcMain.handle('backgrounds:pickImage', async () => {
+  const result = await dialog.showOpenDialog({
+    title: 'Choose media file',
+    filters: MEDIA_DIALOG_FILTERS,
+    properties: ['openFile']
+  })
+  if (result.canceled || result.filePaths.length === 0) return null
+  return copyMediaFile(result.filePaths[0])
+})
+
+ipcMain.handle('backgrounds:pickImages', async () => {
+  const result = await dialog.showOpenDialog({
+    title: 'Choose media files',
+    filters: MEDIA_DIALOG_FILTERS,
+    properties: ['openFile', 'multiSelections']
+  })
+  if (result.canceled || result.filePaths.length === 0) return []
+  return result.filePaths.map(copyMediaFile).filter((p): p is string => p !== null)
 })
 
 ipcMain.handle('backgrounds:listImages', () => {

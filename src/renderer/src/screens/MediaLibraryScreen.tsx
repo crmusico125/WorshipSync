@@ -141,20 +141,26 @@ export default function MediaLibraryScreen() {
 
   // ── Actions ──────────────────────────────────────────────────────────────
 
+  const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null)
+
   const handleUpload = async () => {
     setUploading(true)
     try {
-      const path = await window.worshipsync.backgrounds.pickImage()
-      if (path) {
-        // Assign to current folder if navigating inside one
-        const targetFolder = isFolderView(view) ? view : null
-        const newFF = { ...fileFolder, [path]: targetFolder }
-        setFileFolder(newFF)
-        await saveFolderState(folders, newFF)
-        await loadFiles(newFF)
+      const paths = await window.worshipsync.backgrounds.pickImages()
+      if (paths.length === 0) return
+      const targetFolder = isFolderView(view) ? view : null
+      let newFF = { ...fileFolder }
+      setUploadProgress({ done: 0, total: paths.length })
+      for (let i = 0; i < paths.length; i++) {
+        newFF = { ...newFF, [paths[i]]: targetFolder }
+        setUploadProgress({ done: i + 1, total: paths.length })
       }
+      setFileFolder(newFF)
+      await saveFolderState(folders, newFF)
+      await loadFiles(newFF)
     } finally {
       setUploading(false)
+      setUploadProgress(null)
     }
   }
 
@@ -367,7 +373,9 @@ export default function MediaLibraryScreen() {
               </button>
               <Button size="sm" className="gap-1.5 h-8 text-xs" onClick={handleUpload} disabled={uploading}>
                 <Upload className="h-3.5 w-3.5" />
-                {uploading ? "Uploading…" : "Upload Media"}
+                {uploadProgress
+                  ? `Uploading ${uploadProgress.done} / ${uploadProgress.total}…`
+                  : uploading ? "Uploading…" : "Upload Media"}
               </Button>
             </div>
           </div>

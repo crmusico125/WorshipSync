@@ -94,8 +94,9 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScri
   // ── Media state ──────────────────────────────────────────────────────────
   const [mediaImages, setMediaImages] = useState<{ path: string; filename: string; usageCount: number }[]>([])
   const [mediaLoading, setMediaLoading] = useState(false)
-  const [mediaSelected, setMediaSelected] = useState<string | null>(null)
+  const [mediaSelectedPaths, setMediaSelectedPaths] = useState<Set<string>>(new Set())
   const [mediaUploading, setMediaUploading] = useState(false)
+  const [mediaUploadProgress, setMediaUploadProgress] = useState<{ done: number; total: number } | null>(null)
   const [mediaUsingSongs,    setMediaUsingSongs]    = useState<{ id: number; title: string; artist: string }[]>([])
   const [mediaUsingServices, setMediaUsingServices] = useState<{ id: number; date: string; label: string }[]>([])
 
@@ -117,16 +118,19 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScri
 
   useEffect(() => { if (tab === "media") loadMediaImages() }, [tab, loadMediaImages])
 
+  // Load detail info only when exactly one item is selected
+  const singleMediaSelected = mediaSelectedPaths.size === 1 ? [...mediaSelectedPaths][0] : null
+
   useEffect(() => {
-    if (!mediaSelected) { setMediaUsingSongs([]); setMediaUsingServices([]); return }
-    const isMediaFile = /\.(mp4|webm|mov|mp3|wav|ogg|m4a|aac|flac)$/i.test(mediaSelected)
-    window.worshipsync.backgrounds.getUsingSongs(mediaSelected).then(setMediaUsingSongs).catch(() => setMediaUsingSongs([]))
+    if (!singleMediaSelected) { setMediaUsingSongs([]); setMediaUsingServices([]); return }
+    const isMediaFile = /\.(mp4|webm|mov|mp3|wav|ogg|m4a|aac|flac)$/i.test(singleMediaSelected)
+    window.worshipsync.backgrounds.getUsingSongs(singleMediaSelected).then(setMediaUsingSongs).catch(() => setMediaUsingSongs([]))
     if (isMediaFile) {
-      window.worshipsync.backgrounds.getUsingServices(mediaSelected).then(setMediaUsingServices).catch(() => setMediaUsingServices([]))
+      window.worshipsync.backgrounds.getUsingServices(singleMediaSelected).then(setMediaUsingServices).catch(() => setMediaUsingServices([]))
     } else {
       setMediaUsingServices([])
     }
-  }, [mediaSelected])
+  }, [singleMediaSelected])
 
   const filteredMedia = useMemo(() => {
     if (!search.trim()) return mediaImages
@@ -134,21 +138,37 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScri
     return mediaImages.filter((i) => i.filename.toLowerCase().includes(q))
   }, [mediaImages, search])
 
+  const toggleMediaSelect = useCallback((path: string) => {
+    setMediaSelectedPaths(prev => {
+      const next = new Set(prev)
+      next.has(path) ? next.delete(path) : next.add(path)
+      return next
+    })
+  }, [])
+
   const handleMediaUpload = async () => {
     setMediaUploading(true)
     try {
-      const path = await window.worshipsync.backgrounds.pickImage()
-      if (path) { await loadMediaImages(); setMediaSelected(path) }
-    } finally { setMediaUploading(false) }
+      const paths = await window.worshipsync.backgrounds.pickImages()
+      if (paths.length > 0) {
+        setMediaUploadProgress({ done: 0, total: paths.length })
+        await loadMediaImages()
+        setMediaUploadProgress(null)
+        setMediaSelectedPaths(new Set(paths))
+      }
+    } finally {
+      setMediaUploading(false)
+      setMediaUploadProgress(null)
+    }
   }
 
   const handleMediaDelete = async (item: { path: string; usageCount: number }) => {
     const msg = item.usageCount > 0
-      ? `This image is used by ${item.usageCount} song${item.usageCount > 1 ? "s" : ""}. Deleting will remove it from those songs too. Continue?`
-      : "Delete this image from the library?"
+      ? `This file is used by ${item.usageCount} song${item.usageCount > 1 ? "s" : ""}. Deleting will remove it from those songs too. Continue?`
+      : "Delete this file from the library?"
     if (!confirm(msg)) return
     await window.worshipsync.backgrounds.deleteImage(item.path)
-    if (mediaSelected === item.path) setMediaSelected(null)
+    setMediaSelectedPaths(prev => { const next = new Set(prev); next.delete(item.path); return next })
     await loadMediaImages()
   }
 
@@ -348,7 +368,9 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScri
                       </span>
                       <Button size="sm" variant="outline" className="gap-1.5 h-7 text-xs" onClick={handleMediaUpload} disabled={mediaUploading}>
                         <Upload className="h-3 w-3" />
-                        {mediaUploading ? "Uploading..." : "Upload"}
+                        {mediaUploadProgress
+                          ? `${mediaUploadProgress.done} / ${mediaUploadProgress.total}`
+                          : mediaUploading ? "Uploading…" : "Upload"}
                       </Button>
                     </div>
                     <ScrollArea className="flex-1">
@@ -369,13 +391,13 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScri
                       ) : (
                         <div className="p-4 grid grid-cols-3 gap-3">
                           {filteredMedia.map((item) => {
-                            const isSel = mediaSelected === item.path
+                            const isSel = mediaSelectedPaths.has(item.path)
                             const isVideo = /\.(mp4|webm|mov)$/i.test(item.path)
                             const isAudio = /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(item.path)
                             return (
                               <button
                                 key={item.path}
-                                onClick={() => setMediaSelected(isSel ? null : item.path)}
+                                onClick={() => toggleMediaSelect(item.path)}
                                 className={`group relative rounded-lg overflow-hidden border-2 transition-all cursor-pointer ${
                                   isSel ? "border-primary ring-2 ring-primary/25" : "border-border hover:border-muted-foreground/40"
                                 }`}
@@ -401,7 +423,7 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScri
                                     style={{ backgroundImage: `url("file://${encodeURI(item.path)}")` }}
                                   />
                                 )}
-                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />
+                                <div className={`absolute inset-0 transition-colors ${isSel ? "bg-black/10" : "bg-black/0 group-hover:bg-black/20"}`} />
                                 {(isVideo || isAudio) && (
                                   <div className="absolute bottom-1.5 right-1.5 h-5 w-5 rounded-full bg-black/60 flex items-center justify-center">
                                     {isAudio
@@ -410,16 +432,23 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScri
                                     }
                                   </div>
                                 )}
-                                {isSel && (
-                                  <div className="absolute top-1.5 right-1.5 h-5 w-5 rounded-full bg-primary flex items-center justify-center">
-                                    <Check className="h-3 w-3 text-primary-foreground" />
-                                  </div>
-                                )}
+                                {/* Checkbox */}
+                                <div className={`absolute top-1.5 right-1.5 h-5 w-5 rounded-full flex items-center justify-center border-2 transition-all ${
+                                  isSel
+                                    ? "bg-primary border-primary opacity-100"
+                                    : "bg-black/40 border-white/60 opacity-0 group-hover:opacity-100"
+                                }`}>
+                                  {isSel && <Check className="h-3 w-3 text-primary-foreground" />}
+                                </div>
                                 {item.usageCount > 0 && (
                                   <div className="absolute top-1.5 left-1.5 bg-black/60 text-white text-[9px] font-semibold px-1.5 py-0.5 rounded">
                                     {item.usageCount} {item.usageCount === 1 ? "song" : "songs"}
                                   </div>
                                 )}
+                                {/* Filename on hover */}
+                                <div className="absolute bottom-0 left-0 right-0 px-2 py-1 bg-gradient-to-t from-black/70 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <p className="text-[9px] text-white truncate">{item.filename}</p>
+                                </div>
                               </button>
                             )
                           })}
@@ -428,9 +457,9 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScri
                     </ScrollArea>
                   </div>
 
-                  {/* Detail sidebar */}
-                  {mediaSelected && (() => {
-                    const item = mediaImages.find((i) => i.path === mediaSelected)
+                  {/* Detail sidebar — only for single selection */}
+                  {singleMediaSelected && (() => {
+                    const item = mediaImages.find((i) => i.path === singleMediaSelected)
                     if (!item) return null
                     return (
                       <div className="w-56 shrink-0 border-l border-border flex flex-col min-h-0 overflow-hidden">
@@ -522,8 +551,10 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScri
           {/* ── Footer ─────────────────────────────────────────────── */}
           <div className="flex items-center gap-3 px-5 py-3 border-t border-border bg-muted/40 shrink-0">
             <span className="flex-1 text-xs text-muted-foreground">
-              {tab === "media" && mediaSelected
-                ? "1 media item selected"
+              {tab === "media"
+                ? mediaSelectedPaths.size > 0
+                  ? `${mediaSelectedPaths.size} ${mediaSelectedPaths.size === 1 ? "file" : "files"} selected`
+                  : "No files selected"
                 : selectionLabel}
             </span>
             <Button variant="outline" size="sm" onClick={onClose}>
@@ -532,15 +563,15 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScri
             {tab === "media" ? (
               <Button
                 size="sm"
-                disabled={!mediaSelected}
+                disabled={mediaSelectedPaths.size === 0}
                 onClick={() => {
-                  if (mediaSelected) {
-                    onAddMedia?.(mediaSelected)
-                    onClose()
+                  for (const path of mediaSelectedPaths) {
+                    onAddMedia?.(path)
                   }
+                  onClose()
                 }}
               >
-                + Add to Lineup
+                + Add {mediaSelectedPaths.size > 1 ? `${mediaSelectedPaths.size} Files` : "to Lineup"}
               </Button>
             ) : (
               <Button size="sm" disabled={selectedIds.length === 0} onClick={handleAdd}>

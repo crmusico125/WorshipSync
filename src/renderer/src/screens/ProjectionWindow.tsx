@@ -496,62 +496,103 @@ export default function ProjectionWindow() {
         </div>
       )}
 
-      {/* Lyrics */}
+      {/* Lyrics \u2014 scripture uses column layout so reference never overlaps verse text */}
       {displayState === "slide" && slide && (
-        <div
-          key={slideVersion}
-          ref={lyricsContainerRef}
-          style={{
-            position: "absolute",
-            inset: 0,
-            zIndex: 3,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: alignItems,
-            padding: "8% 10%",
-            animation: slideTransitionMs > 0 ? `wsSlideIn ${slideTransitionMs}ms ease forwards` : "none",
-          }}
-        >
+        slide.itemType === "scripture" ? (
           <div
-            ref={lyricsTextRef}
+            key={slideVersion}
             style={{
-              fontFamily: theme.fontFamily,
-              fontSize: scaledFontSize,
-              fontWeight: theme.fontWeight,
-              color: theme.textColor,
-              textAlign: theme.textAlign,
-              lineHeight: 1.4,
-              textShadow: `0 2px 12px rgba(0,0,0,${shadowOpacity}), 0 1px 3px rgba(0,0,0,${shadowOpacity})`,
-              width: "100%",
+              position: "absolute",
+              inset: 0,
+              zIndex: 3,
+              display: "flex",
+              flexDirection: "column",
+              padding: "6% 10% 0",
+              animation: slideTransitionMs > 0 ? `wsSlideIn ${slideTransitionMs}ms ease forwards` : "none",
             }}
           >
-            {slide.lines.map((line, i) => (
-              <div key={i}>{line || "\u00A0"}</div>
-            ))}
-          </div>
-        </div>
-      )}
+            {/* Verse text \u2014 fills available space, measured by fitText */}
+            <div
+              ref={lyricsContainerRef}
+              style={{
+                flex: 1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                overflow: "hidden",
+                minHeight: 0,
+              }}
+            >
+              <div
+                ref={lyricsTextRef}
+                style={{
+                  fontFamily: theme.fontFamily,
+                  fontSize: scaledFontSize,
+                  fontWeight: theme.fontWeight,
+                  color: theme.textColor,
+                  textAlign: "center",
+                  lineHeight: 1.4,
+                  textShadow: `0 2px 12px rgba(0,0,0,${shadowOpacity}), 0 1px 3px rgba(0,0,0,${shadowOpacity})`,
+                  width: "100%",
+                }}
+              >
+                {slide.lines.map((line, i) => (
+                  <div key={i}>{line || "\u00A0"}</div>
+                ))}
+              </div>
+            </div>
 
-      {/* Scripture reference */}
-      {displayState === "slide" && slide && slide.itemType === "scripture" && (
-        <div
-          style={{
-            position: "absolute",
-            bottom: 48,
-            left: 0,
-            right: 0,
-            zIndex: 3,
-            textAlign: "center",
-            fontSize: 36,
-            fontFamily: theme.fontFamily,
-            fontWeight: "600",
-            color: "rgba(255,255,255,0.75)",
-            letterSpacing: "0.02em",
-          }}
-        >
-          {slide.sectionLabel}
-        </div>
+            {/* Scripture reference \u2014 always below the verse, never overlapping */}
+            <div
+              style={{
+                textAlign: "center",
+                padding: "3% 0 4%",
+                fontSize: Math.max(18, Math.round(scaledFontSize * 0.5)),
+                fontFamily: theme.fontFamily,
+                fontWeight: "600",
+                color: "rgba(255,255,255,0.70)",
+                letterSpacing: "0.03em",
+                flexShrink: 0,
+              }}
+            >
+              {slide.sectionLabel}
+            </div>
+          </div>
+        ) : (
+          <div
+            key={slideVersion}
+            ref={lyricsContainerRef}
+            style={{
+              position: "absolute",
+              inset: 0,
+              zIndex: 3,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: alignItems,
+              padding: "8% 10%",
+              animation: slideTransitionMs > 0 ? `wsSlideIn ${slideTransitionMs}ms ease forwards` : "none",
+            }}
+          >
+            <div
+              ref={lyricsTextRef}
+              style={{
+                fontFamily: theme.fontFamily,
+                fontSize: scaledFontSize,
+                fontWeight: theme.fontWeight,
+                color: theme.textColor,
+                textAlign: theme.textAlign,
+                lineHeight: 1.4,
+                textShadow: `0 2px 12px rgba(0,0,0,${shadowOpacity}), 0 1px 3px rgba(0,0,0,${shadowOpacity})`,
+                width: "100%",
+              }}
+            >
+              {slide.lines.map((line, i) => (
+                <div key={i}>{line || "\u00A0"}</div>
+              ))}
+            </div>
+          </div>
+        )
       )}
 
       {/* Slide counter */}

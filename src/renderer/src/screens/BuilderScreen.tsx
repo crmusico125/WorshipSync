@@ -160,6 +160,118 @@ interface SetlistTemplate {
   items: SetlistTemplateItem[]
 }
 
+// ── BibleGateway paste parser ─────────────────────────────────────────────────
+
+interface ParsedScripture {
+  title: string
+  book: string
+  chapter: number
+  version: string
+  verses: { number: number; text: string }[]
+}
+
+const SCRIPTURE_VERSION_MAP: Record<string, string> = {
+  'New International Version': 'NIV', 'English Standard Version': 'ESV',
+  'King James Version': 'KJV', 'New King James Version': 'NKJV',
+  'New Living Translation': 'NLT', 'Christian Standard Bible': 'CSB',
+  'New American Standard Bible': 'NASB', 'New American Standard': 'NASB',
+  'Revised Standard Version': 'RSV', 'New Revised Standard Version': 'NRSV',
+  'American Standard Version': 'ASV', 'Amplified Bible': 'AMP',
+  'The Message': 'MSG', 'Good News Translation': 'GNT',
+  'Contemporary English Version': 'CEV', 'Berean Standard Bible': 'BSB',
+  'World English Bible': 'WEB', 'Holman Christian Standard Bible': 'HCSB',
+}
+
+const SCRIPTURE_COPYRIGHT_PATTERNS = [
+  /^New [\w\s]+ Version/, /^Holy Bible/, /©/, /^Used by permission/i,
+  /^All rights reserved/i, /^Scripture (quotations|taken)/i,
+  /^Crossway/i, /^Biblica/i, /^Footnotes/i, /^Zondervan/i,
+  /^Thomas Nelson/i, /^Tyndale/i,
+]
+
+function parseBibleGatewayText(raw: string): ParsedScripture | null {
+  const text = raw
+    .replace(/\[[a-zA-Z]\]/g, '').replace(/\[\d+\]/g, '')
+    .replace(/ /g, ' ').replace(/['']/g, "'").replace(/[""]/g, '"')
+
+  const allLines = text.split('\n').map(l => l.trim())
+  const refRegex = /^(.+?)\s+(\d+):(\d+)(?:[–\-](\d+))?\s*(.*)$/
+
+  let refLineIdx = -1; let refMatch: RegExpMatchArray | null = null
+  for (let i = 0; i < Math.min(allLines.length, 5); i++) {
+    const line = allLines[i]; if (!line) continue
+    const m = line.match(refRegex)
+    if (m && m[1].trim().length <= 25 && parseInt(m[2]) >= 1 && parseInt(m[2]) <= 150) {
+      refMatch = m; refLineIdx = i; break
+    }
+  }
+  if (!refMatch) return null
+
+  const book = refMatch[1].trim()
+  const chapter = parseInt(refMatch[2])
+  const verseStart = parseInt(refMatch[3])
+  const verseEnd = refMatch[4] ? parseInt(refMatch[4]) : verseStart
+  let version = refMatch[5]?.replace(/[()]/g, '').trim() || ''
+
+  for (const [name, abbr] of Object.entries(SCRIPTURE_VERSION_MAP)) {
+    if (version.toLowerCase().includes(name.toLowerCase())) { version = abbr; break }
+  }
+  if (!version || version.length > 10) {
+    for (let i = refLineIdx + 1; i < Math.min(refLineIdx + 4, allLines.length); i++) {
+      const line = allLines[i]; if (!line || /^\d/.test(line)) break
+      const cleaned = line.replace(/[()]/g, '').trim()
+      for (const [name, abbr] of Object.entries(SCRIPTURE_VERSION_MAP)) {
+        if (cleaned.toLowerCase().includes(name.toLowerCase())) { version = abbr; break }
+      }
+      if (version && version.length <= 10) break
+      if (/^[A-Z]{2,8}$/.test(cleaned)) { version = cleaned; break }
+    }
+  }
+  if (!version || version.length > 10) version = 'NIV'
+
+  const bodyLines: string[] = []
+  for (let i = refLineIdx + 1; i < allLines.length; i++) {
+    const line = allLines[i]
+    if (SCRIPTURE_COPYRIGHT_PATTERNS.some(p => p.test(line))) break
+    if (/^[A-Z]{2,8}$/.test(line) && !line.startsWith('I ')) break
+    bodyLines.push(line)
+  }
+
+  const bodyText = bodyLines.join(' ').replace(/\s{2,}/g, ' ').trim()
+  if (!bodyText) return null
+
+  let remaining = bodyText.replace(new RegExp(`^${verseStart}\\s+`), '').trim()
+  const verses: { number: number; text: string }[] = []
+
+  if (verseStart === verseEnd) {
+    verses.push({ number: verseStart, text: remaining.trim() })
+  } else {
+    let currentNum = verseStart
+    for (let v = verseStart + 1; v <= verseEnd; v++) {
+      let searchFrom = 0; let found = -1
+      while (searchFrom < remaining.length) {
+        const target = ` ${v} `
+        const idx = remaining.indexOf(target, searchFrom)
+        if (idx === -1) break
+        const before = remaining[idx - 1]; const after = remaining[idx + target.length]
+        if ((before && /\d/.test(before)) || (after && /\d/.test(after))) { searchFrom = idx + 1; continue }
+        found = idx; break
+      }
+      if (found !== -1) {
+        verses.push({ number: currentNum, text: remaining.slice(0, found).trim() })
+        remaining = remaining.slice(found + ` ${v} `.length).trim()
+        currentNum = v
+      }
+    }
+    verses.push({ number: currentNum, text: remaining.trim() })
+  }
+
+  const valid = verses.filter(v => v.text.length > 0)
+  if (valid.length === 0) return null
+  const range = verseStart === verseEnd ? `${verseStart}` : `${verseStart}-${verseEnd}`
+  return { title: `${book} ${chapter}:${range} (${version})`, book, chapter, version, verses: valid }
+}
+
 // ── Duration helpers ─────────────────────────────────────────────────────────
 
 function estimateDuration(item: LineupItemWithSong, themeCache: Record<number, any>): number {
@@ -223,6 +335,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
   const themeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingThemeRef = useRef<Partial<ThemeStyle>>({})
   const announcementTimers = useRef<{ title?: ReturnType<typeof setTimeout>; content?: ReturnType<typeof setTimeout> }>({})
+  const [scripturePasteText, setScripturePasteText] = useState("")
 
   // Media preview (builder — local only, no projection)
   const [previewVideoPlaying, setPreviewVideoPlaying] = useState(false)
@@ -367,6 +480,35 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
     if (currentItem?.itemType !== 'scripture') return []
     try { return JSON.parse(currentItem.scriptureRef ?? '{}').verses ?? [] } catch { return [] }
   }, [currentItem])
+
+  // Reset paste textarea when switching scripture items
+  useEffect(() => {
+    if (currentItem?.itemType === 'scripture') setScripturePasteText("")
+  }, [currentItem?.id])
+
+  const parsedScripture = useMemo(() => {
+    if (!scripturePasteText.trim()) return null
+    return parseBibleGatewayText(scripturePasteText)
+  }, [scripturePasteText])
+
+  // Debounced save: runs when parsedScripture changes, captures IDs synchronously
+  useEffect(() => {
+    if (!parsedScripture || !currentItem || currentItem.itemType !== 'scripture') return
+    const itemId = currentItem.id
+    const svcId = selectedService?.id
+    const { book, chapter, version, verses, title } = parsedScripture
+    const timer = setTimeout(async () => {
+      const scriptureRef = JSON.stringify({
+        verses: verses.map(v => ({
+          label: `${book} ${chapter}:${v.number} ${version}`,
+          text: v.text,
+        }))
+      })
+      await window.worshipsync.lineup.updateScripture(itemId, { title, scriptureRef })
+      if (svcId) loadLineup(svcId)
+    }, 600)
+    return () => clearTimeout(timer)
+  }, [parsedScripture, currentItem?.id, selectedService?.id])
 
   const currentSlide: Slide | null = useMemo(() => {
     if (currentItem?.itemType === 'scripture') {
@@ -763,6 +905,17 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
                 className="w-full gap-1.5 h-8 text-xs text-muted-foreground hover:text-foreground"
                 onClick={async () => {
                   const newIdx = lineup.length
+                  await addScriptureToLineup({ title: 'Scripture', scriptureRef: '{}' })
+                  setSelectedSongIdx(newIdx)
+                }}
+              >
+                <BookOpen className="h-3.5 w-3.5" /> Add scripture
+              </Button>
+              <Button
+                variant="ghost" size="sm"
+                className="w-full gap-1.5 h-8 text-xs text-muted-foreground hover:text-foreground"
+                onClick={async () => {
+                  const newIdx = lineup.length
                   await addAnnouncementToLineup({ title: 'Announcement', content: '' })
                   setSelectedSongIdx(newIdx)
                 }}
@@ -1106,52 +1259,102 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
             })()
           ) : currentItem?.itemType === 'scripture' ? (
             <>
-              <div className="px-6 pt-5 pb-4 border-b border-border shrink-0">
-                <div className="flex items-center gap-2">
-                  <BookOpen className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <h2 className="text-lg font-bold text-foreground truncate">{currentItem.title ?? "Scripture"}</h2>
-                </div>
-              </div>
-              <div className="flex-1 overflow-y-auto px-6 py-4">
-                {scriptureVerses.length === 0 ? (
-                  <p className="text-xs text-muted-foreground text-center py-8">No verses found.</p>
-                ) : (
-                  <>
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                        Verses ({scriptureVerses.length})
-                      </span>
-                      <span className="text-[10px] text-muted-foreground">Click to preview on right</span>
-                    </div>
-                    <div className="grid grid-cols-3 gap-2.5">
-                      {scriptureVerses.map((v, i) => {
-                        const isPreview = previewSlideIdx === i
-                        return (
-                          <button
-                            key={i}
-                            onClick={() => setPreviewSlideIdx(i)}
-                            className={`rounded-lg overflow-hidden border-2 transition-all text-left ${
-                              isPreview
-                                ? "border-primary ring-2 ring-primary/30"
-                                : "border-border hover:border-primary/50"
-                            }`}
-                          >
-                            <div className="bg-gray-900 p-2.5 relative" style={{ aspectRatio: "16/9" }}>
-                              <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase text-white bg-violet-600 max-w-[90%] truncate block">
-                                {v.label}
-                              </span>
-                              <div className="flex items-center justify-center h-full px-1">
-                                <p className="text-[9px] text-white text-center leading-relaxed line-clamp-4">
-                                  {v.text}
-                                </p>
-                              </div>
-                            </div>
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </>
+              <div className="px-5 py-3 border-b border-border bg-card flex items-center gap-3 shrink-0">
+                <BookOpen className="h-4 w-4 text-muted-foreground shrink-0" />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Scripture</span>
+                {currentItem.title && currentItem.title !== 'Scripture' && (
+                  <span className="text-sm font-semibold text-foreground truncate">{currentItem.title}</span>
                 )}
+              </div>
+              <div className="flex-1 overflow-y-auto p-5 bg-muted/10">
+                <div className="max-w-2xl flex flex-col gap-4">
+                  {/* Paste area */}
+                  <div>
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1.5">
+                      Paste from BibleGateway
+                    </label>
+                    <textarea
+                      value={scripturePasteText}
+                      readOnly={isPast}
+                      rows={7}
+                      placeholder={"Paste scripture from biblegateway.com\n\nExample:\nJohn 3:16-17 New International Version\n16 For God so loved the world that he gave his one and only Son... 17 For God did not send his Son into the world to condemn the world..."}
+                      onChange={e => setScripturePasteText(e.target.value)}
+                      className="w-full px-3 py-2.5 text-sm bg-background border border-border rounded-md outline-none focus:border-primary/50 transition-colors resize-none placeholder:text-muted-foreground/40 leading-relaxed"
+                    />
+                    <p className="text-[10px] text-muted-foreground mt-1.5">
+                      Each verse gets its own projection slide. The reference ({`"John 3:16 NIV"`}) appears on every slide.
+                    </p>
+                  </div>
+
+                  {/* Parse feedback */}
+                  {scripturePasteText.trim() && (
+                    parsedScripture ? (
+                      <div className="rounded-lg border border-border bg-card overflow-hidden">
+                        <div className="px-4 py-2.5 border-b border-border flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold">{parsedScripture.title}</p>
+                            <p className="text-[11px] text-muted-foreground mt-0.5">
+                              {parsedScripture.verses.length} {parsedScripture.verses.length === 1 ? 'slide' : 'slides'} · saving…
+                            </p>
+                          </div>
+                          <span className="text-[10px] font-bold bg-green-500/15 text-green-500 px-2 py-0.5 rounded-full shrink-0">Detected</span>
+                        </div>
+                        <div className="divide-y divide-border">
+                          {parsedScripture.verses.map(v => (
+                            <div key={v.number} className="flex items-start gap-3 px-4 py-2.5">
+                              <span className="text-[11px] font-bold text-violet-400 shrink-0 w-5 pt-0.5">{v.number}</span>
+                              <p className="text-[12px] text-foreground leading-relaxed">{v.text}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs">
+                        Could not detect a reference. Make sure the text starts with something like "John 3:16" or "Psalm 23:1-6".
+                      </div>
+                    )
+                  )}
+
+                  {/* Existing saved verses (shown when paste box is empty) */}
+                  {!scripturePasteText.trim() && scriptureVerses.length > 0 && (
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                          Current content · {scriptureVerses.length} {scriptureVerses.length === 1 ? 'slide' : 'slides'}
+                        </label>
+                        <span className="text-[10px] text-muted-foreground">Click to preview on right</span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        {scriptureVerses.map((v, i) => {
+                          const isPreview = previewSlideIdx === i
+                          return (
+                            <button
+                              key={i}
+                              onClick={() => setPreviewSlideIdx(i)}
+                              className={`rounded-lg overflow-hidden border-2 transition-all text-left ${isPreview ? "border-primary ring-2 ring-primary/30" : "border-border hover:border-primary/50"}`}
+                            >
+                              <div className="bg-gray-900 p-2.5 relative" style={{ aspectRatio: "16/9" }}>
+                                <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase text-white bg-violet-600 max-w-[90%] truncate block">
+                                  {v.label}
+                                </span>
+                                <div className="flex items-center justify-center h-full px-1">
+                                  <p className="text-[9px] text-white text-center leading-relaxed line-clamp-4">{v.text}</p>
+                                </div>
+                              </div>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {!scripturePasteText.trim() && scriptureVerses.length === 0 && (
+                    <div className="flex flex-col items-center justify-center py-6 text-center gap-2">
+                      <BookOpen className="h-8 w-8 text-muted-foreground/30" />
+                      <p className="text-xs text-muted-foreground">Paste scripture from BibleGateway above to add verses</p>
+                    </div>
+                  )}
+                </div>
               </div>
             </>
           ) : currentSong ? (

@@ -101,6 +101,8 @@ contextBridge.exposeInMainWorld('worshipsync', {
                         ipcRenderer.invoke('lineup:addAnnouncement', serviceDateId, data),
     updateAnnouncement: (lineupItemId: number, data: { title?: string; content?: string }) =>
                         ipcRenderer.invoke('lineup:updateAnnouncement', lineupItemId, data),
+    updateScripture:    (lineupItemId: number, data: { title?: string; scriptureRef?: string }) =>
+                        ipcRenderer.invoke('lineup:updateScripture', lineupItemId, data),
     removeSong:     (lineupItemId: number)                     => ipcRenderer.invoke('lineup:removeSong', lineupItemId),
     reorder:        (serviceDateId: number, ids: number[])     => ipcRenderer.invoke('lineup:reorder', serviceDateId, ids),
     toggleSection:  (lineupItemId: number, sectionId: number, included: boolean) =>

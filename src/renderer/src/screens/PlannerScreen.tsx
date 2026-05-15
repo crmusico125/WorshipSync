@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { useServiceStore } from "../store/useServiceStore"
+import CreateServiceModal from "../components/CreateServiceModal"
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -222,11 +223,12 @@ export default function PlannerScreen({ onOpenService, onGoLive }: Props) {
       </div>
 
       {showNew && (
-        <NewServiceDialog
+        <CreateServiceModal
           onClose={() => setShowNew(false)}
-          onCreate={async (date, label) => {
-            await createService(date, label)
+          onCreated={async (serviceId) => {
+            await loadServices()
             setShowNew(false)
+            onOpenService(serviceId)
           }}
         />
       )}
@@ -601,79 +603,3 @@ function EditServiceDialog({
   )
 }
 
-// ── New Service Dialog ───────────────────────────────────────────────────────
-
-function NewServiceDialog({
-  onClose, onCreate,
-}: {
-  onClose: () => void
-  onCreate: (date: string, label: string) => Promise<void>
-}) {
-  const [date, setDate] = useState("")
-  const [label, setLabel] = useState("Sunday Service")
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState("")
-
-  const save = async () => {
-    if (!date) { setError("Please pick a date"); return }
-    setSaving(true)
-    try {
-      await onCreate(date, label.trim() || "Sunday Service")
-    } catch (e: any) {
-      setError(e?.message?.includes("UNIQUE") ? "A service already exists for this date." : "Failed to create service.")
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent hideClose className="p-0 gap-0 overflow-hidden rounded-xl border border-border shadow-xl" style={{ width: 420, maxWidth: "95vw" }}>
-        <div className="flex flex-col bg-background text-foreground">
-          <div className="px-6 pt-5 pb-1">
-            <DialogTitle className="text-lg font-bold">New service date</DialogTitle>
-            <p className="text-sm text-muted-foreground mt-1">
-              Create a new service to start building its lineup.
-            </p>
-          </div>
-
-          <div className="px-6 py-5 flex flex-col gap-4">
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-foreground">Service name</label>
-              <Input
-                autoFocus
-                placeholder="e.g. Sunday Service"
-                value={label}
-                onChange={(e) => { setLabel(e.target.value); setError("") }}
-                onKeyDown={(e) => e.key === "Enter" && save()}
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-foreground">Date</label>
-              <div className="relative">
-                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                <Input
-                  type="date"
-                  className="pl-9"
-                  value={date}
-                  onChange={(e) => { setDate(e.target.value); setError("") }}
-                />
-              </div>
-            </div>
-
-            {error && <p className="text-xs text-destructive">{error}</p>}
-          </div>
-
-          <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-border">
-            <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
-            <Button size="sm" disabled={!date || saving} onClick={save} className="gap-1.5">
-              <Plus className="h-3.5 w-3.5" />
-              {saving ? "Creating…" : "Create"}
-            </Button>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
-  )
-}

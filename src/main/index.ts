@@ -934,6 +934,19 @@ ipcMain.handle('lineup:updateAnnouncement', (_e, lineupItemId: number, data: {
   return true
 })
 
+ipcMain.handle('lineup:updateScripture', (_e, lineupItemId: number, data: {
+  title?: string
+  scriptureRef?: string
+}) => {
+  if (data.title !== undefined) {
+    db.update(lineupItems).set({ title: data.title }).where(eq(lineupItems.id, lineupItemId)).run()
+  }
+  if (data.scriptureRef !== undefined) {
+    db.update(lineupItems).set({ scriptureRef: data.scriptureRef }).where(eq(lineupItems.id, lineupItemId)).run()
+  }
+  return true
+})
+
 ipcMain.handle('lineup:addMedia', (_e, serviceDateId: number, data: {
   title: string
   mediaPath: string

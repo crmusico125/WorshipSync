@@ -130,6 +130,7 @@ declare global {
         setSectionOrder:    (lineupItemId: number, sectionIds: number[]) => Promise<boolean>
         addAnnouncement:    (serviceDateId: number, data: { title: string; content: string }) => Promise<unknown>
         updateAnnouncement: (lineupItemId: number, data: { title?: string; content?: string }) => Promise<boolean>
+        updateScripture:    (lineupItemId: number, data: { title?: string; scriptureRef?: string }) => Promise<boolean>
         setItemStyle:       (lineupItemId: number, style: string) => Promise<boolean>
       }
       themes: {

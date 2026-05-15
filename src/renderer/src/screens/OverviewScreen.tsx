@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect } from "react"
+import CreateServiceModal from "../components/CreateServiceModal"
 import {
   CalendarClock,
   Clock,
@@ -12,12 +13,8 @@ import {
   Projector,
   Monitor,
   ListOrdered,
-  AlertCircle,
-  Info,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import type { AppScreen } from "../../../../shared/types"
 
 interface ServiceWithCount {
@@ -431,15 +428,13 @@ export default function OverviewScreen({ onGoLive, onOpenBuilder, onNavigate, pr
       </div>
 
       {showNewServiceModal && (
-        <NewServiceModal
-          schedules={serviceSchedules}
-          defaultTimezone={serviceTimezone}
+        <CreateServiceModal
           onClose={() => setShowNewServiceModal(false)}
-          onCreate={async (date, label) => {
-            await window.worshipsync.services.create({ date, label, status: "empty" })
+          onCreated={async (serviceId) => {
             const updated = await window.worshipsync.services.getAllWithCounts()
             setServices(updated as any)
             setShowNewServiceModal(false)
+            onOpenBuilder(serviceId)
           }}
         />
       )}
@@ -447,241 +442,4 @@ export default function OverviewScreen({ onGoLive, onOpenBuilder, onNavigate, pr
   )
 }
 
-// ── New Service Modal ─────────────────────────────────────────────────────────
 
-const DAYS_LONG = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
-
-function formatTime12(t: string): string {
-  if (!t) return ""
-  const [h, m] = t.split(":").map(Number)
-  const ampm = h < 12 ? "AM" : "PM"
-  const h12 = h % 12 || 12
-  return `${h12}:${String(m).padStart(2, "0")} ${ampm}`
-}
-
-function NewServiceModal({
-  schedules,
-  defaultTimezone,
-  onClose,
-  onCreate,
-}: {
-  schedules: ServiceSchedule[]
-  defaultTimezone: string
-  onClose: () => void
-  onCreate: (date: string, label: string) => Promise<void>
-}) {
-  const [date, setDate] = useState("")
-  const [label, setLabel] = useState("Sunday Service")
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState("")
-  const [selectedScheduleId, setSelectedScheduleId] = useState<string | null>(null)
-  const [startTime, setStartTime] = useState("")
-  const [endTime, setEndTime] = useState("")
-  const [timezone, setTimezone] = useState(defaultTimezone)
-
-  // Days that have at least one schedule configured
-  const scheduledDows = useMemo(
-    () => new Set(schedules.map((s) => s.dayOfWeek)),
-    [schedules]
-  )
-
-  const selectedDow = date
-    ? new Date(date + "T12:00:00").getDay()
-    : null
-
-  const matchingSchedules = useMemo(
-    () => (selectedDow !== null ? schedules.filter((s) => s.dayOfWeek === selectedDow) : []),
-    [schedules, selectedDow]
-  )
-
-  const dowMismatch = selectedDow !== null && scheduledDows.size > 0 && !scheduledDows.has(selectedDow)
-
-  // When date changes, auto-populate from matching schedule(s)
-  useEffect(() => {
-    if (matchingSchedules.length === 0) {
-      setSelectedScheduleId(null)
-      setStartTime("")
-      setEndTime("")
-      setTimezone(defaultTimezone)
-      if (matchingSchedules.length === 0 && selectedDow !== null) setLabel("Sunday Service")
-    } else if (matchingSchedules.length === 1) {
-      const s = matchingSchedules[0]
-      setSelectedScheduleId(s.id)
-      setStartTime(s.startTime)
-      setEndTime(s.endTime)
-      setTimezone(s.timezone ?? defaultTimezone)
-      setLabel(s.label || "Sunday Service")
-    } else {
-      // Multiple — pick first by default
-      const s = matchingSchedules[0]
-      setSelectedScheduleId(s.id)
-      setStartTime(s.startTime)
-      setEndTime(s.endTime)
-      setTimezone(s.timezone ?? defaultTimezone)
-      setLabel(s.label || "Sunday Service")
-    }
-  }, [matchingSchedules.map((s) => s.id).join(",")])
-
-  // When user picks a different schedule from the dropdown
-  const handleScheduleChange = (id: string) => {
-    setSelectedScheduleId(id)
-    const s = schedules.find((sc) => sc.id === id)
-    if (s) {
-      setStartTime(s.startTime)
-      setEndTime(s.endTime)
-      setTimezone(s.timezone ?? defaultTimezone)
-      setLabel(s.label || label)
-    }
-  }
-
-  const save = async () => {
-    if (!date) { setError("Please pick a date"); return }
-    setSaving(true)
-    try {
-      await onCreate(date, label.trim() || "Sunday Service")
-    } catch (e: any) {
-      setError(
-        e?.message?.includes("UNIQUE")
-          ? "A service already exists for this date."
-          : "Failed to create service."
-      )
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const scheduledDayNames = [...scheduledDows]
-    .sort()
-    .map((d) => DAYS_LONG[d])
-    .join(", ")
-
-  return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent
-        hideClose
-        className="p-0 gap-0 overflow-hidden rounded-xl border border-border shadow-xl"
-        style={{ width: 460, maxWidth: "95vw" }}
-      >
-        <div className="flex flex-col bg-background text-foreground">
-          <div className="px-6 pt-5 pb-1">
-            <DialogTitle className="text-lg font-bold">New service date</DialogTitle>
-            <p className="text-sm text-muted-foreground mt-1">
-              Create a new service to start building its lineup.
-            </p>
-          </div>
-
-          <div className="px-6 py-5 flex flex-col gap-4">
-
-            {/* Service name */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-foreground">Service name</label>
-              <Input
-                autoFocus
-                placeholder="e.g. Sunday Service"
-                value={label}
-                onChange={(e) => { setLabel(e.target.value); setError("") }}
-                onKeyDown={(e) => e.key === "Enter" && save()}
-              />
-            </div>
-
-            {/* Date */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-foreground">Date</label>
-              <div className="relative">
-                <CalendarClock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                <Input
-                  type="date"
-                  className="pl-9"
-                  value={date}
-                  onChange={(e) => { setDate(e.target.value); setError("") }}
-                />
-              </div>
-
-              {/* Scheduled days hint */}
-              {scheduledDows.size > 0 && !date && (
-                <p className="text-[11px] text-muted-foreground flex items-center gap-1.5">
-                  <Info className="h-3 w-3 shrink-0" />
-                  Scheduled service days: {scheduledDayNames}
-                </p>
-              )}
-
-              {/* Day mismatch warning */}
-              {dowMismatch && (
-                <p className="text-[11px] text-amber-400 flex items-center gap-1.5">
-                  <AlertCircle className="h-3 w-3 shrink-0" />
-                  {DAYS_LONG[selectedDow!]} has no service schedule set. You can still create it.
-                </p>
-              )}
-            </div>
-
-            {/* Schedule picker (multiple schedules on same day) */}
-            {matchingSchedules.length > 1 && (
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium text-foreground">Service slot</label>
-                <select
-                  value={selectedScheduleId ?? ""}
-                  onChange={(e) => handleScheduleChange(e.target.value)}
-                  className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                >
-                  {matchingSchedules.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.label} ({formatTime12(s.startTime)} – {formatTime12(s.endTime)})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {/* Time fields — shown when a schedule matches */}
-            {matchingSchedules.length > 0 && (
-              <div className="rounded-lg border border-border bg-secondary/40 p-3 space-y-3">
-                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">
-                  Service Time
-                </p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-xs text-muted-foreground">Start time</label>
-                    <Input
-                      type="time"
-                      value={startTime}
-                      onChange={(e) => setStartTime(e.target.value)}
-                      className="h-8 text-sm"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs text-muted-foreground">End time</label>
-                    <Input
-                      type="time"
-                      value={endTime}
-                      onChange={(e) => setEndTime(e.target.value)}
-                      className="h-8 text-sm"
-                    />
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-xs text-muted-foreground">Timezone</label>
-                  <Input
-                    value={timezone}
-                    onChange={(e) => setTimezone(e.target.value)}
-                    className="h-8 text-sm"
-                    placeholder="e.g. America/Los_Angeles"
-                  />
-                </div>
-              </div>
-            )}
-
-            {error && <p className="text-xs text-destructive">{error}</p>}
-          </div>
-
-          <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-border">
-            <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
-            <Button size="sm" disabled={!date || saving} onClick={save} className="gap-1.5">
-              <CalendarPlus className="h-3.5 w-3.5" />
-              {saving ? "Creating…" : "Create"}
-            </Button>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
-  )
-}

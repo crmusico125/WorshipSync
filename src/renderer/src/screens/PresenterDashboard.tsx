@@ -1922,22 +1922,41 @@ export default function PresenterDashboard({
                         </>
                       )
                     )}
-                    <div className="absolute inset-0 flex items-center justify-center px-3">
-                      {isLogo ? (
-                        <div className="absolute inset-0 bg-black flex items-center justify-center">
-                          <span style={{ fontFamily: "Montserrat, sans-serif", fontWeight: 700, color: "rgba(255,255,255,0.15)", letterSpacing: "-0.03em", fontSize: 14 }}>
-                            WorshipSync
-                          </span>
+                    {isLogo ? (
+                      <div className="absolute inset-0 bg-black flex items-center justify-center">
+                        <span style={{ fontFamily: "Montserrat, sans-serif", fontWeight: 700, color: "rgba(255,255,255,0.15)", letterSpacing: "-0.03em", fontSize: 14 }}>
+                          WorshipSync
+                        </span>
+                      </div>
+                    ) : currentSlide && !isBlank ? (
+                      currentSlide.sectionType === "verse" ? (
+                        /* Scripture: verse text + reference at bottom */
+                        <div className="absolute inset-0 flex flex-col px-3 pt-2 pb-1.5">
+                          <div className="flex-1 flex items-center justify-center min-h-0">
+                            <p className="text-center font-bold leading-snug whitespace-pre-wrap relative z-10 w-full"
+                              style={{ fontSize: "4.5cqw", color: effectiveTheme.textColor, fontFamily: effectiveTheme.fontFamily }}>
+                              {isTextCleared ? "" : currentSlide.lines.join("\n")}
+                            </p>
+                          </div>
+                          <p className="text-center font-semibold relative z-10 shrink-0 truncate"
+                            style={{ fontSize: "2.2cqw", color: "rgba(255,255,255,0.65)", fontFamily: effectiveTheme.fontFamily }}>
+                            {currentSlide.sectionLabel}
+                          </p>
                         </div>
-                      ) : currentSlide && !isBlank ? (
-                        <p className="text-center font-bold leading-snug whitespace-pre-wrap relative z-10 w-full"
-                          style={{ fontSize: "5cqw", color: effectiveTheme.textColor, fontFamily: effectiveTheme.fontFamily, textAlign: effectiveTheme.textAlign, textShadow: effectiveTheme.textShadowOpacity > 0 ? `0 1px 3px rgba(0,0,0,${effectiveTheme.textShadowOpacity / 100})` : "none" }}>
-                          {isTextCleared ? "" : currentSlide.lines.join("\n")}
-                        </p>
                       ) : (
+                        /* Songs / other: centered text */
+                        <div className="absolute inset-0 flex items-center justify-center px-3">
+                          <p className="text-center font-bold leading-snug whitespace-pre-wrap relative z-10 w-full"
+                            style={{ fontSize: "5cqw", color: effectiveTheme.textColor, fontFamily: effectiveTheme.fontFamily, textAlign: effectiveTheme.textAlign, textShadow: effectiveTheme.textShadowOpacity > 0 ? `0 1px 3px rgba(0,0,0,${effectiveTheme.textShadowOpacity / 100})` : "none" }}>
+                            {isTextCleared ? "" : currentSlide.lines.join("\n")}
+                          </p>
+                        </div>
+                      )
+                    ) : (
+                      <div className="absolute inset-0 flex items-center justify-center">
                         <MonitorOff className="h-4 w-4 text-gray-600" />
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1968,16 +1987,35 @@ export default function PresenterDashboard({
                             </>
                           )
                         )}
-                        <div className="absolute inset-0 flex items-center justify-center px-3">
-                          {nextUp && nextUp.slide.sectionType !== "blank" ? (
-                            <p className="text-center font-bold leading-snug whitespace-pre-wrap relative z-10 w-full"
-                              style={{ fontSize: "5cqw", color: nextUpTheme.textColor, fontFamily: nextUpTheme.fontFamily, textAlign: nextUpTheme.textAlign }}>
-                              {nextUp.slide.lines.join("\n") || ""}
-                            </p>
+                        {nextUp && nextUp.slide.sectionType !== "blank" ? (
+                          nextUp.slide.sectionType === "verse" ? (
+                            /* Scripture: verse text + reference at bottom */
+                            <div className="absolute inset-0 flex flex-col px-3 pt-2 pb-1.5">
+                              <div className="flex-1 flex items-center justify-center min-h-0">
+                                <p className="text-center font-bold leading-snug whitespace-pre-wrap relative z-10 w-full"
+                                  style={{ fontSize: "4.5cqw", color: nextUpTheme.textColor, fontFamily: nextUpTheme.fontFamily }}>
+                                  {nextUp.slide.lines.join("\n")}
+                                </p>
+                              </div>
+                              <p className="text-center font-semibold relative z-10 shrink-0 truncate"
+                                style={{ fontSize: "2.2cqw", color: "rgba(255,255,255,0.65)", fontFamily: nextUpTheme.fontFamily }}>
+                                {nextUp.slide.sectionLabel}
+                              </p>
+                            </div>
                           ) : (
+                            /* Songs / other: centered text */
+                            <div className="absolute inset-0 flex items-center justify-center px-3">
+                              <p className="text-center font-bold leading-snug whitespace-pre-wrap relative z-10 w-full"
+                                style={{ fontSize: "5cqw", color: nextUpTheme.textColor, fontFamily: nextUpTheme.fontFamily, textAlign: nextUpTheme.textAlign }}>
+                                {nextUp.slide.lines.join("\n")}
+                              </p>
+                            </div>
+                          )
+                        ) : (
+                          <div className="absolute inset-0 flex items-center justify-center">
                             <p className="text-[10px] text-gray-600">No next slide</p>
-                          )}
-                        </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })()}
@@ -2029,18 +2067,21 @@ export default function PresenterDashboard({
                   const abbrev = SECTION_ABBREVS[slide.sectionType] ?? slide.sectionLabel[0];
                   return (
                     <div key={i} data-slide-idx={i} className="flex flex-col gap-1">
-                      <div className="flex items-center justify-between gap-1 px-0.5 h-4">
-                        <div className="flex items-center gap-1">
-                          <span className={`text-[9px] font-bold px-1 py-0.5 rounded leading-none ${isActive ? "bg-red-500 text-white" : "bg-muted-foreground text-background"}`}>
-                            {abbrev}
-                          </span>
-                          <span className={`text-[10px] font-semibold ${isActive ? "text-red-400" : "text-muted-foreground"}`}>
-                            {slide.sectionLabel}
-                          </span>
+                      {/* Label row — only for non-scripture slides */}
+                      {slide.sectionType !== "verse" && (
+                        <div className="flex items-center justify-between gap-1 px-0.5 h-4">
+                          <div className="flex items-center gap-1">
+                            <span className={`text-[9px] font-bold px-1 py-0.5 rounded leading-none ${isActive ? "bg-red-500 text-white" : "bg-muted-foreground text-background"}`}>
+                              {abbrev}
+                            </span>
+                            <span className={`text-[10px] font-semibold ${isActive ? "text-red-400" : "text-muted-foreground"}`}>
+                              {slide.sectionLabel}
+                            </span>
+                          </div>
+                          {isActive && <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-red-500/20 text-red-400 leading-none">LIVE</span>}
+                          {isNextSlide && <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-green-500/20 text-green-400 leading-none">NEXT</span>}
                         </div>
-                        {isActive && <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-red-500/20 text-red-400 leading-none">LIVE</span>}
-                        {isNextSlide && <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-green-500/20 text-green-400 leading-none">NEXT</span>}
-                      </div>
+                      )}
                       <button
                         onClick={(e) => { e.currentTarget.blur(); sendSlide(selectedSongIdx, i); }}
                         className={`relative w-full overflow-hidden rounded-md focus:outline-none border-2 transition-colors ${
@@ -2049,7 +2090,8 @@ export default function PresenterDashboard({
                         style={{ outline: isActive || isNextSlide ? "none" : "1px solid hsl(var(--border))" }}
                       >
                         <div className="w-full" style={{ paddingBottom: "56.25%" }} />
-                        <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="absolute inset-0">
+                          {/* Background */}
                           {bg && slide.sectionType !== "blank" ? (
                             bg.startsWith("color:") ? (
                               <div className="absolute inset-0" style={{ background: bg.replace("color:", "") }} />
@@ -2064,10 +2106,33 @@ export default function PresenterDashboard({
                           ) : (
                             <div className="absolute inset-0 bg-black" />
                           )}
-                          <p className="relative z-10 text-center font-bold text-[11px] leading-snug whitespace-pre-wrap px-2"
-                            style={{ color: effectiveTheme.textColor, fontFamily: effectiveTheme.fontFamily, textShadow: effectiveTheme.textShadowOpacity > 0 ? `0 1px 3px rgba(0,0,0,${effectiveTheme.textShadowOpacity / 100})` : "none" }}>
-                            {slide.sectionType === "blank" ? "" : slide.lines.join("\n")}
-                          </p>
+
+                          {slide.sectionType === "verse" ? (
+                            /* Scripture: verse text centered + reference at bottom */
+                            <div className="absolute inset-0 flex flex-col px-1.5 pt-1.5 pb-1">
+                              <div className="flex-1 flex items-center justify-center min-h-0">
+                                <p className="text-center font-bold text-[9px] leading-snug whitespace-pre-wrap relative z-10"
+                                  style={{ color: effectiveTheme.textColor, fontFamily: effectiveTheme.fontFamily }}>
+                                  {slide.lines.join("\n")}
+                                </p>
+                              </div>
+                              <p className="text-center text-[7px] font-semibold relative z-10 shrink-0 truncate"
+                                style={{ color: "rgba(255,255,255,0.6)", fontFamily: effectiveTheme.fontFamily }}>
+                                {slide.sectionLabel}
+                              </p>
+                              {/* LIVE / NEXT badges inside thumbnail for scripture */}
+                              {isActive && <span className="absolute top-1 right-1 text-[7px] font-bold px-1 py-0.5 rounded bg-red-500/80 text-white leading-none z-20">LIVE</span>}
+                              {isNextSlide && <span className="absolute top-1 right-1 text-[7px] font-bold px-1 py-0.5 rounded bg-green-500/70 text-white leading-none z-20">NEXT</span>}
+                            </div>
+                          ) : (
+                            /* Songs / other: original centered layout */
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <p className="relative z-10 text-center font-bold text-[11px] leading-snug whitespace-pre-wrap px-2"
+                                style={{ color: effectiveTheme.textColor, fontFamily: effectiveTheme.fontFamily, textShadow: effectiveTheme.textShadowOpacity > 0 ? `0 1px 3px rgba(0,0,0,${effectiveTheme.textShadowOpacity / 100})` : "none" }}>
+                                {slide.sectionType === "blank" ? "" : slide.lines.join("\n")}
+                              </p>
+                            </div>
+                          )}
                         </div>
                       </button>
                     </div>

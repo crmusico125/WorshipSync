@@ -195,7 +195,8 @@ function parseBibleGatewayText(raw: string): ParsedScripture | null {
     .replace(/ /g, ' ').replace(/['']/g, "'").replace(/[""]/g, '"')
 
   const allLines = text.split('\n').map(l => l.trim())
-  const refRegex = /^(.+?)\s+(\d+):(\d+)(?:[–\-](\d+))?\s*(.*)$/
+  // Reference line contains only book + chapter:verse — version is expected on the next line
+  const refRegex = /^(.+?)\s+(\d+):(\d+)(?:[–\-](\d+))?$/
 
   let refLineIdx = -1; let refMatch: RegExpMatchArray | null = null
   for (let i = 0; i < Math.min(allLines.length, 5); i++) {
@@ -211,29 +212,36 @@ function parseBibleGatewayText(raw: string): ParsedScripture | null {
   const chapter = parseInt(refMatch[2])
   const verseStart = parseInt(refMatch[3])
   const verseEnd = refMatch[4] ? parseInt(refMatch[4]) : verseStart
-  let version = refMatch[5]?.replace(/[()]/g, '').trim() || ''
 
-  for (const [name, abbr] of Object.entries(SCRIPTURE_VERSION_MAP)) {
-    if (version.toLowerCase().includes(name.toLowerCase())) { version = abbr; break }
-  }
-  if (!version || version.length > 10) {
-    for (let i = refLineIdx + 1; i < Math.min(refLineIdx + 4, allLines.length); i++) {
-      const line = allLines[i]; if (!line || /^\d/.test(line)) break
-      const cleaned = line.replace(/[()]/g, '').trim()
-      for (const [name, abbr] of Object.entries(SCRIPTURE_VERSION_MAP)) {
-        if (cleaned.toLowerCase().includes(name.toLowerCase())) { version = abbr; break }
-      }
-      if (version && version.length <= 10) break
-      if (/^[A-Z]{2,8}$/.test(cleaned)) { version = cleaned; break }
+  // Version is on the line immediately after the reference (line 2)
+  let version = ''
+  for (let i = refLineIdx + 1; i < Math.min(refLineIdx + 4, allLines.length); i++) {
+    const line = allLines[i]; if (!line) continue
+    if (/^\d/.test(line)) break  // hit verse content — no version found before it
+    const cleaned = line.replace(/[()]/g, '').trim()
+    for (const [name, abbr] of Object.entries(SCRIPTURE_VERSION_MAP)) {
+      if (cleaned.toLowerCase().includes(name.toLowerCase())) { version = abbr; break }
     }
+    if (version) break
+    if (/^[A-Z]{2,10}$/.test(cleaned)) { version = cleaned; break }
   }
-  if (!version || version.length > 10) version = 'NIV'
+  if (!version) version = 'NIV'
 
+  // Collect body lines:
+  // 1. Skip the version line first (first non-empty, non-digit line after reference)
+  // 2. Then stop at copyright markers
+  // Order matters: version line often matches copyright patterns (e.g. "New International Version")
   const bodyLines: string[] = []
+  let skippedVersion = false
   for (let i = refLineIdx + 1; i < allLines.length; i++) {
     const line = allLines[i]
+    // Step 1 — skip version line before any other check
+    if (!skippedVersion && line && !/^\d/.test(line)) {
+      skippedVersion = true
+      continue
+    }
+    // Step 2 — stop at copyright (only after version line is already past)
     if (SCRIPTURE_COPYRIGHT_PATTERNS.some(p => p.test(line))) break
-    if (/^[A-Z]{2,8}$/.test(line) && !line.startsWith('I ')) break
     bodyLines.push(line)
   }
 
@@ -1333,12 +1341,14 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
                               onClick={() => setPreviewSlideIdx(i)}
                               className={`rounded-lg overflow-hidden border-2 transition-all text-left ${isPreview ? "border-primary ring-2 ring-primary/30" : "border-border hover:border-primary/50"}`}
                             >
-                              <div className="bg-gray-900 p-2.5 relative" style={{ aspectRatio: "16/9" }}>
-                                <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-[8px] font-bold uppercase text-white bg-violet-600 max-w-[90%] truncate block">
-                                  {v.label}
-                                </span>
-                                <div className="flex items-center justify-center h-full px-1">
-                                  <p className="text-[9px] text-white text-center leading-relaxed line-clamp-4">{v.text}</p>
+                              <div className="bg-gray-900 flex flex-col" style={{ aspectRatio: "16/9" }}>
+                                {/* Verse text — centered, fills available space */}
+                                <div className="flex-1 flex items-center justify-center px-2 py-1.5 min-h-0">
+                                  <p className="text-[8px] text-white text-center leading-relaxed line-clamp-4">{v.text}</p>
+                                </div>
+                                {/* Reference — bottom, matching projection layout */}
+                                <div className="px-2 pb-1.5 text-center">
+                                  <p className="text-[7px] text-white/60 font-semibold truncate tracking-wide">{v.label}</p>
                                 </div>
                               </div>
                             </button>
@@ -1745,16 +1755,33 @@ function ItemSettingsPanel({
               {bg && slide && <img src={`file://${bg}`} className="absolute inset-0 w-full h-full object-cover" alt="" />}
               {bg && slide && <div className="absolute inset-0" style={{ background: `rgba(0,0,0,${theme.overlayOpacity / 100})` }} />}
               {slide ? (
-                <div className={`relative h-full flex p-4 ${
-                  theme.textPosition === "top" ? "items-start" : theme.textPosition === "bottom" ? "items-end" : "items-center"
-                } justify-center`}>
-                  <p className="text-xs leading-relaxed whitespace-pre-wrap"
-                    style={{ color: theme.textColor, fontFamily: theme.fontFamily, fontWeight: Number(theme.fontWeight) || 600, textAlign: theme.textAlign, textShadow: theme.textShadowOpacity > 0 ? `0 2px 4px rgba(0,0,0,${theme.textShadowOpacity / 100})` : "none" }}>
-                    {slide.lines.join("\n")}
-                  </p>
-                </div>
+                slide.sectionType === "verse" ? (
+                  /* Scripture layout: verse text + reference at bottom — mirrors projection window */
+                  <div className="absolute inset-0 flex flex-col p-3">
+                    <div className="flex-1 flex items-center justify-center min-h-0">
+                      <p className="text-xs leading-relaxed whitespace-pre-wrap text-center"
+                        style={{ color: theme.textColor, fontFamily: theme.fontFamily, fontWeight: Number(theme.fontWeight) || 600, textShadow: theme.textShadowOpacity > 0 ? `0 2px 4px rgba(0,0,0,${theme.textShadowOpacity / 100})` : "none" }}>
+                        {slide.lines.join("\n")}
+                      </p>
+                    </div>
+                    <p className="text-center text-[9px] font-semibold tracking-wide shrink-0 pb-0.5"
+                      style={{ color: "rgba(255,255,255,0.65)", fontFamily: theme.fontFamily }}>
+                      {slide.sectionLabel}
+                    </p>
+                  </div>
+                ) : (
+                  /* Song / other: original centered layout */
+                  <div className={`absolute inset-0 flex p-4 ${
+                    theme.textPosition === "top" ? "items-start" : theme.textPosition === "bottom" ? "items-end" : "items-center"
+                  } justify-center`}>
+                    <p className="text-xs leading-relaxed whitespace-pre-wrap"
+                      style={{ color: theme.textColor, fontFamily: theme.fontFamily, fontWeight: Number(theme.fontWeight) || 600, textAlign: theme.textAlign, textShadow: theme.textShadowOpacity > 0 ? `0 2px 4px rgba(0,0,0,${theme.textShadowOpacity / 100})` : "none" }}>
+                      {slide.lines.join("\n")}
+                    </p>
+                  </div>
+                )
               ) : (
-                <div className="relative h-full flex items-center justify-center">
+                <div className="absolute inset-0 flex items-center justify-center">
                   <p className="text-[10px] text-gray-600">No slide selected</p>
                 </div>
               )}

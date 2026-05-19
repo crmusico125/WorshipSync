@@ -546,12 +546,12 @@ export default function ProjectionWindow() {
             <div
               style={{
                 textAlign: "center",
-                padding: "3% 0 4%",
-                fontSize: Math.max(18, Math.round(scaledFontSize * 0.5)),
+                padding: "2% 0 4%",
+                fontSize: Math.max(28, Math.round(scaledFontSize * 0.65)),
                 fontFamily: theme.fontFamily,
                 fontWeight: "600",
-                color: "rgba(255,255,255,0.70)",
-                letterSpacing: "0.03em",
+                color: "rgba(255,255,255,0.85)",
+                letterSpacing: "0.04em",
                 flexShrink: 0,
               }}
             >

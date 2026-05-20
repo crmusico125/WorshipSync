@@ -3,7 +3,7 @@ import {
   Plus, BookOpen, Trash2, Pencil,
   Radio, Eye, Music2, Calendar, Image as ImageIcon,
   Monitor, Timer, GripVertical, X, Megaphone,
-  Play, Pause, SkipBack, SkipForward, Repeat, ListTodo,
+  Play, Pause, SkipBack, SkipForward, Repeat, ListTodo, Layers, Check,
 } from "lucide-react"
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors,
@@ -283,6 +283,7 @@ function parseBibleGatewayText(raw: string): ParsedScripture | null {
 // ── Duration helpers ─────────────────────────────────────────────────────────
 
 function estimateDuration(item: LineupItemWithSong, themeCache: Record<number, any>): number {
+  if (item.itemType === 'section') return 0
   if (item.itemType === 'countdown') return 300
   if (item.itemType === 'scripture') {
     try { return (JSON.parse(item.scriptureRef ?? '{}').verses ?? []).length * 12 } catch { return 0 }
@@ -323,7 +324,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
     addScriptureToLineup, addMediaToLineup,
     removeSongFromLineup, loadServices, selectService,
     services, reorderLineup, updateStatus, updateService,
-    patchLineupItemSectionOrder, setMediaLoop, addAnnouncementToLineup,
+    patchLineupItemSectionOrder, setMediaLoop, addSectionToLineup,
   } = useServiceStore()
   const { loadSongs } = useSongStore()
 
@@ -336,6 +337,8 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
   const [newTemplateName, setNewTemplateName] = useState("")
   const [applyingTemplate, setApplyingTemplate] = useState(false)
   const [editingItemId, setEditingItemId] = useState<number | null>(null)
+  const [editingSectionId, setEditingSectionId] = useState<number | null>(null)
+  const [sectionEditValue, setSectionEditValue] = useState("")
   const [selectedSongIdx, setSelectedSongIdx] = useState(0)
   const [previewSlideIdx, setPreviewSlideIdx] = useState(0)
   const [notesMap, setNotesMap] = useState<Record<number, string>>({})
@@ -373,6 +376,24 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
   const [savingBg, setSavingBg] = useState(false)
   const [arrangedSectionIds, setArrangedSectionIds] = useState<number[] | null>(null)
   const [arrangementChanged, setArrangementChanged] = useState(false)
+
+  // ── Section inline edit ───────────────────────────────────────────────────
+
+  const confirmSectionEdit = async () => {
+    if (!editingSectionId) return
+    const name = sectionEditValue.trim() || 'Section'
+    await window.worshipsync.lineup.updateAnnouncement(editingSectionId, { title: name })
+    if (selectedService) await loadLineup(selectedService.id)
+    setEditingSectionId(null)
+  }
+
+  const cancelSectionEdit = async () => {
+    if (!editingSectionId) return
+    const idx = lineup.findIndex(i => i.id === editingSectionId)
+    await removeSongFromLineup(editingSectionId)
+    setEditingSectionId(null)
+    if (idx >= 0 && selectedSongIdx >= idx) setSelectedSongIdx(Math.max(0, idx - 1))
+  }
 
   // ── Load ─────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -562,8 +583,36 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
     await addSongToLineup(songId)
   }
 
+  // ── Section-targeted insertion ────────────────────────────────────────────
+  // When "+ Add Item" is clicked inside a section, we record that section's
+  // lineup index. After any add completes (items append to end), we immediately
+  // reorder them to sit just after the last item in the target section.
+  const [insertAfterSectionIdx, setInsertAfterSectionIdx] = useState<number | null>(null)
+
+  const repositionAfterSection = async (sectionIdx: number, prevLen: number) => {
+    const fresh = useServiceStore.getState().lineup
+    if (fresh.length <= prevLen) return            // nothing was actually added
+    if (sectionIdx >= prevLen) return              // section index out of range
+
+    // Find the last item belonging to sectionIdx (stop at the next section)
+    let insertAfterPos = sectionIdx
+    for (let j = sectionIdx + 1; j < prevLen; j++) {
+      if (fresh[j].itemType === 'section') break
+      insertAfterPos = j
+    }
+
+    const newIds = fresh.slice(prevLen).map(i => i.id)
+    const before  = fresh.slice(0, prevLen).map(i => i.id)
+    before.splice(insertAfterPos + 1, 0, ...newIds)
+    await reorderLineup(before)
+  }
+
   const handleLibraryAdd = async (songIds: number[]) => {
+    const prevLen = useServiceStore.getState().lineup.length
     for (const id of songIds) await addSongToLineup(id)
+    if (insertAfterSectionIdx !== null) {
+      await repositionAfterSection(insertAfterSectionIdx, prevLen)
+    }
   }
 
   const handleAddScripture = async (
@@ -571,6 +620,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
     verses: { number: number; text: string }[],
     ref: { book: string; chapter: number; translation: string }
   ) => {
+    const prevLen = useServiceStore.getState().lineup.length
     const scriptureRef = JSON.stringify({
       verses: verses.map(v => ({
         label: `${ref.book} ${ref.chapter}:${v.number} ${ref.translation}`,
@@ -578,14 +628,21 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
       }))
     })
     await addScriptureToLineup({ title, scriptureRef })
+    if (insertAfterSectionIdx !== null) {
+      await repositionAfterSection(insertAfterSectionIdx, prevLen)
+    }
   }
 
   const handleAddMedia = async (path: string) => {
+    const prevLen = useServiceStore.getState().lineup.length
     const filename = path.split("/").pop() ?? "Media"
     const isVideo = /\.(mp4|webm|mov)$/i.test(path)
     const isAudio = /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(path)
     const label = isVideo ? "Video" : isAudio ? "Audio" : "Image"
     await addMediaToLineup({ title: `${label}: ${filename}`, mediaPath: path })
+    if (insertAfterSectionIdx !== null) {
+      await repositionAfterSection(insertAfterSectionIdx, prevLen)
+    }
   }
 
   const handleLyricsSave = async (newLyrics: string) => {
@@ -839,104 +896,187 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
             </span>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-2">
+          {/* "+ Add Section" always at the top of the list */}
+          {!isPast && (
+            <div className="px-3 py-2 border-b border-border shrink-0">
+              <button
+                onClick={async () => {
+                  const beforeLen = lineup.length
+                  await addSectionToLineup('')
+                  const updated = useServiceStore.getState().lineup
+                  const newItem = updated[beforeLen]
+                  if (newItem) {
+                    setEditingSectionId(newItem.id)
+                    setSectionEditValue('')
+                    setSelectedSongIdx(beforeLen)
+                  }
+                }}
+                className="w-full flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground transition-colors py-1"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add Section
+              </button>
+            </div>
+          )}
+
+          <div className="flex-1 overflow-y-auto">
             {lineup.length === 0 ? (
+              /* ── Empty: guide toward sections first ── */
               <div className="flex flex-col items-center justify-center py-10 text-center px-4">
-                <Music2 className="h-8 w-8 text-muted-foreground mb-3" />
-                <p className="text-xs font-medium text-foreground mb-1">Empty lineup</p>
-                <p className="text-[10px] text-muted-foreground mb-4">
-                  Add songs from your library or create new ones.
+                <Layers className="h-8 w-8 text-muted-foreground mb-3" />
+                <p className="text-xs font-medium text-foreground mb-1">Start with sections</p>
+                <p className="text-[10px] text-muted-foreground leading-relaxed">
+                  Click "Add Section" above to organize your service (Worship, Message, Closing…), then add items to each.
                 </p>
               </div>
             ) : (
-              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-                <SortableContext items={lineup.map(l => l.id)} strategy={verticalListSortingStrategy}>
-                  {lineup.map((item, i) => {
-                    const isSelected = selectedSongIdx === i
-                    const isCountdown = item.itemType === 'countdown'
-                    const isScripture = item.itemType === 'scripture'
-                    const isMedia = item.itemType === 'media'
-                    const isAnnouncement = item.itemType === 'announcement'
-                    return (
-                      <SortableLineupItem
-                        key={item.id}
-                        id={item.id}
-                        index={i}
-                        isSelected={isSelected}
-                        title={isCountdown ? "Countdown Timer" : isScripture || isMedia || isAnnouncement ? item.title ?? "—" : item.song?.title ?? "—"}
-                        subtitle={(() => {
-                          const dur = fmtDur(estimateDuration(item, themeCache))
-                          const base = isCountdown ? "Countdown"
-                            : isScripture ? "Scripture"
-                            : isMedia ? "Media"
-                            : isAnnouncement ? "Announcement"
-                            : `${item.song?.artist || "Unknown"}${item.song?.key ? ` · ${item.song.key}` : ""}`
-                          return dur ? `${base} · ${dur}` : base
-                        })()}
-                        isPast={isPast}
-                        onSelect={() => setSelectedSongIdx(i)}
-                        onDelete={() => {
-                          const label = isCountdown ? "Countdown Timer" : isScripture || isMedia ? item.title ?? "item" : item.song?.title ?? "item"
-                          if (confirm(`Remove "${label}" from lineup?`)) {
-                            removeSongFromLineup(item.id)
-                            if (selectedSongIdx >= lineup.length - 1) {
-                              setSelectedSongIdx(Math.max(0, lineup.length - 2))
+              (() => {
+                // Precompute which items are under a section and section color index
+                let inSection = false
+                let sectionColorIdx = -1
+                const underSection: boolean[] = []
+                const sectionColor: number[] = []
+                lineup.forEach(item => {
+                  if (item.itemType === 'section') {
+                    inSection = true
+                    sectionColorIdx++
+                    underSection.push(false)
+                    sectionColor.push(sectionColorIdx)
+                  } else {
+                    underSection.push(inSection)
+                    sectionColor.push(sectionColorIdx)
+                  }
+                })
+
+                return (
+                  <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+                    <SortableContext items={lineup.map(l => l.id)} strategy={verticalListSortingStrategy}>
+                      {lineup.map((item, i) => {
+                        const isSelected = selectedSongIdx === i
+                        const isSection = item.itemType === 'section'
+                        const isCountdown = item.itemType === 'countdown'
+                        const isScripture = item.itemType === 'scripture'
+                        const isMedia = item.itemType === 'media'
+                        const isAnnouncement = item.itemType === 'announcement'
+                        const colorIdx = sectionColor[i] ?? 0
+
+                        if (isSection) {
+                          // Find items belonging to this section (until next section or end)
+                          const sectionItems = (() => {
+                            const items = []
+                            for (let j = i + 1; j < lineup.length; j++) {
+                              if (lineup[j].itemType === 'section') break
+                              items.push(lineup[j])
                             }
-                          }
-                        }}
-                      />
-                    )
-                  })}
-                </SortableContext>
-              </DndContext>
+                            return items
+                          })()
+                          const sectionDurSec = sectionItems.reduce((sum, si) => sum + estimateDuration(si, themeCache), 0)
+
+                          return (
+                            <SortableSectionHeader
+                              key={item.id}
+                              id={item.id}
+                              title={item.title ?? 'Section'}
+                              colorIdx={colorIdx}
+                              isSelected={isSelected}
+                              isPast={isPast}
+                              isEditing={editingSectionId === item.id}
+                              editValue={sectionEditValue}
+                              duration={sectionDurSec}
+                              onEditChange={setSectionEditValue}
+                              onConfirm={confirmSectionEdit}
+                              onCancel={cancelSectionEdit}
+                              onSelect={() => setSelectedSongIdx(i)}
+                              onDelete={() => {
+                                if (confirm(`Remove section "${item.title ?? 'Section'}"?`)) {
+                                  removeSongFromLineup(item.id)
+                                  if (selectedSongIdx >= lineup.length - 1)
+                                    setSelectedSongIdx(Math.max(0, lineup.length - 2))
+                                }
+                              }}
+                              onAddItem={() => {
+                                setInsertAfterSectionIdx(i)
+                                setShowLibrary(true)
+                              }}
+                            />
+                          )
+                        }
+
+                        return (
+                          <SortableLineupItem
+                            key={item.id}
+                            id={item.id}
+                            index={i}
+                            isSelected={isSelected}
+                            indent={underSection[i]}
+                            colorIdx={underSection[i] ? colorIdx : -1}
+                            title={isCountdown ? "Countdown Timer" : isScripture || isMedia || isAnnouncement ? item.title ?? "—" : item.song?.title ?? "—"}
+                            subtitle={(() => {
+                              const dur = fmtDur(estimateDuration(item, themeCache))
+                              const base = isCountdown ? "Countdown"
+                                : isScripture ? "Scripture"
+                                : isMedia ? "Media"
+                                : isAnnouncement ? "Announcement"
+                                : `${item.song?.artist || "Unknown"}${item.song?.key ? ` · ${item.song.key}` : ""}`
+                              return dur ? `${base} · ${dur}` : base
+                            })()}
+                            isPast={isPast}
+                            onSelect={() => setSelectedSongIdx(i)}
+                            onDelete={() => {
+                              const label = isCountdown ? "Countdown Timer" : isScripture || isMedia ? item.title ?? "item" : item.song?.title ?? "item"
+                              if (confirm(`Remove "${label}" from lineup?`)) {
+                                removeSongFromLineup(item.id)
+                                if (selectedSongIdx >= lineup.length - 1)
+                                  setSelectedSongIdx(Math.max(0, lineup.length - 2))
+                              }
+                            }}
+                          />
+                        )
+                      })}
+                    </SortableContext>
+                  </DndContext>
+                )
+              })()
             )}
           </div>
-
-          {!isPast && (
-            <div className="p-3 border-t border-border shrink-0 space-y-1.5">
-              <Button
-                variant="outline" size="sm"
-                className="w-full gap-1.5 h-8 text-xs"
-                onClick={() => setShowLibrary(true)}
-              >
-                <BookOpen className="h-3.5 w-3.5" /> Add from Library
-              </Button>
-              <Button
-                variant="ghost" size="sm"
-                className="w-full gap-1.5 h-8 text-xs text-muted-foreground hover:text-foreground"
-                onClick={() => setShowAddSong(true)}
-              >
-                <Plus className="h-3.5 w-3.5" /> Create new song
-              </Button>
-              <Button
-                variant="ghost" size="sm"
-                className="w-full gap-1.5 h-8 text-xs text-muted-foreground hover:text-foreground"
-                onClick={async () => {
-                  const newIdx = lineup.length
-                  await addScriptureToLineup({ title: 'Scripture', scriptureRef: '{}' })
-                  setSelectedSongIdx(newIdx)
-                }}
-              >
-                <BookOpen className="h-3.5 w-3.5" /> Add scripture
-              </Button>
-              <Button
-                variant="ghost" size="sm"
-                className="w-full gap-1.5 h-8 text-xs text-muted-foreground hover:text-foreground"
-                onClick={async () => {
-                  const newIdx = lineup.length
-                  await addAnnouncementToLineup({ title: 'Announcement', content: '' })
-                  setSelectedSongIdx(newIdx)
-                }}
-              >
-                <Megaphone className="h-3.5 w-3.5" /> Add announcement
-              </Button>
-            </div>
-          )}
         </div>
 
         {/* ─── CENTER: Song editor + sections ────────────────────────── */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-          {currentItem?.itemType === 'countdown' ? (
+          {currentItem?.itemType === 'section' ? (
+            /* ── Section header editor ── */
+            <>
+              <div className="px-5 py-3 border-b border-border bg-card flex items-center gap-3 shrink-0">
+                <Layers className="h-4 w-4 text-muted-foreground shrink-0" />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Section</span>
+              </div>
+              <div className="flex-1 overflow-y-auto p-5 bg-muted/10">
+                <div className="max-w-md flex flex-col gap-4">
+                  <div>
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1.5">Section Label</label>
+                    <input
+                      type="text"
+                      defaultValue={currentItem.title ?? ''}
+                      readOnly={isPast}
+                      placeholder="e.g. Worship, Message, Pre-Service…"
+                      onChange={(e) => {
+                        const val = e.target.value
+                        clearTimeout(announcementTimers.current.title)
+                        announcementTimers.current.title = setTimeout(() => {
+                          window.worshipsync.lineup.updateAnnouncement(currentItem.id, { title: val })
+                            .then(() => { if (selectedService) loadLineup(selectedService.id) })
+                        }, 400)
+                      }}
+                      className="w-full h-9 px-3 text-sm bg-background border border-border rounded-md outline-none focus:border-primary/50 transition-colors placeholder:text-muted-foreground/40"
+                    />
+                  </div>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    Section labels are visual dividers in your lineup. They help organize the service flow but do not project anything to the screen.
+                  </p>
+                </div>
+              </div>
+            </>
+          ) : currentItem?.itemType === 'countdown' ? (
             <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
               <Timer className="h-12 w-12 text-muted-foreground mb-4" />
               <h2 className="text-base font-bold mb-1">Countdown Timer</h2>
@@ -1561,9 +1701,13 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
       {/* ── Modals ──────────────────────────────────────────────────── */}
       {showLibrary && (
         <LibraryModal
-          onClose={() => setShowLibrary(false)}
+          onClose={() => { setShowLibrary(false); setInsertAfterSectionIdx(null) }}
           onAdd={handleLibraryAdd}
-          onAddCountdown={addCountdownToLineup}
+          onAddCountdown={async () => {
+            const prevLen = useServiceStore.getState().lineup.length
+            await addCountdownToLineup()
+            if (insertAfterSectionIdx !== null) await repositionAfterSection(insertAfterSectionIdx, prevLen)
+          }}
           onAddScripture={handleAddScripture}
           onAddMedia={handleAddMedia}
           excludeIds={lineup.filter(item => item.songId != null).map(item => item.songId!)}
@@ -1947,15 +2091,152 @@ const FONT_OPTIONS = [
   { value: "Roboto, sans-serif", label: "Roboto" },
 ]
 
+// ── Section color palette ─────────────────────────────────────────────────────
+
+const SECTION_PALETTE = [
+  { dot: 'bg-orange-500',  text: 'text-orange-400',  border: 'border-l-orange-500/60'  },
+  { dot: 'bg-green-500',   text: 'text-green-400',   border: 'border-l-green-500/60'   },
+  { dot: 'bg-blue-500',    text: 'text-blue-400',    border: 'border-l-blue-500/60'    },
+  { dot: 'bg-violet-500',  text: 'text-violet-400',  border: 'border-l-violet-500/60'  },
+  { dot: 'bg-cyan-500',    text: 'text-cyan-400',    border: 'border-l-cyan-500/60'    },
+  { dot: 'bg-rose-500',    text: 'text-rose-400',    border: 'border-l-rose-500/60'    },
+]
+const getSectionColor = (idx: number) => SECTION_PALETTE[idx % SECTION_PALETTE.length]
+
+// ── SortableSectionHeader ─────────────────────────────────────────────────────
+
+function SortableSectionHeader({
+  id, title, colorIdx, isSelected, isPast, isEditing, editValue, duration,
+  onEditChange, onConfirm, onCancel, onSelect, onDelete, onAddItem,
+}: {
+  id: number
+  title: string
+  colorIdx: number
+  isSelected: boolean
+  isPast: boolean
+  isEditing: boolean
+  editValue: string
+  duration: number
+  onEditChange: (v: string) => void
+  onConfirm: () => void
+  onCancel: () => void
+  onSelect: () => void
+  onDelete: () => void
+  onAddItem: () => void
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
+  const color = getSectionColor(colorIdx)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (isEditing) inputRef.current?.focus()
+  }, [isEditing])
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1 }}
+      className="mt-3 first:mt-1"
+    >
+      {/* Section header row */}
+      <div className={`group flex items-center gap-1 px-3 py-1.5 border-l-2 ${color.border} ${
+        isSelected && !isEditing ? 'bg-white/5' : ''
+      }`}>
+        {!isPast && !isEditing && (
+          <button
+            {...attributes}
+            {...listeners}
+            className="flex-shrink-0 cursor-grab active:cursor-grabbing text-muted-foreground/30 hover:text-muted-foreground touch-none"
+            tabIndex={-1}
+          >
+            <GripVertical className="h-3 w-3" />
+          </button>
+        )}
+
+        {isEditing ? (
+          /* ── Inline edit mode ── */
+          <>
+            <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${color.dot}`} />
+            <input
+              ref={inputRef}
+              type="text"
+              value={editValue}
+              onChange={e => onEditChange(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') { e.preventDefault(); onConfirm() }
+                if (e.key === 'Escape') { e.preventDefault(); onCancel() }
+              }}
+              placeholder="Section name…"
+              className="flex-1 bg-transparent text-[11px] font-bold uppercase tracking-wider outline-none placeholder:text-muted-foreground/30 min-w-0"
+            />
+            <button
+              onClick={onConfirm}
+              title="Confirm"
+              className="shrink-0 text-green-500 hover:text-green-400 transition-colors"
+            >
+              <Check className="h-3.5 w-3.5" />
+            </button>
+            <button
+              onClick={onCancel}
+              title="Cancel"
+              className="shrink-0 text-muted-foreground hover:text-destructive transition-colors"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </>
+        ) : (
+          /* ── Display mode ── */
+          <>
+            <button
+              onClick={onSelect}
+              className="flex items-center gap-2 flex-1 min-w-0 text-left"
+            >
+              <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${color.dot}`} />
+              <span className={`text-[10px] font-bold uppercase tracking-wider truncate ${color.text}`}>
+                {title || "Section"}
+              </span>
+            </button>
+            {duration > 0 && (
+              <span className="text-[10px] text-muted-foreground tabular-nums shrink-0 mr-1">
+                {fmtTotal(duration)}
+              </span>
+            )}
+            {!isPast && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onDelete() }}
+                className="shrink-0 opacity-0 group-hover:opacity-100 text-muted-foreground/50 hover:text-destructive transition-opacity"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* "+ Add Item" button at the bottom of this section — only in display mode */}
+      {!isEditing && !isPast && (
+        <button
+          onClick={onAddItem}
+          className="w-full flex items-center gap-1 pl-7 pr-3 py-1 text-[10px] text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+        >
+          <Plus className="h-3 w-3" /> Add Item
+        </button>
+      )}
+    </div>
+  )
+}
+
 // ── SortableLineupItem ────────────────────────────────────────────────────────
 
 function SortableLineupItem({
-  id, index, isSelected,
+  id, index, isSelected, indent, colorIdx,
   title, subtitle, isPast, onSelect, onDelete,
 }: {
   id: number
   index: number
   isSelected: boolean
+  indent?: boolean
+  colorIdx?: number
   title: string
   subtitle: string
   isPast: boolean
@@ -1963,6 +2244,7 @@ function SortableLineupItem({
   onDelete: () => void
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
+  const color = colorIdx !== undefined && colorIdx >= 0 ? getSectionColor(colorIdx) : null
 
   return (
     <div
@@ -1974,6 +2256,8 @@ function SortableLineupItem({
         zIndex: isDragging ? 10 : undefined,
       }}
       className={`group rounded-md mb-0.5 transition-colors ${
+        indent && color ? `ml-3 border-l-2 ${color.border} pl-0.5` : indent ? "ml-3 border-l-2 border-border/40 pl-0.5" : ""
+      } ${
         isSelected ? "bg-primary/10 border border-primary/30" : "border border-transparent hover:bg-accent/50"
       }`}
     >

@@ -921,6 +921,20 @@ ipcMain.handle('lineup:addAnnouncement', (_e, serviceDateId: number, data: {
   return item
 })
 
+ipcMain.handle('lineup:addSection', (_e, serviceDateId: number, data: { title: string }) => {
+  const existing = db.select().from(lineupItems)
+    .where(eq(lineupItems.serviceDateId, serviceDateId))
+    .all()
+  const [item] = db.insert(lineupItems).values({
+    serviceDateId,
+    orderIndex: existing.length,
+    itemType: 'section',
+    selectedSections: '[]',
+    title: data.title,
+  }).returning().all()
+  return item
+})
+
 ipcMain.handle('lineup:updateAnnouncement', (_e, lineupItemId: number, data: {
   title?: string
   content?: string

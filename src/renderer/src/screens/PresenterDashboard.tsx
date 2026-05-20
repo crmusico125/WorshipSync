@@ -32,6 +32,7 @@ import {
   SkipForward,
   Megaphone,
   Plus,
+  Layers,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -61,7 +62,7 @@ interface Slide {
 
 interface LiveSong {
   lineupItemId: number;
-  itemType: "song" | "countdown" | "scripture" | "media" | "announcement";
+  itemType: "song" | "countdown" | "scripture" | "media" | "announcement" | "section";
   songId: number;
   title: string;
   artist: string;
@@ -343,6 +344,23 @@ export default function PresenterDashboard({
   // ── Build live songs ─────────────────────────────────────────────────────
   useEffect(() => {
     const built: LiveSong[] = lineup.map((item) => {
+      if (item.itemType === "section") {
+        return {
+          lineupItemId: item.id,
+          itemType: "section" as const,
+          songId: 0,
+          title: item.title ?? "Section",
+          artist: "",
+          key: null,
+          ccliNumber: null,
+          backgroundPath: null,
+          mediaPath: null,
+          themeId: null,
+          notes: null,
+          itemStyle: null,
+          slides: [],
+        };
+      }
       if (item.itemType === "countdown") {
         return {
           lineupItemId: item.id,
@@ -713,14 +731,17 @@ export default function PresenterDashboard({
   }, []);
 
   const goNextSong = useCallback(() => {
-    const next = selectedSongIdx + 1;
+    // Skip section headers when navigating
+    let next = selectedSongIdx + 1;
+    while (next < liveSongs.length && liveSongs[next]?.itemType === "section") next++;
     if (next < liveSongs.length) jumpToItem(next);
-  }, [selectedSongIdx, liveSongs.length, jumpToItem]);
+  }, [selectedSongIdx, liveSongs, jumpToItem]);
 
   const goPrevSong = useCallback(() => {
-    const prev = selectedSongIdx - 1;
+    let prev = selectedSongIdx - 1;
+    while (prev >= 0 && liveSongs[prev]?.itemType === "section") prev--;
     if (prev >= 0) jumpToItem(prev);
-  }, [selectedSongIdx, jumpToItem]);
+  }, [selectedSongIdx, liveSongs, jumpToItem]);
 
   const goPrevSlide = useCallback(() => {
     const prev = activeSlideIdx - 1;
@@ -1374,12 +1395,27 @@ export default function PresenterDashboard({
             const isCurrent = selectedSongIdx === i;
             const isFinished = i < selectedSongIdx;
             const isNextItem = i === selectedSongIdx + 1;
+            const isSection = song.itemType === "section";
             const isCountdown = song.itemType === "countdown";
             const isScripture = song.itemType === "scripture";
             const isMedia = song.itemType === "media";
             const isAudioItem = isMedia && /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(song.mediaPath ?? "");
             const isVideoItem = isMedia && /\.(mp4|webm|mov)$/i.test(song.mediaPath ?? "");
             const isAnnouncement = song.itemType === "announcement";
+
+            // Section headers — visual dividers, not selectable items
+            if (isSection) {
+              return (
+                <div key={song.lineupItemId} className="flex items-center gap-2 px-3 pt-3 pb-1">
+                  <Layers className="h-3 w-3 text-muted-foreground/50 shrink-0" />
+                  <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60 truncate">
+                    {song.title}
+                  </span>
+                  <div className="flex-1 h-px bg-border" />
+                </div>
+              );
+            }
+
             const Icon = isCountdown ? Timer : isScripture ? BookOpen : isMedia ? (isVideoItem ? Film : isAudioItem ? Volume2 : ImageIcon) : isAnnouncement ? Megaphone : Music;
             return (
               <button
@@ -1425,7 +1461,13 @@ export default function PresenterDashboard({
 
       {/* ═════ CENTER: Main Slide Area ═════ */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-background">
-        {currentSong?.itemType === "announcement" ? (
+        {currentSong?.itemType === "section" ? (
+          <div className="flex-1 flex flex-col items-center justify-center text-center px-8 gap-3">
+            <Layers className="h-10 w-10 text-muted-foreground/30" />
+            <p className="text-sm font-semibold text-foreground">{currentSong.title}</p>
+            <p className="text-xs text-muted-foreground max-w-xs">This is a section divider. Select an item below it to continue presenting.</p>
+          </div>
+        ) : currentSong?.itemType === "announcement" ? (
           /* ── Announcement ── */
           <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
             <Megaphone className="h-16 w-16 text-muted-foreground mb-6" />

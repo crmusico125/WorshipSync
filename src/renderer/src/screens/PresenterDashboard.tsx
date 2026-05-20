@@ -574,8 +574,11 @@ export default function PresenterDashboard({
         nextSectionLabel = nextSlide.sectionLabel;
       }
       if (!nextLines) {
-        // Fall through to first slide of next song
-        const nextSong = liveSongs[songIdx + 1];
+        // Find next lineup item with real slides (skip sections which have slides:[])
+        let nextSong: typeof liveSongs[0] | null = null;
+        for (let k = songIdx + 1; k < liveSongs.length; k++) {
+          if (liveSongs[k].slides.length > 0) { nextSong = liveSongs[k]; break; }
+        }
         const firstNextSlide = nextSong?.slides.find((s) => s.sectionType !== "blank");
         if (firstNextSlide && firstNextSlide.lines.filter(Boolean).length) {
           nextLines = firstNextSlide.lines;
@@ -585,6 +588,13 @@ export default function PresenterDashboard({
 
       if (slide.sectionType === "blank") {
         window.worshipsync.slide.blank(true);
+        // Keep the stage display "next" section current even while the screen is blank
+        if (nextLines?.length) {
+          window.worshipsync.slide.stageNext({
+            nextLines,
+            nextSectionLabel: nextSectionLabel ?? "",
+          });
+        }
         setIsBlank(true);
       } else {
         window.worshipsync.slide.blank(false);

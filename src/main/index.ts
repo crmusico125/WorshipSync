@@ -50,6 +50,8 @@ let sseClients: StageClient[] = []
 let stageSlide: unknown = null
 let stageBlank = false
 let stageCountdown: unknown = null
+let stageNextLines: string[] | null = null
+let stageNextLabel = ''
 let stagePort = 4040
 let stagePingInterval: ReturnType<typeof setInterval> | null = null
 const bonjour = new Bonjour()
@@ -121,7 +123,7 @@ function startStageServer(port = 4040): Promise<boolean> {
         }
         sseClients.push(client)
         // Stage display only needs slide/blank/countdown — no lineup
-        client.send({ type: 'init', slide: stageSlide, blank: stageBlank, countdown: stageCountdown })
+        client.send({ type: 'init', slide: stageSlide, blank: stageBlank, countdown: stageCountdown, nextLines: stageNextLines, nextSectionLabel: stageNextLabel })
         req.on('close', () => { sseClients = sseClients.filter(c => c !== client) })
         sock.on('error', () => { sseClients = sseClients.filter(c => c !== client) })
       } else if (req.url === '/status') {
@@ -190,7 +192,7 @@ body{background:#080810;color:#fff;font-family:-apple-system,BlinkMacSystemFont,
 #clock{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;color:#fff;letter-spacing:-.01em;flex-shrink:0;min-width:80px;text-align:right}
 
 /* ── Current slide (large, ~60% height) ── */
-#current-wrap{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 40px 20px}
+#current-wrap{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 40px 20px;position:relative}
 #lyrics{font-size:clamp(26px,5.5vw,72px);font-weight:700;line-height:1.35;text-align:center;color:#ffffff;letter-spacing:-.015em;max-width:960px;display:none}
 #lyrics div{padding-bottom:.1em}
 #empty{text-align:center;color:rgba(255,255,255,.18)}
@@ -200,13 +202,22 @@ body{background:#080810;color:#fff;font-family:-apple-system,BlinkMacSystemFont,
 #countdown{font-size:clamp(60px,15vw,140px);font-weight:700;letter-spacing:-.03em;font-variant-numeric:tabular-nums;font-family:'SF Mono','Fira Code','Fira Mono',monospace}
 #countdown-label{font-size:12px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.3);margin-top:10px}
 
-/* ── Next slide (smaller, ~30% height) ── */
-#next-wrap{flex-shrink:0;border-top:1px solid rgba(255,255,255,.08);background:rgba(255,255,255,.025);display:none;flex-direction:column}
-#next-header{display:flex;align-items:center;gap:8px;padding:8px 20px 6px}
-#next-label{font-size:9px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.3)}
+/* ── Next slide ── */
+#next-wrap{flex-shrink:0;border-top:2px solid rgba(255,255,255,.08);background:rgba(255,255,255,.025);display:none;flex-direction:column;transition:border-color .25s,background .25s,border-left-width .25s}
+#next-header{display:flex;align-items:center;gap:6px;padding:8px 20px 2px;flex-wrap:wrap}
+#next-label{font-size:9px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:rgba(255,255,255,.28);transition:color .2s}
+#next-sep{font-size:9px;font-weight:700;color:rgba(255,255,255,.15);display:none}
+#next-song-name{display:none;font-size:11px;font-weight:700;letter-spacing:.04em;color:#fbbf24}
 #next-section{font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:rgba(139,92,246,.7)}
-#next-lyrics{padding:0 20px 14px;font-size:clamp(14px,2.2vw,28px);font-weight:500;line-height:1.45;text-align:center;color:rgba(255,255,255,.45);max-height:30vh;overflow:hidden}
+#next-lyrics{padding:0 20px 14px;font-size:clamp(14px,2.2vw,28px);font-weight:500;line-height:1.45;text-align:center;color:rgba(255,255,255,.45);max-height:26vh;overflow:hidden;transition:color .2s}
 #next-lyrics div{padding-bottom:.08em}
+/* ── New song state ── */
+#next-wrap.newsong{border-top:3px solid #fbbf24;border-left:4px solid #fbbf24;background:rgba(251,191,36,.08)}
+#next-wrap.newsong #next-label{color:rgba(251,191,36,.6)}
+#next-wrap.newsong #next-sep{display:inline;color:rgba(251,191,36,.3)}
+#next-wrap.newsong #next-song-name{display:inline}
+#next-wrap.newsong #next-section{color:rgba(251,191,36,.5)}
+#next-wrap.newsong #next-lyrics{color:rgba(255,255,255,.35);font-size:clamp(12px,1.8vw,22px)}
 
 /* ── Bottom bar ── */
 #bottom{display:flex;align-items:center;justify-content:space-between;padding:8px 20px;border-top:1px solid rgba(255,255,255,.06);min-height:38px;flex-shrink:0}
@@ -215,10 +226,10 @@ body{background:#080810;color:#fff;font-family:-apple-system,BlinkMacSystemFont,
 #dot{width:6px;height:6px;border-radius:50%;background:#22c55e;animation:pulse 2s infinite}
 #dot.off{background:#ef4444;animation:none}
 
-/* ── Blank overlay ── */
-#blank-overlay{position:fixed;inset:0;background:#000;opacity:0;pointer-events:none;z-index:20;display:flex;align-items:center;justify-content:center}
+/* ── Blank overlay — scoped to lyrics area, not the full viewport ── */
+#blank-overlay{position:absolute;inset:0;background:#000;opacity:0;pointer-events:none;z-index:20;display:flex;align-items:center;justify-content:center}
 #blank-overlay.on{opacity:1}
-#blank-text{font-size:11px;font-weight:800;letter-spacing:.2em;text-transform:uppercase;color:rgba(255,255,255,.1)}
+#blank-text{font-size:11px;font-weight:800;letter-spacing:.2em;text-transform:uppercase;color:rgba(255,255,255,.12)}
 
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
 </style>
@@ -238,11 +249,15 @@ body{background:#080810;color:#fff;font-family:-apple-system,BlinkMacSystemFont,
     <div id="countdown">00:00</div>
     <div id="countdown-label">Until Service Starts</div>
   </div>
+  <!-- Blank overlay lives inside current-wrap so next/top/bottom remain visible -->
+  <div id="blank-overlay"><div id="blank-text">Screen Blank</div></div>
 </div>
 
 <div id="next-wrap">
   <div id="next-header">
     <span id="next-label">Next</span>
+    <span id="next-sep">·</span>
+    <span id="next-song-name"></span>
     <span id="next-section"></span>
   </div>
   <div id="next-lyrics"></div>
@@ -253,8 +268,6 @@ body{background:#080810;color:#fff;font-family:-apple-system,BlinkMacSystemFont,
   <div id="lag"></div>
   <div id="dot" class="off"></div>
 </div>
-
-<div id="blank-overlay"><div id="blank-text">Screen Blank</div></div>
 
 <script>
 var cdTimer=null,reconnTimer=null,clockTimer=null;
@@ -286,11 +299,46 @@ document.addEventListener('visibilitychange',function(){
   if(!document.hidden&&(!es||es.readyState===2)){clearTimeout(reconnTimer);connect();}
 });
 
+// Update the "Next" panel.
+// showSongTitle=true only when on the last slide — reveals the incoming song name.
+// On earlier slides a new-song next is shown as plain "Next · Section" without spoiling.
+function updateNext(nextLines,nextSectionLabel,showSongTitle){
+  var wrap=$('next-wrap'),lyricsEl=$('next-lyrics'),nameEl=$('next-song-name'),secEl=$('next-section');
+  if(!wrap||!lyricsEl) return;
+  if(!nextLines||!nextLines.length){wrap.style.display='none';return;}
+  wrap.style.display='flex';
+  var rawIsNew=!!(nextSectionLabel&&nextSectionLabel.indexOf('—')!==-1);
+  var isNew=!!showSongTitle&&rawIsNew;
+  wrap.classList.toggle('newsong',isNew);
+  if(isNew){
+    var parts=nextSectionLabel.split('—');
+    if(nameEl) nameEl.textContent=(parts[0]||'').trim();
+    if(secEl)  secEl.textContent=(parts[1]||'').trim();
+  } else {
+    if(nameEl) nameEl.textContent='';
+    var label=nextSectionLabel||'';
+    if(label.indexOf('—')!==-1){label=(label.split('—')[1]||'').trim();}
+    if(secEl) secEl.textContent=label;
+  }
+  // Hide lyrics preview when next is a different song but the blank slide isn't shown yet —
+  // singers could mistake the incoming lyrics for the current song.
+  if(rawIsNew&&!isNew){lyricsEl.innerHTML='';} else {
+    lyricsEl.innerHTML=nextLines.map(function(l){return'<div>'+(l?esc(l):'&nbsp;')+'</div>'}).join('');
+  }
+}
+
 function handle(ev){
   if(ev.sentAt){var lag=Date.now()-ev.sentAt;$('lag').textContent=lag+'ms';}
-  if(ev.type==='init'){if(ev.slide)showSlide(ev.slide);if(ev.blank)setBlank(ev.blank);if(ev.countdown)doCountdown(ev.countdown)}
+  if(ev.type==='init'){
+    if(ev.slide)showSlide(ev.slide);
+    if(ev.blank)setBlank(ev.blank);
+    if(ev.countdown)doCountdown(ev.countdown);
+    // Replay stageNext if blank is active — showSlide alone may not have the latest next lines
+    if(ev.blank&&ev.nextLines&&ev.nextLines.length)updateNext(ev.nextLines,ev.nextSectionLabel,true);
+  }
   else if(ev.type==='slide'){clearCD();showSlide(ev.payload);setBlank(false)}
   else if(ev.type==='blank'){setBlank(ev.isBlank)}
+  else if(ev.type==='stageNext'){updateNext(ev.nextLines,ev.nextSectionLabel,true)}
   else if(ev.type==='countdown'){doCountdown(ev.data)}
   else if(ev.type==='shutdown'){
     clearTimeout(reconnTimer);
@@ -328,15 +376,8 @@ function showSlide(p){
   // Slide counter
   $('slide-pos').textContent=(p.slideIndex!=null&&p.totalSlides!=null)?(p.slideIndex+1)+' / '+p.totalSlides:'';
 
-  // Next slide
-  var nextLines=p.nextLines||[];
-  if(nextLines.length){
-    $('next-wrap').style.display='flex';
-    $('next-section').textContent=p.nextSectionLabel||'';
-    $('next-lyrics').innerHTML=nextLines.map(function(l){return'<div>'+(l?esc(l):'&nbsp;')+'</div>'}).join('');
-  } else {
-    $('next-wrap').style.display='none';
-  }
+  var isLast=p.totalSlides!=null&&p.slideIndex!=null&&p.slideIndex+1===p.totalSlides;
+  updateNext(p.nextLines,p.nextSectionLabel,isLast);
 }
 
 function setBlank(b){$('blank-overlay').classList.toggle('on',!!b)}
@@ -535,6 +576,8 @@ ipcMain.on('slide:show', (_event, payload) => {
   }
   stageSlide = payload
   stageBlank = false
+  stageNextLines = null
+  stageNextLabel = ''
   broadcastAll({ type: 'slide', payload })
 })
 
@@ -550,6 +593,14 @@ ipcMain.on('slide:blank', (_event, isBlank: boolean) => {
   // blank=false → the subsequent slide:show already implies unblank on the client;
   // no separate broadcast needed (avoids a double repaint on slow devices).
   if (isBlank) broadcastAll({ type: 'blank', isBlank: true })
+})
+
+// Updates the stage display "next" section only — does not affect projection or confidence windows.
+// Used when the blank slide is active so operators can still see what's coming next.
+ipcMain.on('slide:stageNext', (_event, data: { nextLines: string[]; nextSectionLabel: string }) => {
+  stageNextLines = data.nextLines
+  stageNextLabel = data.nextSectionLabel
+  broadcastAll({ type: 'stageNext', nextLines: data.nextLines, nextSectionLabel: data.nextSectionLabel })
 })
 
 ipcMain.on('slide:logo', (_event, show: boolean) => {

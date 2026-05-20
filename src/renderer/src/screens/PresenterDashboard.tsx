@@ -203,6 +203,7 @@ export default function PresenterDashboard({
   const [themeCache, setThemeCache] = useState<Record<number, any>>({});
   const [defaultTheme, setDefaultTheme] = useState<any>(null);
   const [defaultThemeBg, setDefaultThemeBg] = useState<string | null>(null);
+  const [defaultScriptureThemeBg, setDefaultScriptureThemeBg] = useState<string | null>(null);
   const [showLibrary, setShowLibrary] = useState(false);
   const [showBgPicker, setShowBgPicker] = useState(false);
   const [pendingBgSave, setPendingBgSave] = useState<{ songId: number; lineupItemId: number; itemType: string; path: string | null } | null>(null);
@@ -298,7 +299,9 @@ export default function PresenterDashboard({
       setDefaultTheme(t);
       if (t?.settings) {
         try {
-          setDefaultThemeBg(JSON.parse(t.settings).backgroundPath ?? null);
+          const s = JSON.parse(t.settings);
+          setDefaultThemeBg(s.backgroundPath ?? null);
+          setDefaultScriptureThemeBg(s.scriptureBackgroundPath ?? null);
         } catch {}
       }
     });
@@ -535,17 +538,18 @@ export default function PresenterDashboard({
   const resolveBg = useCallback(
     (song: LiveSong): string | undefined => {
       if (song.backgroundPath) return song.backgroundPath;
+      const isScripture = song.itemType === "scripture";
       if (song.themeId && themeCache[song.themeId]) {
         try {
-          return (
-            JSON.parse(themeCache[song.themeId].settings).backgroundPath ??
-            undefined
-          );
+          const s = JSON.parse(themeCache[song.themeId].settings);
+          if (isScripture && s.scriptureBackgroundPath) return s.scriptureBackgroundPath;
+          return s.backgroundPath ?? undefined;
         } catch {}
       }
+      if (isScripture && defaultScriptureThemeBg) return defaultScriptureThemeBg;
       return defaultThemeBg ?? undefined;
     },
-    [themeCache, defaultThemeBg],
+    [themeCache, defaultThemeBg, defaultScriptureThemeBg],
   );
 
   // ── Slide projection ─────────────────────────────────────────────────────

@@ -20,6 +20,7 @@ interface ThemeSettings {
   textShadowOpacity: number
   maxLinesPerSlide: number
   backgroundPath: string | null
+  scriptureBackgroundPath: string | null
 }
 
 interface Theme {
@@ -44,6 +45,7 @@ const DEFAULT_SETTINGS: ThemeSettings = {
   textShadowOpacity: 40,
   maxLinesPerSlide: 2,
   backgroundPath: null,
+  scriptureBackgroundPath: null,
 }
 
 const FONT_OPTIONS = [
@@ -430,6 +432,7 @@ export default function ThemesScreen() {
                   />
                 </Card>
               </div>
+
             </div>
           </div>
         </div>

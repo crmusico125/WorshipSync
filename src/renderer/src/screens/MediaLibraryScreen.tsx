@@ -3,7 +3,7 @@ import {
   Search, Upload, Trash2, Image as ImageIcon, X, Check,
   FolderOpen, Music, Play, Volume2, Calendar,
   Folder as FolderIcon, FolderPlus, Move, ChevronRight,
-  MoreHorizontal,
+  MoreHorizontal, BookMarked,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -772,9 +772,35 @@ function MediaDetailPanel({
   onClose: () => void
   onUsageUpdate: (path: string, count: number) => void
 }) {
-  const [usingSongs,    setUsingSongs]    = useState<{ id: number; title: string; artist: string }[]>([])
-  const [usingServices, setUsingServices] = useState<{ id: number; date: string; label: string }[]>([])
-  const [showMoveMenu,  setShowMoveMenu]  = useState(false)
+  const [usingSongs,         setUsingSongs]         = useState<{ id: number; title: string; artist: string }[]>([])
+  const [usingServices,      setUsingServices]      = useState<{ id: number; date: string; label: string }[]>([])
+  const [showMoveMenu,       setShowMoveMenu]       = useState(false)
+  const [isScriptureDefault, setIsScriptureDefault] = useState(false)
+  const [settingScripture,   setSettingScripture]   = useState(false)
+
+  useEffect(() => {
+    window.worshipsync.themes.getDefault().then((t: any) => {
+      if (!t?.settings) return
+      try {
+        const s = JSON.parse(t.settings)
+        setIsScriptureDefault(s.scriptureBackgroundPath === item.path)
+      } catch {}
+    })
+  }, [item.path])
+
+  const setAsScriptureDefault = async () => {
+    setSettingScripture(true)
+    try {
+      const t = await window.worshipsync.themes.getDefault() as any
+      if (!t) return
+      const s = (() => { try { return JSON.parse(t.settings) } catch { return {} } })()
+      s.scriptureBackgroundPath = item.path
+      await window.worshipsync.themes.update(t.id, { ...t, settings: JSON.stringify(s) })
+      setIsScriptureDefault(true)
+    } finally {
+      setSettingScripture(false)
+    }
+  }
 
   useEffect(() => {
     window.worshipsync.backgrounds.getUsingSongs(item.path)
@@ -897,6 +923,19 @@ function MediaDetailPanel({
         )}
 
         <div className="h-px bg-border" />
+
+        {!isVideoFile(item.path) && !isAudioFile(item.path) && (
+          <Button
+            variant="outline"
+            size="sm"
+            className={`gap-2 w-full text-xs h-8 ${isScriptureDefault ? "border-violet-500/50 text-violet-400" : ""}`}
+            onClick={setAsScriptureDefault}
+            disabled={settingScripture || isScriptureDefault}
+          >
+            {isScriptureDefault ? <Check className="h-3.5 w-3.5" /> : <BookMarked className="h-3.5 w-3.5" />}
+            {isScriptureDefault ? "Default Scripture Background" : "Set as Scripture Default"}
+          </Button>
+        )}
 
         <Button variant="destructive" size="sm" className="gap-2 w-full text-xs h-8" onClick={onDelete}>
           <Trash2 className="h-3.5 w-3.5" />

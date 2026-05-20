@@ -1348,8 +1348,10 @@ ipcMain.handle('backgrounds:deleteImage', (_e, imagePath: string) => {
     for (const theme of allThemes) {
       try {
         const settings = JSON.parse(theme.settings)
-        if (settings.backgroundPath === imagePath) {
-          settings.backgroundPath = null
+        let changed = false
+        if (settings.backgroundPath === imagePath) { settings.backgroundPath = null; changed = true }
+        if (settings.scriptureBackgroundPath === imagePath) { settings.scriptureBackgroundPath = null; changed = true }
+        if (changed) {
           db.update(themes)
             .set({ settings: JSON.stringify(settings) })
             .where(eq(themes.id, theme.id))
@@ -1490,6 +1492,7 @@ ipcMain.handle('data:export', async () => {
       try {
         const s = JSON.parse(t.settings)
         if (s.backgroundPath) s.backgroundPath = portablePath(s.backgroundPath)
+        if (s.scriptureBackgroundPath) s.scriptureBackgroundPath = portablePath(s.scriptureBackgroundPath)
         return { ...t, settings: JSON.stringify(s) }
       } catch { return t }
     }),
@@ -1569,6 +1572,7 @@ ipcMain.handle('data:import', async () => {
     try {
       const s = JSON.parse(row.settings)
       if (s.backgroundPath) s.backgroundPath = restorePath(s.backgroundPath)
+      if (s.scriptureBackgroundPath) s.scriptureBackgroundPath = restorePath(s.scriptureBackgroundPath)
       db.insert(themes).values({ ...row, settings: JSON.stringify(s) }).run()
     } catch {
       db.insert(themes).values(row).run()

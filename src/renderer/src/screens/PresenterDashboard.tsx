@@ -188,6 +188,7 @@ export default function PresenterDashboard({
     addCountdownToLineup,
     addScriptureToLineup,
     addMediaToLineup,
+    reorderLineup,
     mediaLoopPrefs,
   } = useServiceStore();
 
@@ -203,8 +204,9 @@ export default function PresenterDashboard({
   const [themeCache, setThemeCache] = useState<Record<number, any>>({});
   const [defaultTheme, setDefaultTheme] = useState<any>(null);
   const [defaultThemeBg, setDefaultThemeBg] = useState<string | null>(null);
-  const [defaultScriptureThemeBg, setDefaultScriptureThemeBg] = useState<string | null>(null);
+  const defaultScriptureThemeBgRef = useRef<string | null>(null);
   const [showLibrary, setShowLibrary] = useState(false);
+  const [insertAfterSectionIdx, setInsertAfterSectionIdx] = useState<number | null>(null);
   const [showBgPicker, setShowBgPicker] = useState(false);
   const [pendingBgSave, setPendingBgSave] = useState<{ songId: number; lineupItemId: number; itemType: string; path: string | null } | null>(null);
   const [savingBg, setSavingBg] = useState(false);
@@ -301,7 +303,7 @@ export default function PresenterDashboard({
         try {
           const s = JSON.parse(t.settings);
           setDefaultThemeBg(s.backgroundPath ?? null);
-          setDefaultScriptureThemeBg(s.scriptureBackgroundPath ?? null);
+          defaultScriptureThemeBgRef.current = s.scriptureBackgroundPath ?? null;
         } catch {}
       }
     });
@@ -546,10 +548,10 @@ export default function PresenterDashboard({
           return s.backgroundPath ?? undefined;
         } catch {}
       }
-      if (isScripture && defaultScriptureThemeBg) return defaultScriptureThemeBg;
+      if (isScripture && defaultScriptureThemeBgRef.current) return defaultScriptureThemeBgRef.current;
       return defaultThemeBg ?? undefined;
     },
-    [themeCache, defaultThemeBg, defaultScriptureThemeBg],
+    [themeCache, defaultThemeBg],
   );
 
   // ── Slide projection ─────────────────────────────────────────────────────
@@ -842,8 +844,34 @@ export default function PresenterDashboard({
   }, [pendingSwitch, selectService]);
 
 
+  const refreshDefaultScriptureBg = async () => {
+    const t = await window.worshipsync.themes.getDefault() as any;
+    if (t?.settings) {
+      try {
+        defaultScriptureThemeBgRef.current = JSON.parse(t.settings).scriptureBackgroundPath ?? null;
+      } catch {}
+    }
+  };
+
+  const repositionAfterSection = async (sectionIdx: number, prevLen: number) => {
+    const fresh = useServiceStore.getState().lineup;
+    if (fresh.length <= prevLen) return;
+    if (sectionIdx >= prevLen) return;
+    let insertAfterPos = sectionIdx;
+    for (let j = sectionIdx + 1; j < prevLen; j++) {
+      if (fresh[j].itemType === "section") break;
+      insertAfterPos = j;
+    }
+    const newIds = fresh.slice(prevLen).map(item => item.id);
+    const before  = fresh.slice(0, prevLen).map(item => item.id);
+    before.splice(insertAfterPos + 1, 0, ...newIds);
+    await reorderLineup(before);
+  };
+
   const handleLibraryAdd = async (songIds: number[]) => {
+    const prevLen = useServiceStore.getState().lineup.length;
     for (const id of songIds) await addSongToLineup(id);
+    if (insertAfterSectionIdx !== null) await repositionAfterSection(insertAfterSectionIdx, prevLen);
   };
 
   const handleAddScripture = async (
@@ -857,7 +885,10 @@ export default function PresenterDashboard({
         text: v.text,
       }))
     });
+    await refreshDefaultScriptureBg();
+    const prevLen = useServiceStore.getState().lineup.length;
     await addScriptureToLineup({ title, scriptureRef });
+    if (insertAfterSectionIdx !== null) await repositionAfterSection(insertAfterSectionIdx, prevLen);
   };
 
   const handleAddMedia = async (path: string) => {
@@ -865,7 +896,9 @@ export default function PresenterDashboard({
     const isVideo = /\.(mp4|webm|mov)$/i.test(path);
     const isAudio = /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(path);
     const label = isVideo ? "Video" : isAudio ? "Audio" : "Image";
+    const prevLen = useServiceStore.getState().lineup.length;
     await addMediaToLineup({ title: `${label}: ${filename}`, mediaPath: path });
+    if (insertAfterSectionIdx !== null) await repositionAfterSection(insertAfterSectionIdx, prevLen);
   };
 
   // ── Background picker ────────────────────────────────────────────────────
@@ -1417,15 +1450,23 @@ export default function PresenterDashboard({
             const isVideoItem = isMedia && /\.(mp4|webm|mov)$/i.test(song.mediaPath ?? "");
             const isAnnouncement = song.itemType === "announcement";
 
-            // Section headers — visual dividers, not selectable items
+            // Section headers — visual dividers with per-section add button
             if (isSection) {
               return (
-                <div key={song.lineupItemId} className="flex items-center gap-2 px-3 pt-3 pb-1">
-                  <Layers className="h-3 w-3 text-muted-foreground/50 shrink-0" />
-                  <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60 truncate">
-                    {song.title}
-                  </span>
-                  <div className="flex-1 h-px bg-border" />
+                <div key={song.lineupItemId} className="flex flex-col">
+                  <div className="flex items-center gap-2 px-3 pt-3 pb-1">
+                    <Layers className="h-3 w-3 text-muted-foreground/50 shrink-0" />
+                    <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60 truncate">
+                      {song.title}
+                    </span>
+                    <div className="flex-1 h-px bg-border" />
+                    <button
+                      onClick={() => { setInsertAfterSectionIdx(i); setShowLibrary(true); }}
+                      className="text-[9px] text-muted-foreground/50 hover:text-primary transition-colors font-medium shrink-0 flex items-center gap-0.5"
+                    >
+                      <Plus className="h-2.5 w-2.5" />Add
+                    </button>
+                  </div>
                 </div>
               );
             }
@@ -2473,9 +2514,13 @@ export default function PresenterDashboard({
       {/* Library modal */}
       {showLibrary && (
         <LibraryModal
-          onClose={() => setShowLibrary(false)}
+          onClose={() => { setShowLibrary(false); setInsertAfterSectionIdx(null); }}
           onAdd={handleLibraryAdd}
-          onAddCountdown={addCountdownToLineup}
+          onAddCountdown={async () => {
+            const prevLen = useServiceStore.getState().lineup.length;
+            await addCountdownToLineup();
+            if (insertAfterSectionIdx !== null) await repositionAfterSection(insertAfterSectionIdx, prevLen);
+          }}
           onAddScripture={handleAddScripture}
           onAddMedia={handleAddMedia}
           excludeIds={liveSongs

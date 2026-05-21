@@ -206,7 +206,7 @@ export default function PresenterDashboard({
   const [defaultThemeBg, setDefaultThemeBg] = useState<string | null>(null);
   const defaultScriptureThemeBgRef = useRef<string | null>(null);
   const [showLibrary, setShowLibrary] = useState(false);
-  const [insertAfterSectionIdx, setInsertAfterSectionIdx] = useState<number | null>(null);
+  const [insertAfterSectionId, setInsertAfterSectionId] = useState<number | null>(null);
   const [showBgPicker, setShowBgPicker] = useState(false);
   const [pendingBgSave, setPendingBgSave] = useState<{ songId: number; lineupItemId: number; itemType: string; path: string | null } | null>(null);
   const [savingBg, setSavingBg] = useState(false);
@@ -853,10 +853,12 @@ export default function PresenterDashboard({
     }
   };
 
-  const repositionAfterSection = async (sectionIdx: number, prevLen: number) => {
+  const repositionAfterSection = async (sectionLineupItemId: number, prevLen: number) => {
     const fresh = useServiceStore.getState().lineup;
     if (fresh.length <= prevLen) return;
-    if (sectionIdx >= prevLen) return;
+    // Find the section by its stable lineupItemId — immune to index drift
+    const sectionIdx = fresh.slice(0, prevLen).findIndex(item => item.id === sectionLineupItemId);
+    if (sectionIdx === -1) return;
     let insertAfterPos = sectionIdx;
     for (let j = sectionIdx + 1; j < prevLen; j++) {
       if (fresh[j].itemType === "section") break;
@@ -871,7 +873,7 @@ export default function PresenterDashboard({
   const handleLibraryAdd = async (songIds: number[]) => {
     const prevLen = useServiceStore.getState().lineup.length;
     for (const id of songIds) await addSongToLineup(id);
-    if (insertAfterSectionIdx !== null) await repositionAfterSection(insertAfterSectionIdx, prevLen);
+    if (insertAfterSectionId !== null) await repositionAfterSection(insertAfterSectionId, prevLen);
   };
 
   const handleAddScripture = async (
@@ -888,7 +890,7 @@ export default function PresenterDashboard({
     await refreshDefaultScriptureBg();
     const prevLen = useServiceStore.getState().lineup.length;
     await addScriptureToLineup({ title, scriptureRef });
-    if (insertAfterSectionIdx !== null) await repositionAfterSection(insertAfterSectionIdx, prevLen);
+    if (insertAfterSectionId !== null) await repositionAfterSection(insertAfterSectionId, prevLen);
   };
 
   const handleAddMedia = async (path: string) => {
@@ -898,7 +900,7 @@ export default function PresenterDashboard({
     const label = isVideo ? "Video" : isAudio ? "Audio" : "Image";
     const prevLen = useServiceStore.getState().lineup.length;
     await addMediaToLineup({ title: `${label}: ${filename}`, mediaPath: path });
-    if (insertAfterSectionIdx !== null) await repositionAfterSection(insertAfterSectionIdx, prevLen);
+    if (insertAfterSectionId !== null) await repositionAfterSection(insertAfterSectionId, prevLen);
   };
 
   // ── Background picker ────────────────────────────────────────────────────
@@ -1461,7 +1463,7 @@ export default function PresenterDashboard({
                     </span>
                     <div className="flex-1 h-px bg-border" />
                     <button
-                      onClick={() => { setInsertAfterSectionIdx(i); setShowLibrary(true); }}
+                      onClick={() => { setInsertAfterSectionId(song.lineupItemId); setShowLibrary(true); }}
                       className="text-[9px] text-muted-foreground/50 hover:text-primary transition-colors font-medium shrink-0 flex items-center gap-0.5"
                     >
                       <Plus className="h-2.5 w-2.5" />Add
@@ -2514,12 +2516,12 @@ export default function PresenterDashboard({
       {/* Library modal */}
       {showLibrary && (
         <LibraryModal
-          onClose={() => { setShowLibrary(false); setInsertAfterSectionIdx(null); }}
+          onClose={() => { setShowLibrary(false); setInsertAfterSectionId(null); }}
           onAdd={handleLibraryAdd}
           onAddCountdown={async () => {
             const prevLen = useServiceStore.getState().lineup.length;
             await addCountdownToLineup();
-            if (insertAfterSectionIdx !== null) await repositionAfterSection(insertAfterSectionIdx, prevLen);
+            if (insertAfterSectionId !== null) await repositionAfterSection(insertAfterSectionId, prevLen);
           }}
           onAddScripture={handleAddScripture}
           onAddMedia={handleAddMedia}

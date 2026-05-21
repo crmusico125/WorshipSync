@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import type { SlidePayload } from "../../../../shared/types";
+import type { SlidePayload } from "../../../../../shared/types";
 
 export default function ConfidenceMonitor() {
   const [slide, setSlide]           = useState<SlidePayload | null>(null);

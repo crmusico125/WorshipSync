@@ -7,9 +7,9 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import { useSongStore } from "../store/useSongStore"
-import BackgroundPickerPanel from "../components/BackgroundPickerPanel"
-import type { Song, Section } from "../../../../shared/types"
+import { useSongStore } from "../../store/useSongStore"
+import BackgroundPickerPanel from "../../components/BackgroundPickerPanel"
+import type { Song, Section } from "../../../../../shared/types"
 
 interface SongWithSections extends Song {
   sections: Section[]

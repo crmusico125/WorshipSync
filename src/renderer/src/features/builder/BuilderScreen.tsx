@@ -17,12 +17,12 @@ import { CSS } from "@dnd-kit/utilities"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
-import { useServiceStore, type LineupItem as LineupItemWithSong } from "../store/useServiceStore"
-import { useSongStore } from "../store/useSongStore"
-import LibraryModal from "../components/LibraryModal"
-import AddSongModal from "../components/AddSongModal"
-import EditLyricsModal from "../components/EditLyricsModal"
-import BackgroundPickerPanel from "../components/BackgroundPickerPanel"
+import { useServiceStore, type LineupItem as LineupItemWithSong } from "../../store/useServiceStore"
+import { useSongStore } from "../../store/useSongStore"
+import LibraryModal from "../../components/LibraryModal"
+import AddSongModal from "../../components/AddSongModal"
+import EditLyricsModal from "../../components/EditLyricsModal"
+import BackgroundPickerPanel from "../../components/BackgroundPickerPanel"
 
 // ── Types ────────────────────────────────────────────────────────────────────
 

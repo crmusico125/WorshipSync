@@ -1,6 +1,6 @@
 import React from "react"
 import ReactDOM from "react-dom/client"
-import ConfidenceMonitor from "./screens/ConfidenceMonitor"
+import ConfidenceMonitor from "./features/projection/ConfidenceMonitor"
 import "./styles/globals.css"
 
 ReactDOM.createRoot(

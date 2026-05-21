@@ -36,10 +36,10 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-import { useServiceStore, type ServiceDate } from "../store/useServiceStore";
-import LibraryModal from "../components/LibraryModal";
-import BackgroundPickerPanel from "../components/BackgroundPickerPanel";
-import EditLyricsModal from "../components/EditLyricsModal";
+import { useServiceStore, type ServiceDate } from "../../store/useServiceStore";
+import LibraryModal from "../../components/LibraryModal";
+import BackgroundPickerPanel from "../../components/BackgroundPickerPanel";
+import EditLyricsModal from "../../components/EditLyricsModal";
 
 
 // ── Audio singleton — survives PresenterDashboard unmounts ───────────────────

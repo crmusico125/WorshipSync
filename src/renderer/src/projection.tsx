@@ -1,6 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import ProjectionWindow from "./screens/ProjectionWindow";
+import ProjectionWindow from "./features/projection/ProjectionWindow";
 import "./styles/globals.css";
 
 ReactDOM.createRoot(

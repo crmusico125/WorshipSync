@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import type { SlidePayload } from "../../../../shared/types";
+import type { SlidePayload } from "../../../../../shared/types";
 
 type DisplayState = "slide" | "blank" | "logo" | "countdown";
 

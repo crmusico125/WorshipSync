@@ -1,6 +1,6 @@
 import { useCallback, useState, useEffect } from "react"
-import BuilderScreen from "./BuilderScreen"
-import PresenterDashboard from "./PresenterDashboard"
+import BuilderScreen from "../builder/BuilderScreen"
+import PresenterDashboard from "../presenter/PresenterDashboard"
 
 export type ServiceMode = "prepare" | "live"
 

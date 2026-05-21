@@ -6,8 +6,8 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
-import { useServiceStore } from "../store/useServiceStore"
-import CreateServiceModal from "../components/CreateServiceModal"
+import { useServiceStore } from "../../store/useServiceStore"
+import CreateServiceModal from "../../components/CreateServiceModal"
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import CreateServiceModal from "../components/CreateServiceModal"
+import CreateServiceModal from "../../components/CreateServiceModal"
 import {
   CalendarClock,
   Clock,
@@ -15,7 +15,7 @@ import {
   ListOrdered,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import type { AppScreen } from "../../../../shared/types"
+import type { AppScreen } from "../../../../../shared/types"
 
 interface ServiceWithCount {
   id: number

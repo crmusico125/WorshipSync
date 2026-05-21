@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
-import BackgroundPickerPanel from "../components/BackgroundPickerPanel"
+import BackgroundPickerPanel from "../../components/BackgroundPickerPanel"
 
 interface ThemeSettings {
   fontFamily: string

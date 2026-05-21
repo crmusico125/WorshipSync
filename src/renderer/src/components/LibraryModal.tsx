@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react"
-import { Search, Music2, Timer, Upload, Trash2, Check, Image as ImageIcon, Play, Volume2, Calendar } from "lucide-react"
+import { Search, Music2, Timer, Upload, Trash2, Check, Image as ImageIcon, Play, Volume2, Calendar, BookOpen, ChevronDown, ChevronUp } from "lucide-react"
+import { parseBibleGatewayText } from "../lib/parseBibleGateway"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
@@ -351,7 +352,7 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScri
                   </div>
                 </div>
               ) : tab === "scriptures" ? (
-                <ScriptureBrowser
+                <ScriptureTab
                   search={search}
                   onAddScripture={(title, verses, ref) => {
                     onAddScripture?.(title, verses, ref)
@@ -583,5 +584,71 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScri
         </div>
       </DialogContent>
     </Dialog>
+  )
+}
+
+// ── ScriptureTab — paste from BibleGateway first, browse as secondary ─────────
+
+function ScriptureTab({ search, onAddScripture }: {
+  search: string
+  onAddScripture: (title: string, verses: { number: number; text: string }[], ref: { book: string; chapter: number; translation: string }) => void
+}) {
+  const [pasteText, setPasteText] = useState("")
+  const [showBrowse, setShowBrowse] = useState(false)
+
+  const parsed = useMemo(() => {
+    if (!pasteText.trim()) return null
+    return parseBibleGatewayText(pasteText)
+  }, [pasteText])
+
+  const handleAdd = () => {
+    if (!parsed) return
+    onAddScripture(parsed.title, parsed.verses, { book: parsed.book, chapter: parsed.chapter, translation: parsed.version })
+    setPasteText("")
+  }
+
+  return (
+    <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+      {/* Paste panel */}
+      <div className="p-4 border-b border-border shrink-0 flex flex-col gap-3">
+        <div className="flex items-center gap-2">
+          <BookOpen className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          <span className="text-xs font-semibold">Paste from BibleGateway</span>
+        </div>
+        <textarea
+          value={pasteText}
+          onChange={e => setPasteText(e.target.value)}
+          placeholder={"Copy a passage from biblegateway.com and paste it here.\n\nExample:\nJohn 3:16\nNew International Version\n16 For God so loved the world…"}
+          className="w-full h-28 text-xs bg-input border border-border rounded-md px-3 py-2 resize-none focus:outline-none focus:border-primary/50 placeholder:text-muted-foreground/50 font-mono leading-relaxed"
+        />
+        {pasteText.trim() && (
+          parsed ? (
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-foreground truncate">{parsed.title}</p>
+                <p className="text-[10px] text-muted-foreground">{parsed.verses.length} verse{parsed.verses.length !== 1 ? "s" : ""} parsed</p>
+              </div>
+              <Button size="sm" className="h-7 text-xs shrink-0 gap-1.5" onClick={handleAdd}>
+                <Check className="h-3 w-3" />Add Scripture
+              </Button>
+            </div>
+          ) : (
+            <p className="text-[11px] text-amber-500">Could not parse — make sure you copy the full passage including the reference line from BibleGateway.</p>
+          )
+        )}
+      </div>
+
+      {/* Browse accordion */}
+      <button
+        onClick={() => setShowBrowse(v => !v)}
+        className="flex items-center justify-between px-4 py-2.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent/30 transition-colors shrink-0 border-b border-border"
+      >
+        <span>Browse by book &amp; chapter</span>
+        {showBrowse ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+      </button>
+      {showBrowse && (
+        <ScriptureBrowser search={search} onAddScripture={onAddScripture} />
+      )}
+    </div>
   )
 }

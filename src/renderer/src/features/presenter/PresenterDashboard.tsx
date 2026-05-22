@@ -188,6 +188,7 @@ export default function PresenterDashboard({
     addCountdownToLineup,
     addScriptureToLineup,
     addMediaToLineup,
+    addAnnouncementToLineup,
     reorderLineup,
     mediaLoopPrefs,
   } = useServiceStore();
@@ -205,6 +206,7 @@ export default function PresenterDashboard({
   const [defaultTheme, setDefaultTheme] = useState<any>(null);
   const [defaultThemeBg, setDefaultThemeBg] = useState<string | null>(null);
   const defaultScriptureThemeBgRef = useRef<string | null>(null);
+  const defaultAnnouncementThemeBgRef = useRef<string | null>(null);
   const [showLibrary, setShowLibrary] = useState(false);
   const [insertAfterSectionId, setInsertAfterSectionId] = useState<number | null>(null);
   const [showBgPicker, setShowBgPicker] = useState(false);
@@ -304,6 +306,7 @@ export default function PresenterDashboard({
           const s = JSON.parse(t.settings);
           setDefaultThemeBg(s.backgroundPath ?? null);
           defaultScriptureThemeBgRef.current = s.scriptureBackgroundPath ?? null;
+          defaultAnnouncementThemeBgRef.current = s.announcementBackgroundPath ?? null;
         } catch {}
       }
     });
@@ -541,14 +544,17 @@ export default function PresenterDashboard({
     (song: LiveSong): string | undefined => {
       if (song.backgroundPath) return song.backgroundPath;
       const isScripture = song.itemType === "scripture";
+      const isAnnouncement = song.itemType === "announcement";
       if (song.themeId && themeCache[song.themeId]) {
         try {
           const s = JSON.parse(themeCache[song.themeId].settings);
           if (isScripture && s.scriptureBackgroundPath) return s.scriptureBackgroundPath;
+          if (isAnnouncement && s.announcementBackgroundPath) return s.announcementBackgroundPath;
           return s.backgroundPath ?? undefined;
         } catch {}
       }
       if (isScripture && defaultScriptureThemeBgRef.current) return defaultScriptureThemeBgRef.current;
+      if (isAnnouncement && defaultAnnouncementThemeBgRef.current) return defaultAnnouncementThemeBgRef.current;
       return defaultThemeBg ?? undefined;
     },
     [themeCache, defaultThemeBg],
@@ -848,7 +854,9 @@ export default function PresenterDashboard({
     const t = await window.worshipsync.themes.getDefault() as any;
     if (t?.settings) {
       try {
-        defaultScriptureThemeBgRef.current = JSON.parse(t.settings).scriptureBackgroundPath ?? null;
+        const s = JSON.parse(t.settings);
+        defaultScriptureThemeBgRef.current = s.scriptureBackgroundPath ?? null;
+        defaultAnnouncementThemeBgRef.current = s.announcementBackgroundPath ?? null;
       } catch {}
     }
   };
@@ -2525,6 +2533,11 @@ export default function PresenterDashboard({
           }}
           onAddScripture={handleAddScripture}
           onAddMedia={handleAddMedia}
+          onAddAnnouncement={async (title, content) => {
+            const prevLen = useServiceStore.getState().lineup.length;
+            await addAnnouncementToLineup({ title, content });
+            if (insertAfterSectionId !== null) await repositionAfterSection(insertAfterSectionId, prevLen);
+          }}
           excludeIds={liveSongs
             .filter((s) => s.itemType === "song")
             .map((s) => s.songId)}

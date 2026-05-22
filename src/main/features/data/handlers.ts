@@ -45,6 +45,7 @@ export function registerDataHandlers(): void {
           const s = JSON.parse(t.settings)
           if (s.backgroundPath) s.backgroundPath = portablePath(s.backgroundPath)
           if (s.scriptureBackgroundPath) s.scriptureBackgroundPath = portablePath(s.scriptureBackgroundPath)
+          if (s.announcementBackgroundPath) s.announcementBackgroundPath = portablePath(s.announcementBackgroundPath)
           return { ...t, settings: JSON.stringify(s) }
         } catch { return t }
       }),
@@ -125,6 +126,7 @@ export function registerDataHandlers(): void {
         const s = JSON.parse(row.settings)
         if (s.backgroundPath) s.backgroundPath = restorePath(s.backgroundPath)
         if (s.scriptureBackgroundPath) s.scriptureBackgroundPath = restorePath(s.scriptureBackgroundPath)
+        if (s.announcementBackgroundPath) s.announcementBackgroundPath = restorePath(s.announcementBackgroundPath)
         db.insert(themes).values({ ...row, settings: JSON.stringify(s) }).run()
       } catch {
         db.insert(themes).values(row).run()

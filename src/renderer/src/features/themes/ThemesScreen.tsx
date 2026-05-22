@@ -21,6 +21,7 @@ interface ThemeSettings {
   maxLinesPerSlide: number
   backgroundPath: string | null
   scriptureBackgroundPath: string | null
+  announcementBackgroundPath: string | null
 }
 
 interface Theme {
@@ -46,6 +47,7 @@ const DEFAULT_SETTINGS: ThemeSettings = {
   maxLinesPerSlide: 2,
   backgroundPath: null,
   scriptureBackgroundPath: null,
+  announcementBackgroundPath: null,
 }
 
 const FONT_OPTIONS = [

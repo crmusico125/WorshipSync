@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react"
-import { Search, Music2, Timer, Upload, Trash2, Check, Image as ImageIcon, Play, Volume2, Calendar, BookOpen, ChevronDown, ChevronUp } from "lucide-react"
+import { Search, Music2, Timer, Upload, Trash2, Check, Image as ImageIcon, Play, Volume2, Calendar, BookOpen, ChevronDown, ChevronUp, Megaphone } from "lucide-react"
 import { parseBibleGatewayText } from "../lib/parseBibleGateway"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -38,10 +38,11 @@ interface Props {
   onAddCountdown?: () => void
   onAddScripture?: (title: string, verses: ScriptureVerse[], ref: { book: string; chapter: number; translation: string }) => void
   onAddMedia?: (path: string) => void
+  onAddAnnouncement?: (title: string, content: string) => void
   excludeIds?: number[]
 }
 
-export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScripture, onAddMedia, excludeIds = [] }: Props) {
+export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScripture, onAddMedia, onAddAnnouncement, excludeIds = [] }: Props) {
   const [tab, setTab] = useState("songs")
   const [songs, setSongs] = useState<SongRow[]>([])
   const [selectedIds, setSelectedIds] = useState<number[]>([])
@@ -332,25 +333,10 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScri
                   </div>
                 </>
               ) : tab === "widgets" ? (
-                <div className="flex-1 p-6">
-                  <div className="grid grid-cols-2 gap-4 max-w-lg">
-                    <button
-                      onClick={() => {
-                        onAddCountdown?.()
-                        onClose()
-                      }}
-                      className="flex flex-col items-center gap-3 p-6 rounded-xl border border-border bg-card hover:bg-accent hover:border-primary/30 transition-colors cursor-pointer group"
-                    >
-                      <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
-                        <Timer className="h-6 w-6 text-primary" />
-                      </div>
-                      <div className="text-center">
-                        <p className="text-sm font-medium text-foreground">Countdown Timer</p>
-                        <p className="text-xs text-muted-foreground mt-1">Count down to service start time</p>
-                      </div>
-                    </button>
-                  </div>
-                </div>
+                <WidgetsTab
+                  onAddCountdown={() => { onAddCountdown?.(); onClose() }}
+                  onAddAnnouncement={(title, content) => { onAddAnnouncement?.(title, content); onClose() }}
+                />
               ) : tab === "scriptures" ? (
                 <ScriptureTab
                   search={search}
@@ -649,6 +635,68 @@ function ScriptureTab({ search, onAddScripture }: {
       {showBrowse && (
         <ScriptureBrowser search={search} onAddScripture={onAddScripture} />
       )}
+    </div>
+  )
+}
+
+// ── WidgetsTab ────────────────────────────────────────────────────────────────
+
+function WidgetsTab({ onAddCountdown, onAddAnnouncement }: {
+  onAddCountdown: () => void
+  onAddAnnouncement: (title: string, content: string) => void
+}) {
+  const [annTitle,   setAnnTitle]   = useState("")
+  const [annContent, setAnnContent] = useState("")
+
+  return (
+    <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
+      {/* Countdown */}
+      <button
+        onClick={onAddCountdown}
+        className="flex items-center gap-4 p-4 rounded-xl border border-border bg-card hover:bg-accent hover:border-primary/30 transition-colors text-left group"
+      >
+        <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors shrink-0">
+          <Timer className="h-5 w-5 text-primary" />
+        </div>
+        <div>
+          <p className="text-sm font-medium">Countdown Timer</p>
+          <p className="text-xs text-muted-foreground mt-0.5">Count down to service start time</p>
+        </div>
+      </button>
+
+      {/* Announcement */}
+      <div className="flex flex-col gap-3 p-4 rounded-xl border border-border bg-card">
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-lg bg-amber-500/10 flex items-center justify-center shrink-0">
+            <Megaphone className="h-5 w-5 text-amber-500" />
+          </div>
+          <div>
+            <p className="text-sm font-medium">Announcement</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Display a title and message on screen</p>
+          </div>
+        </div>
+        <input
+          value={annTitle}
+          onChange={e => setAnnTitle(e.target.value)}
+          placeholder="Title (e.g. Welcome, Offering…)"
+          className="w-full text-xs bg-input border border-border rounded-md px-3 py-2 focus:outline-none focus:border-primary/50 placeholder:text-muted-foreground/50"
+        />
+        <textarea
+          value={annContent}
+          onChange={e => setAnnContent(e.target.value)}
+          placeholder="Content (optional)"
+          rows={3}
+          className="w-full text-xs bg-input border border-border rounded-md px-3 py-2 resize-none focus:outline-none focus:border-primary/50 placeholder:text-muted-foreground/50"
+        />
+        <Button
+          size="sm"
+          className="self-end gap-1.5 h-7 text-xs"
+          disabled={!annTitle.trim()}
+          onClick={() => onAddAnnouncement(annTitle.trim(), annContent.trim())}
+        >
+          <Check className="h-3 w-3" />Add Announcement
+        </Button>
+      </div>
     </div>
   )
 }

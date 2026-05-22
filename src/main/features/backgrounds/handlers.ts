@@ -142,6 +142,7 @@ export function registerBackgroundsHandlers(): void {
           let changed = false
           if (settings.backgroundPath === imagePath) { settings.backgroundPath = null; changed = true }
           if (settings.scriptureBackgroundPath === imagePath) { settings.scriptureBackgroundPath = null; changed = true }
+          if (settings.announcementBackgroundPath === imagePath) { settings.announcementBackgroundPath = null; changed = true }
           if (changed) {
             db.update(themes)
               .set({ settings: JSON.stringify(settings) })

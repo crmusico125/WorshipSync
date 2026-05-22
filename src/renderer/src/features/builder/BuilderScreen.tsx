@@ -202,7 +202,7 @@ interface Props {
 export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onReturnToPresenter }: Props) {
   const {
     selectedService, lineup, loadLineup, addSongToLineup, addCountdownToLineup,
-    addScriptureToLineup, addMediaToLineup,
+    addScriptureToLineup, addMediaToLineup, addAnnouncementToLineup,
     removeSongFromLineup, loadServices, selectService,
     services, reorderLineup, updateStatus, updateService,
     patchLineupItemSectionOrder, setMediaLoop, addSectionToLineup,
@@ -250,9 +250,12 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
   const [themeCache, setThemeCache] = useState<Record<number, any>>({})
   const [defaultTheme, setDefaultTheme] = useState<any>(null)
   const [defaultThemeBg, setDefaultThemeBg] = useState<string | null>(null)
+  const [defaultAnnouncementThemeBg, setDefaultAnnouncementThemeBg] = useState<string | null>(null)
 
   const [themeOverrides, setThemeOverrides] = useState<Partial<ThemeStyle>>({})
   const [bgOverride, setBgOverride] = useState<string | null | undefined>(undefined)
+  const [annPreviewTitle,   setAnnPreviewTitle]   = useState("")
+  const [annPreviewContent, setAnnPreviewContent] = useState("")
   const [pendingBgPath, setPendingBgPath] = useState<string | null | undefined>(undefined)
   const [savingBg, setSavingBg] = useState(false)
   const [arrangedSectionIds, setArrangedSectionIds] = useState<number[] | null>(null)
@@ -283,7 +286,11 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
     window.worshipsync.themes.getDefault().then((t: any) => {
       setDefaultTheme(t)
       if (t?.settings) {
-        try { setDefaultThemeBg(JSON.parse(t.settings).backgroundPath ?? null) } catch {}
+        try {
+          const s = JSON.parse(t.settings)
+          setDefaultThemeBg(s.backgroundPath ?? null)
+          setDefaultAnnouncementThemeBg(s.announcementBackgroundPath ?? null)
+        } catch {}
       }
     })
     window.worshipsync.themes.getAll().then((all: any[]) => {
@@ -357,6 +364,15 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
   const currentItem = lineup[selectedSongIdx] ?? null
   const currentSong = currentItem?.song ?? null
   const currentItemIsMedia = currentItem?.itemType === 'media'
+
+  // Sync announcement live-preview when selection changes
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (currentItem?.itemType === 'announcement') {
+      setAnnPreviewTitle(currentItem.title ?? "")
+      setAnnPreviewContent(currentItem.scriptureRef ?? "")
+    }
+  }, [currentItem?.id])
 
   const effectiveTheme: ThemeStyle = useMemo(() => {
     const t = (currentSong?.themeId ? themeCache[currentSong.themeId] : null) ?? defaultTheme
@@ -436,8 +452,9 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
     if (currentSong?.themeId && themeCache[currentSong.themeId]) {
       try { return JSON.parse(themeCache[currentSong.themeId].settings).backgroundPath ?? null } catch {}
     }
+    if (currentItem?.itemType === 'announcement' && defaultAnnouncementThemeBg) return defaultAnnouncementThemeBg
     return defaultThemeBg
-  }, [currentSong, currentItem, themeCache, defaultThemeBg, bgOverride])
+  }, [currentSong, currentItem, themeCache, defaultThemeBg, defaultAnnouncementThemeBg, bgOverride])
 
   // ── DnD sensors ──────────────────────────────────────────────────────────
   const sensors = useSensors(useSensor(PointerSensor, {
@@ -987,6 +1004,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
                       placeholder="e.g. This Sunday's Events"
                       onChange={(e) => {
                         const val = e.target.value
+                        setAnnPreviewTitle(val)
                         clearTimeout(announcementTimers.current.title)
                         announcementTimers.current.title = setTimeout(() => {
                           window.worshipsync.lineup.updateAnnouncement(currentItem.id, { title: val })
@@ -1006,6 +1024,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
                       placeholder={"Sunday 6pm — Youth Night\nMonday 7pm — Prayer Meeting\n\nVisit worshipsync.com for more info"}
                       onChange={(e) => {
                         const val = e.target.value
+                        setAnnPreviewContent(val)
                         clearTimeout(announcementTimers.current.content)
                         announcementTimers.current.content = setTimeout(() => {
                           window.worshipsync.lineup.updateAnnouncement(currentItem.id, { content: val })
@@ -1016,6 +1035,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
                     />
                     <p className="text-[10px] text-muted-foreground mt-1.5">Each line becomes a line on the projection screen. Use blank lines to add spacing.</p>
                   </div>
+
                   {/* Formatting toolbar */}
                   {(() => {
                     const annStyle = parseAnnouncementStyle(currentItem.itemStyle)
@@ -1076,44 +1096,6 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
                       </div>
                     )
                   })()}
-                  {/* Preview */}
-                  <div>
-                    <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1.5">Preview</label>
-                    <div className="rounded-lg overflow-hidden border border-border bg-gray-950 relative" style={{ aspectRatio: '16/9' }}>
-                      {effectiveBg && (
-                        effectiveBg.startsWith('color:') ? (
-                          <div className="absolute inset-0" style={{ background: effectiveBg.replace('color:', '') }} />
-                        ) : (
-                          <>
-                            <img src={`file://${effectiveBg}`} className="absolute inset-0 w-full h-full object-cover" alt="" />
-                            <div className="absolute inset-0" style={{ background: `rgba(0,0,0,0.5)` }} />
-                          </>
-                        )
-                      )}
-                      {(() => {
-                        const annStyle = parseAnnouncementStyle(currentItem.itemStyle)
-                        const previewFontSize = `${(annStyle.fontSize / 80) * 5}cqw`
-                        return (
-                          <div
-                            className="absolute inset-0 flex items-center px-6"
-                            style={{ containerType: 'inline-size', justifyContent: annStyle.textAlign === 'left' ? 'flex-start' : annStyle.textAlign === 'right' ? 'flex-end' : 'center' }}
-                          >
-                            <p
-                              className="leading-relaxed whitespace-pre-wrap"
-                              style={{
-                                fontSize: previewFontSize,
-                                fontWeight: annStyle.fontWeight,
-                                color: annStyle.textColor,
-                                textAlign: annStyle.textAlign,
-                              }}
-                            >
-                              {currentItem.scriptureRef || <span style={{ color: 'rgba(255,255,255,0.3)', fontStyle: 'italic', fontWeight: '400' }}>No content yet</span>}
-                            </p>
-                          </div>
-                        )
-                      })()}
-                    </div>
-                  </div>
                 </div>
               </div>
             </>
@@ -1533,7 +1515,9 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
             slide={currentSlide}
             theme={effectiveTheme}
             bg={effectiveBg}
-            canCustomize={!!currentSong || currentItem?.itemType === 'scripture'}
+            canCustomize={!!currentSong || currentItem?.itemType === 'scripture' || currentItem?.itemType === 'announcement'}
+            annPreviewTitle={annPreviewTitle}
+            annPreviewContent={annPreviewContent}
             readOnly={isPast}
             isOverridden={(bgOverride !== undefined && bgOverride !== null) || !!currentItem?.overrideBackgroundPath}
             onThemeChange={handleThemeChange}
@@ -1591,6 +1575,11 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
           }}
           onAddScripture={handleAddScripture}
           onAddMedia={handleAddMedia}
+          onAddAnnouncement={async (title, content) => {
+            const prevLen = useServiceStore.getState().lineup.length
+            await addAnnouncementToLineup({ title, content })
+            if (insertAfterSectionIdx !== null) await repositionAfterSection(insertAfterSectionIdx, prevLen)
+          }}
           excludeIds={lineup.filter(item => item.songId != null).map(item => item.songId!)}
         />
       )}
@@ -1725,6 +1714,7 @@ function ItemSettingsPanel({
   slide, theme, bg, canCustomize, readOnly, isOverridden,
   pendingBg, savingBg, onSaveBgToSong, onSaveBgToService, onDiscardBg,
   onThemeChange, onBgChange,
+  annPreviewTitle, annPreviewContent,
 }: {
   currentItem: LineupItemWithSong | null
   notes: string
@@ -1743,6 +1733,8 @@ function ItemSettingsPanel({
   onDiscardBg: () => void
   onThemeChange: (key: keyof ThemeStyle, value: any) => void
   onBgChange: (path: string | null) => void
+  annPreviewTitle?: string
+  annPreviewContent?: string
 }) {
   const [showBgPicker, setShowBgPicker] = useState(false)
 
@@ -1776,12 +1768,36 @@ function ItemSettingsPanel({
                 <Eye className="h-3 w-3" /> Not broadcasting
               </span>
             </div>
-            <div className="rounded-lg overflow-hidden border border-border bg-gray-950 relative" style={{ aspectRatio: "16/9" }}>
-              {bg && slide && <img src={`file://${bg}`} className="absolute inset-0 w-full h-full object-cover" alt="" />}
-              {bg && slide && <div className="absolute inset-0" style={{ background: `rgba(0,0,0,${theme.overlayOpacity / 100})` }} />}
-              {slide ? (
+            <div className="rounded-lg overflow-hidden border border-border bg-gray-950 relative" style={{ aspectRatio: "16/9", containerType: "inline-size" }}>
+              {/* Background */}
+              {bg && <img src={`file://${bg}`} className="absolute inset-0 w-full h-full object-cover" alt="" />}
+              {bg && <div className="absolute inset-0" style={{ background: `rgba(0,0,0,${theme.overlayOpacity / 100})` }} />}
+
+              {currentItem?.itemType === 'announcement' ? (() => {
+                const annStyle = parseAnnouncementStyle(currentItem.itemStyle)
+                const text = [annPreviewTitle, annPreviewContent].filter(Boolean).join('\n')
+                return (
+                  <div
+                    className="absolute inset-0 flex items-center px-3"
+                    style={{ justifyContent: annStyle.textAlign === 'left' ? 'flex-start' : annStyle.textAlign === 'right' ? 'flex-end' : 'center' }}
+                  >
+                    <p
+                      className="leading-relaxed whitespace-pre-wrap"
+                      style={{
+                        fontSize: `${(annStyle.fontSize / 80) * 5}cqw`,
+                        fontWeight: annStyle.fontWeight,
+                        color: text ? annStyle.textColor : 'rgba(255,255,255,0.2)',
+                        textAlign: annStyle.textAlign,
+                        fontStyle: text ? 'normal' : 'italic',
+                      }}
+                    >
+                      {text || 'No content yet'}
+                    </p>
+                  </div>
+                )
+              })() : slide ? (
                 slide.sectionType === "verse" ? (
-                  /* Scripture layout: verse text + reference at bottom — mirrors projection window */
+                  /* Scripture layout */
                   <div className="absolute inset-0 flex flex-col p-3">
                     <div className="flex-1 flex items-center justify-center min-h-0">
                       <p className="text-xs leading-relaxed whitespace-pre-wrap text-center"
@@ -1795,7 +1811,7 @@ function ItemSettingsPanel({
                     </p>
                   </div>
                 ) : (
-                  /* Song / other: original centered layout */
+                  /* Song / other */
                   <div className={`absolute inset-0 flex p-4 ${
                     theme.textPosition === "top" ? "items-start" : theme.textPosition === "bottom" ? "items-end" : "items-center"
                   } justify-center`}>

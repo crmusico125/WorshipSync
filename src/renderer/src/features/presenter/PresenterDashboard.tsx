@@ -1221,13 +1221,12 @@ export default function PresenterDashboard({
   const sectionTabs = useMemo(() => {
     if (!currentSong || currentSong.slides.length === 0) return [];
     const seen = new Set<number>();
-    const tabs: { sectionId: number; label: string; firstSlideIdx: number }[] = [];
+    const tabs: { sectionId: number; label: string; fullLabel: string; firstSlideIdx: number }[] = [];
     currentSong.slides.forEach((slide, i) => {
       if (slide.sectionType === "blank" || seen.has(slide.sectionId)) return;
       seen.add(slide.sectionId);
       let label: string;
       if (currentSong.itemType === "scripture") {
-        // Extract verse number from labels like "John 3:16 ESV" → "16"
         const verseMatch = slide.sectionLabel.match(/:(\d+)/);
         label = verseMatch ? verseMatch[1] : String(tabs.length + 1);
       } else {
@@ -1235,7 +1234,7 @@ export default function PresenterDashboard({
         const numMatch = slide.sectionLabel.match(/\d+$/);
         label = numMatch ? abbrev + numMatch[0] : abbrev;
       }
-      tabs.push({ sectionId: slide.sectionId, label, firstSlideIdx: i });
+      tabs.push({ sectionId: slide.sectionId, label, fullLabel: slide.sectionLabel, firstSlideIdx: i });
     });
     return tabs;
   }, [currentSong]);
@@ -1282,19 +1281,19 @@ export default function PresenterDashboard({
 
       {/* ═════ TOP HEADER BAR ═════ */}
       <div
-        className="h-12 shrink-0 border-b border-border bg-card flex items-center px-4 gap-3 relative z-10"
+        className="h-11 shrink-0 border-b border-border bg-card/95 flex items-center px-3 gap-2.5 relative z-10"
         style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
       >
-        {/* ON AIR */}
-        <div className="flex items-center gap-2 shrink-0" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
-          <span className="flex h-2.5 w-2.5 relative">
+        {/* ON AIR badge */}
+        <div className="flex items-center gap-1.5 shrink-0 bg-red-500/10 border border-red-500/30 rounded px-2 py-1" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
+          <span className="flex h-2 w-2 relative">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75" />
-            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
           </span>
-          <span className="text-[11px] font-bold text-red-400 tracking-widest">ON AIR</span>
+          <span className="text-[10px] font-black text-red-400 tracking-widest">ON AIR</span>
         </div>
 
-        <div className="h-5 w-px bg-border shrink-0" />
+        <div className="h-4 w-px bg-border shrink-0" />
 
         {/* Service name + switcher */}
         <div className="relative" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
@@ -1350,54 +1349,58 @@ export default function PresenterDashboard({
           )}
         </div>
 
-        {/* Live Runtime */}
-        <span className="text-[11px] text-muted-foreground shrink-0">Live Runtime: {liveRuntime}</span>
+        {/* Live Runtime — center, prominent */}
+        <div className="flex-1 flex justify-center">
+          <span className="text-xs font-semibold tabular-nums text-muted-foreground tracking-wide">{liveRuntime}</span>
+        </div>
 
-        <div className="flex-1" />
-
-        {/* Keyboard help */}
-        <button
-          onClick={() => setShowHelp(true)}
-          title="Keyboard shortcuts (?)"
-          style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-          className="h-7 w-7 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
-        >
-          <Keyboard className="h-3.5 w-3.5" />
-        </button>
-
-        {/* Edit in Builder */}
-        {onSwitchToBuilder && (
+        {/* Right actions */}
+        <div className="flex items-center gap-1.5 shrink-0" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
+          {/* Keyboard help */}
           <button
-            onClick={onSwitchToBuilder}
-            style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-            className="h-7 flex items-center gap-1.5 px-2.5 rounded text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors border border-border"
+            onClick={() => setShowHelp(true)}
+            title="Keyboard shortcuts (?)"
+            className="h-7 w-7 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
           >
-            <Pencil className="h-3 w-3" /> Builder
+            <Keyboard className="h-3.5 w-3.5" />
           </button>
-        )}
 
-        {/* End Show */}
-        <button
-          onClick={endShow}
-          style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-          className={`h-7 flex items-center gap-1.5 px-3 rounded text-xs font-semibold transition-colors ${
-            confirmEndShow
-              ? "bg-red-500 text-white hover:bg-red-600"
-              : "bg-destructive/10 text-destructive hover:bg-destructive hover:text-destructive-foreground border border-destructive/30"
-          }`}
-        >
-          {confirmEndShow ? "Confirm?" : "End Show"}
-        </button>
+          {/* Edit in Builder */}
+          {onSwitchToBuilder && (
+            <button
+              onClick={onSwitchToBuilder}
+              className="h-7 flex items-center gap-1.5 px-2.5 rounded text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors border border-border"
+            >
+              <Pencil className="h-3 w-3" /> Builder
+            </button>
+          )}
+
+          <div className="h-4 w-px bg-border" />
+
+          {/* End Show */}
+          <button
+            onClick={endShow}
+            className={`h-7 flex items-center gap-1.5 px-3 rounded text-xs font-semibold transition-colors ${
+              confirmEndShow
+                ? "bg-red-500 text-white hover:bg-red-600"
+                : "bg-destructive/10 text-destructive hover:bg-destructive hover:text-destructive-foreground border border-destructive/30"
+            }`}
+          >
+            {confirmEndShow ? "Confirm?" : "End Show"}
+          </button>
+        </div>
       </div>
 
       {/* ═════ BODY: Left + Center + Right ═════ */}
       <div className="flex-1 flex overflow-hidden min-h-0">
 
-      {/* ═════ LEFT: Run of Show (220px) ═════ */}
-      <div className="w-[220px] shrink-0 border-r border-border flex flex-col bg-card">
+      {/* ═════ LEFT: Run of Show (240px) ═════ */}
+      <div className="w-[240px] shrink-0 border-r border-border flex flex-col bg-card">
         <div className="px-3 py-2.5 border-b border-border flex items-center justify-between shrink-0">
           <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Run of Show</span>
-          <button onClick={() => setShowLibrary(true)} className="text-[10px] text-muted-foreground hover:text-foreground transition-colors font-medium">+ Add</button>
+          <button onClick={() => setShowLibrary(true)} className="text-[10px] font-semibold text-primary/70 hover:text-primary transition-colors flex items-center gap-0.5">
+            <Plus className="h-3 w-3" />Add
+          </button>
         </div>
 
         {/* Inline song search */}
@@ -1463,16 +1466,15 @@ export default function PresenterDashboard({
             // Section headers — visual dividers with per-section add button
             if (isSection) {
               return (
-                <div key={song.lineupItemId} className="flex flex-col">
-                  <div className="flex items-center gap-2 px-3 pt-3 pb-1">
-                    <Layers className="h-3 w-3 text-muted-foreground/50 shrink-0" />
-                    <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60 truncate">
+                <div key={song.lineupItemId} className="flex flex-col mt-1">
+                  <div className="flex items-center gap-1.5 px-2 pt-2.5 pb-1.5 mx-2 rounded-md bg-muted/40">
+                    <Layers className="h-3 w-3 text-muted-foreground/60 shrink-0" />
+                    <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/80 truncate flex-1">
                       {song.title}
                     </span>
-                    <div className="flex-1 h-px bg-border" />
                     <button
                       onClick={() => { setInsertAfterSectionId(song.lineupItemId); setShowLibrary(true); }}
-                      className="text-[9px] text-muted-foreground/50 hover:text-primary transition-colors font-medium shrink-0 flex items-center gap-0.5"
+                      className="text-[9px] text-muted-foreground/50 hover:text-primary transition-colors font-semibold shrink-0 flex items-center gap-0.5"
                     >
                       <Plus className="h-2.5 w-2.5" />Add
                     </button>
@@ -1500,11 +1502,11 @@ export default function PresenterDashboard({
                   audioContextRef.current = null;
                   analyserRef.current = null;
                 }}
-                className={`w-full text-left flex items-center gap-2 px-3 py-2.5 border-b border-border transition-colors ${
-                  isCurrent ? "bg-red-500/[0.08] border-l-2 border-l-red-500" : isFinished ? "opacity-50" : "hover:bg-accent/30"
+                className={`w-full text-left flex items-center gap-2 px-3 py-3 border-b border-border/60 transition-colors ${
+                  isCurrent ? "bg-red-500/10 border-l-[3px] border-l-red-500" : isFinished ? "opacity-40" : "hover:bg-accent/40"
                 }`}
               >
-                <div className={`w-6 h-6 rounded flex items-center justify-center shrink-0 ${isCurrent ? "bg-red-500 text-white" : "bg-input text-muted-foreground"}`}>
+                <div className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 ${isCurrent ? "bg-red-500 text-white shadow-[0_0_8px_rgba(239,68,68,0.4)]" : "bg-muted text-muted-foreground"}`}>
                   <Icon className="h-3 w-3" />
                 </div>
                 <div className="min-w-0 flex-1">
@@ -1513,6 +1515,9 @@ export default function PresenterDashboard({
                   </p>
                   <p className="text-[10px] text-muted-foreground truncate">
                     {isCountdown ? "Countdown" : isScripture ? "Scripture" : isMedia ? (isVideoItem ? "Video" : isAudioItem ? "Audio" : "Image") : isAnnouncement ? "Announcement" : song.artist || "Song"}
+                    {!isCountdown && !isMedia && song.slides.length > 0 && (
+                      <span className="ml-1 opacity-50">· {song.slides.filter(s => s.sectionType !== "blank").length} slides</span>
+                    )}
                   </p>
                 </div>
                 {isFinished && <span className="text-[9px] font-semibold text-muted-foreground/70 shrink-0 bg-muted px-1 py-0.5 rounded leading-none">Done</span>}
@@ -2003,149 +2008,102 @@ export default function PresenterDashboard({
             })()}
           </div>
         ) : currentSong ? (
-          /* ── Song / Scripture — Banani layout ── */
+          /* ── Song / Scripture — hero LIVE preview layout ── */
           <>
-            {/* Dual Preview */}
-            <div className="shrink-0 border-b border-border bg-card px-4 py-3">
-              <div className="flex gap-3">
-                {/* LIVE */}
-                <div className="flex-[72] flex flex-col gap-1.5 min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse" />
-                    <span className="text-[10px] font-bold text-red-400 tracking-wider">LIVE: AUDIENCE</span>
-                    <span className="flex-1" />
-                    {currentSlide && <span className="text-[10px] text-muted-foreground">{currentSlide.sectionLabel}</span>}
-                  </div>
-                  <div className="relative overflow-hidden rounded-md border-2 border-red-500/60 bg-black" style={{ aspectRatio: "16/9", containerType: "inline-size" }}>
-                    {!isLogo && effectiveBg && currentSlide && !isBlank && (
-                      effectiveBg.startsWith("color:") ? (
-                        <div className="absolute inset-0" style={{ background: effectiveBg.replace("color:", "") }} />
-                      ) : /\.(mp4|webm|mov)$/i.test(effectiveBg) ? (
-                        <video src={`file://${encodeURI(effectiveBg)}`} className="absolute inset-0 w-full h-full object-cover" muted preload="metadata" />
-                      ) : (
-                        <>
-                          <img src={`file://${effectiveBg}`} className="absolute inset-0 w-full h-full object-cover" alt="" />
-                          <div className="absolute inset-0" style={{ background: `rgba(0,0,0,${effectiveTheme.overlayOpacity / 100})` }} />
-                        </>
-                      )
-                    )}
-                    {isLogo ? (
-                      <div className="absolute inset-0 bg-black flex items-center justify-center">
-                        <span style={{ fontFamily: "Montserrat, sans-serif", fontWeight: 700, color: "rgba(255,255,255,0.15)", letterSpacing: "-0.03em", fontSize: 14 }}>
-                          WorshipSync
-                        </span>
-                      </div>
-                    ) : currentSlide && !isBlank ? (
-                      currentSlide.sectionType === "verse" && currentSong?.itemType === "scripture" ? (
-                        /* Scripture: verse text + reference at bottom */
-                        <div className="absolute inset-0 flex flex-col px-3 pt-2 pb-1.5">
-                          <div className="flex-1 flex items-center justify-center min-h-0">
-                            <p className="text-center font-bold leading-snug whitespace-pre-wrap relative z-10 w-full"
-                              style={{ fontSize: "4.5cqw", color: effectiveTheme.textColor, fontFamily: effectiveTheme.fontFamily }}>
-                              {isTextCleared ? "" : currentSlide.lines.join("\n")}
-                            </p>
-                          </div>
-                          <p className="text-center font-semibold relative z-10 shrink-0 truncate"
-                            style={{ fontSize: "2.2cqw", color: "rgba(255,255,255,0.65)", fontFamily: effectiveTheme.fontFamily }}>
-                            {currentSlide.sectionLabel}
-                          </p>
-                        </div>
-                      ) : (
-                        /* Songs / other: centered text */
-                        <div className="absolute inset-0 flex items-center justify-center px-3">
-                          <p className="text-center font-bold leading-snug whitespace-pre-wrap relative z-10 w-full"
-                            style={{ fontSize: "5cqw", color: effectiveTheme.textColor, fontFamily: effectiveTheme.fontFamily, textAlign: effectiveTheme.textAlign, textShadow: effectiveTheme.textShadowOpacity > 0 ? `0 1px 3px rgba(0,0,0,${effectiveTheme.textShadowOpacity / 100})` : "none" }}>
-                            {isTextCleared ? "" : currentSlide.lines.join("\n")}
-                          </p>
-                        </div>
-                      )
-                    ) : (
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <MonitorOff className="h-4 w-4 text-gray-600" />
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* NEXT */}
-                <div className="flex-[28] flex flex-col gap-1.5 min-w-0 opacity-75">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] font-bold text-green-400 tracking-wider">NEXT</span>
-                    <span className="flex-1" />
-                    {nextUp && (
-                      <span className="text-[10px] text-muted-foreground">
-                        {nextUp.songTitle ? `${nextUp.songTitle} — ${nextUp.slide.sectionLabel}` : nextUp.slide.sectionLabel}
-                      </span>
-                    )}
-                  </div>
-                  {(() => {
-                    const nextUpSong = nextUp?.songTitle ? nextSong : currentSong;
-                    const nextUpTheme = nextUpSong ? resolveTheme(nextUpSong) : effectiveTheme;
-                    const nextUpBg = nextUpSong ? resolveBg(nextUpSong) : effectiveBg;
-                    return (
-                      <div className="relative overflow-hidden rounded-md border-2 border-green-500/50 bg-black" style={{ aspectRatio: "16/9", containerType: "inline-size" }}>
-                        {nextUpBg && nextUp && nextUp.slide.sectionType !== "blank" && (
-                          nextUpBg.startsWith("color:") ? (
-                            <div className="absolute inset-0" style={{ background: nextUpBg.replace("color:", "") }} />
-                          ) : (
-                            <>
-                              <img src={`file://${nextUpBg}`} className="absolute inset-0 w-full h-full object-cover" alt="" />
-                              <div className="absolute inset-0" style={{ background: `rgba(0,0,0,${nextUpTheme.overlayOpacity / 100})` }} />
-                            </>
-                          )
-                        )}
-                        {nextUp && nextUp.slide.sectionType !== "blank" ? (
-                          nextUp.slide.sectionType === "verse" && nextUpSong?.itemType === "scripture" ? (
-                            /* Scripture: verse text + reference at bottom */
-                            <div className="absolute inset-0 flex flex-col px-3 pt-2 pb-1.5">
-                              <div className="flex-1 flex items-center justify-center min-h-0">
-                                <p className="text-center font-bold leading-snug whitespace-pre-wrap relative z-10 w-full"
-                                  style={{ fontSize: "4.5cqw", color: nextUpTheme.textColor, fontFamily: nextUpTheme.fontFamily }}>
-                                  {nextUp.slide.lines.join("\n")}
-                                </p>
-                              </div>
-                              <p className="text-center font-semibold relative z-10 shrink-0 truncate"
-                                style={{ fontSize: "2.2cqw", color: "rgba(255,255,255,0.65)", fontFamily: nextUpTheme.fontFamily }}>
-                                {nextUp.slide.sectionLabel}
-                              </p>
-                            </div>
-                          ) : (
-                            /* Songs / other: centered text */
-                            <div className="absolute inset-0 flex items-center justify-center px-3">
-                              <p className="text-center font-bold leading-snug whitespace-pre-wrap relative z-10 w-full"
-                                style={{ fontSize: "5cqw", color: nextUpTheme.textColor, fontFamily: nextUpTheme.fontFamily, textAlign: nextUpTheme.textAlign }}>
-                                {nextUp.slide.lines.join("\n")}
-                              </p>
-                            </div>
-                          )
-                        ) : (
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <p className="text-[10px] text-gray-600">No next slide</p>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()}
-                </div>
+            {/* LIVE Preview — full width hero */}
+            <div className="shrink-0 border-b border-border bg-card px-4 pt-3 pb-3">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="flex h-2 w-2 relative shrink-0">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-60" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
+                </span>
+                <span className="text-[10px] font-black text-red-400 tracking-widest">LIVE — AUDIENCE VIEW</span>
+                <span className="flex-1" />
+                {currentSlide && <span className="text-[10px] font-medium text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded">{currentSlide.sectionLabel}</span>}
               </div>
+              <div className="flex justify-center">
+              <div className="relative overflow-hidden rounded-xl border-2 border-red-500/70 bg-black shadow-[0_0_24px_rgba(239,68,68,0.18)]" style={{ height: "clamp(140px, 28vh, 300px)", aspectRatio: "16/9", containerType: "inline-size" }}>
+                {!isLogo && effectiveBg && currentSlide && !isBlank && (
+                  effectiveBg.startsWith("color:") ? (
+                    <div className="absolute inset-0" style={{ background: effectiveBg.replace("color:", "") }} />
+                  ) : /\.(mp4|webm|mov)$/i.test(effectiveBg) ? (
+                    <video src={`file://${encodeURI(effectiveBg)}`} className="absolute inset-0 w-full h-full object-cover" muted preload="metadata" />
+                  ) : (
+                    <>
+                      <img src={`file://${effectiveBg}`} className="absolute inset-0 w-full h-full object-cover" alt="" />
+                      <div className="absolute inset-0" style={{ background: `rgba(0,0,0,${effectiveTheme.overlayOpacity / 100})` }} />
+                    </>
+                  )
+                )}
+                {isLogo ? (
+                  <div className="absolute inset-0 bg-black flex items-center justify-center">
+                    <span style={{ fontFamily: "Montserrat, sans-serif", fontWeight: 700, color: "rgba(255,255,255,0.15)", letterSpacing: "-0.03em", fontSize: 14 }}>
+                      WorshipSync
+                    </span>
+                  </div>
+                ) : currentSlide && !isBlank ? (
+                  currentSlide.sectionType === "verse" && currentSong?.itemType === "scripture" ? (
+                    <div className="absolute inset-0 flex flex-col px-3 pt-2 pb-1.5">
+                      <div className="flex-1 flex items-center justify-center min-h-0">
+                        <p className="text-center font-bold leading-snug whitespace-pre-wrap relative z-10 w-full"
+                          style={{ fontSize: "4.5cqw", color: effectiveTheme.textColor, fontFamily: effectiveTheme.fontFamily }}>
+                          {isTextCleared ? "" : currentSlide.lines.join("\n")}
+                        </p>
+                      </div>
+                      <p className="text-center font-semibold relative z-10 shrink-0 truncate"
+                        style={{ fontSize: "2.2cqw", color: "rgba(255,255,255,0.65)", fontFamily: effectiveTheme.fontFamily }}>
+                        {currentSlide.sectionLabel}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="absolute inset-0 flex items-center justify-center px-3">
+                      <p className="text-center font-bold leading-snug whitespace-pre-wrap relative z-10 w-full"
+                        style={{ fontSize: "5cqw", color: effectiveTheme.textColor, fontFamily: effectiveTheme.fontFamily, textAlign: effectiveTheme.textAlign, textShadow: effectiveTheme.textShadowOpacity > 0 ? `0 1px 3px rgba(0,0,0,${effectiveTheme.textShadowOpacity / 100})` : "none" }}>
+                        {isTextCleared ? "" : currentSlide.lines.join("\n")}
+                      </p>
+                    </div>
+                  )
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <MonitorOff className="h-5 w-5 text-gray-600" />
+                  </div>
+                )}
+              </div>
+              </div>{/* end flex justify-center */}
+              {/* Slide text readout — shows exactly what's projected */}
+              {currentSlide && !isBlank && !isLogo && currentSlide.sectionType !== "blank" && (
+                <div className="mt-2 px-1 min-h-[1.6rem] flex items-center justify-center">
+                  <p className="text-center text-[11px] font-medium text-zinc-400 leading-snug line-clamp-2 whitespace-pre-wrap">
+                    {isTextCleared ? <span className="italic text-zinc-600">Text cleared</span> : currentSlide.lines.filter(Boolean).join(" · ")}
+                  </p>
+                </div>
+              )}
+              {(isBlank || isLogo) && (
+                <div className="mt-2 px-1 min-h-[1.6rem] flex items-center justify-center">
+                  <p className="text-[11px] font-semibold text-amber-500/70 italic">
+                    {isBlank ? "Screen is blank" : "Logo showing"}
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Song header + section tabs */}
             <div className="shrink-0 px-4 py-2.5 border-b border-border bg-card flex items-center justify-between gap-3">
               <div className="flex items-center gap-2.5 min-w-0 flex-wrap">
-                <h2 className="text-sm font-semibold truncate max-w-[160px]">{currentSong.title}</h2>
+                <h2 className="text-sm font-bold truncate max-w-[160px]">{currentSong.title}</h2>
                 <div className="flex gap-1 flex-wrap">
                   {sectionTabs.map(tab => (
                     <button
                       key={tab.sectionId}
                       onClick={() => sendSlide(selectedSongIdx, tab.firstSlideIdx)}
-                      className={`text-[10px] font-bold px-1.5 py-0.5 rounded leading-none transition-colors ${
+                      title={tab.fullLabel}
+                      className={`text-[10px] font-bold px-2.5 py-1 rounded-full leading-none transition-all duration-150 whitespace-nowrap ${
                         activeSectionId === tab.sectionId
-                          ? "bg-red-500 text-white"
-                          : "bg-muted text-muted-foreground hover:bg-accent hover:text-foreground"
+                          ? "bg-red-500 text-white shadow-[0_0_8px_rgba(239,68,68,0.45)]"
+                          : "bg-muted/80 text-muted-foreground hover:bg-muted hover:text-foreground"
                       }`}
                     >
-                      {tab.label}
+                      {tab.fullLabel.length <= 8 ? tab.fullLabel : tab.label}
                     </button>
                   ))}
                 </div>
@@ -2166,7 +2124,7 @@ export default function PresenterDashboard({
 
             {/* Slide grid — 4 columns */}
             <div ref={slideGridRef} className="flex-1 overflow-y-auto p-3">
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))" }}>
                 {currentSong.slides.map((slide, i) => {
                   const isActive = activeSlideIdx === i;
                   const isNextSlide = activeSlideIdx >= 0 && i === activeSlideIdx + 1;
@@ -2191,10 +2149,14 @@ export default function PresenterDashboard({
                       </div>
                       <button
                         onClick={(e) => { e.currentTarget.blur(); sendSlide(selectedSongIdx, i); }}
-                        className={`relative w-full overflow-hidden rounded-md focus:outline-none border-2 transition-colors ${
-                          isActive ? "border-red-500" : isNextSlide ? "border-green-500/50" : "border-transparent"
+                        className={`relative w-full overflow-hidden rounded-md focus:outline-none border-2 transition-all duration-150 ${
+                          isActive
+                            ? "border-red-500 ring-2 ring-red-500/25 scale-[1.015]"
+                            : isNextSlide
+                            ? "border-green-500/50 ring-1 ring-green-500/15"
+                            : "border-transparent hover:border-muted-foreground/30"
                         }`}
-                        style={{ outline: isActive || isNextSlide ? "none" : "1px solid hsl(var(--border))" }}
+                        style={{ outline: "none", boxShadow: isActive ? "0 0 0 0 transparent" : undefined }}
                       >
                         <div className="w-full" style={{ paddingBottom: "56.25%" }} />
                         <div className="absolute inset-0">
@@ -2216,22 +2178,22 @@ export default function PresenterDashboard({
 
                           {slide.sectionType === "verse" && currentSong.itemType === "scripture" ? (
                             /* Scripture: verse text centered + reference at bottom */
-                            <div className="absolute inset-0 flex flex-col px-1.5 pt-1.5 pb-1">
+                            <div className="absolute inset-0 flex flex-col px-2 pt-2 pb-1.5">
                               <div className="flex-1 flex items-center justify-center min-h-0">
-                                <p className="text-center font-bold text-[9px] leading-snug whitespace-pre-wrap relative z-10"
+                                <p className="text-center font-bold text-[11px] leading-snug whitespace-pre-wrap relative z-10"
                                   style={{ color: effectiveTheme.textColor, fontFamily: effectiveTheme.fontFamily }}>
                                   {slide.lines.join("\n")}
                                 </p>
                               </div>
-                              <p className="text-center text-[7px] font-semibold relative z-10 shrink-0 truncate"
+                              <p className="text-center text-[9px] font-semibold relative z-10 shrink-0 truncate"
                                 style={{ color: "rgba(255,255,255,0.6)", fontFamily: effectiveTheme.fontFamily }}>
                                 {slide.sectionLabel}
                               </p>
                             </div>
                           ) : (
                             /* Songs / other: original centered layout */
-                            <div className="absolute inset-0 flex items-center justify-center">
-                              <p className="relative z-10 text-center font-bold text-[11px] leading-snug whitespace-pre-wrap px-2"
+                            <div className="absolute inset-0 flex items-center justify-center px-2">
+                              <p className="relative z-10 text-center font-bold text-[13px] leading-snug whitespace-pre-wrap"
                                 style={{ color: effectiveTheme.textColor, fontFamily: effectiveTheme.fontFamily, textShadow: effectiveTheme.textShadowOpacity > 0 ? `0 1px 3px rgba(0,0,0,${effectiveTheme.textShadowOpacity / 100})` : "none" }}>
                                 {slide.sectionType === "blank" ? "" : slide.lines.join("\n")}
                               </p>
@@ -2252,48 +2214,56 @@ export default function PresenterDashboard({
         )}
       </div>
 
-      {/* ═════ RIGHT: Controls Panel (280px) ═════ */}
-      <div className="w-[280px] shrink-0 border-l border-border flex flex-col bg-card overflow-hidden">
+      {/* ═════ RIGHT: Controls Panel (272px) ═════ */}
+      <div className="w-[272px] shrink-0 border-l border-border flex flex-col bg-card overflow-hidden">
 
-        {/* TO BLACK — primary safety button */}
-        <div className="p-3 border-b border-border shrink-0">
+        {/* ── Zone 1: TO BLACK — primary safety button, hero size ── */}
+        <div className="p-3 pb-2 shrink-0">
           {isBlank ? (
             <button
               onClick={() => {
                 if (activeSlideIdx >= 0) sendSlide(selectedSongIdx, activeSlideIdx);
                 else { window.worshipsync.slide.blank(false); setIsBlank(false); }
               }}
-              className="w-full py-3 rounded-lg text-sm font-bold flex items-center gap-2.5 px-3.5 transition-all bg-amber-500/15 border border-amber-500/50 text-amber-300 hover:bg-amber-500/25"
+              className="w-full py-4 rounded-xl text-sm font-black uppercase tracking-wide flex items-center justify-center gap-3 transition-all duration-150
+                         bg-amber-500/10 border-2 border-amber-400/50 text-amber-300
+                         hover:bg-amber-500/20 hover:border-amber-400/70 active:scale-[0.98]
+                         shadow-[0_0_20px_rgba(251,191,36,0.12)]"
             >
-              <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
+              <span className="flex h-2.5 w-2.5 relative shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-60" />
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-400" />
+              </span>
               <span>Screen Blanked</span>
-              <span className="ml-auto text-[10px] font-semibold bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded">Unblank [B]</span>
+              <span className="ml-auto text-[10px] font-bold bg-amber-500/15 text-amber-400/80 px-1.5 py-0.5 rounded-md">[B]</span>
             </button>
           ) : (
             <button
               onClick={toBlack}
-              className="w-full py-3 rounded-lg text-sm font-bold flex items-center gap-2.5 px-3.5 transition-all bg-background border border-border text-muted-foreground hover:bg-zinc-800 hover:text-white hover:border-zinc-600"
+              className="w-full py-4 rounded-xl text-sm font-black uppercase tracking-wide flex items-center justify-center gap-3 transition-all duration-150
+                         bg-zinc-900 border-2 border-zinc-700 text-zinc-200
+                         hover:bg-zinc-800 hover:border-zinc-500 hover:text-white active:scale-[0.98]
+                         hover:shadow-[0_0_16px_rgba(239,68,68,0.12)]"
             >
-              <MonitorOff className="h-4 w-4 shrink-0" />
+              <MonitorOff className="h-4.5 w-4.5 shrink-0" />
               <span>To Black</span>
-              <span className="ml-auto text-[10px] font-normal opacity-40">[B]</span>
+              <span className="ml-auto text-[10px] font-normal text-zinc-500">[B]</span>
             </button>
           )}
         </div>
 
-        {/* Quick Actions — 3-up row */}
-        <div className="p-3 border-b border-border shrink-0">
-          <h3 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">Quick Actions</h3>
+        {/* ── Zone 2: Quick Actions — 3-up ── */}
+        <div className="px-3 pb-3 border-b border-border shrink-0">
           <div className="grid grid-cols-3 gap-1.5">
             <button
               onClick={clearText}
-              className={`py-2 px-2 rounded-md text-[11px] font-semibold border transition-colors text-center ${isTextCleared ? "bg-primary/20 text-primary border-primary/40" : "bg-background border-border hover:bg-accent/40 text-foreground"}`}
+              className={`py-2 px-2 rounded-lg text-[11px] font-semibold border transition-all duration-150 text-center active:scale-[0.97] ${isTextCleared ? "bg-primary/15 text-primary border-primary/35 shadow-[0_0_8px_rgba(139,92,246,0.15)]" : "bg-muted/40 border-border/60 hover:bg-muted hover:text-foreground text-muted-foreground"}`}
             >
               {isTextCleared ? "Restore" : "Clear Text"}
             </button>
             <button
               onClick={clearAll}
-              className="py-2 px-2 rounded-md text-[11px] font-semibold border border-border bg-background hover:bg-accent/40 text-foreground transition-colors text-center"
+              className="py-2 px-2 rounded-lg text-[11px] font-semibold border border-border/60 bg-muted/40 hover:bg-muted hover:text-foreground text-muted-foreground transition-all duration-150 text-center active:scale-[0.97]"
             >
               Clear All
             </button>
@@ -2308,15 +2278,99 @@ export default function PresenterDashboard({
                   showLogo();
                 }
               }}
-              className={`py-2 px-2 rounded-md text-[11px] font-semibold border transition-colors text-center ${isLogo ? "bg-amber-500/20 text-amber-400 border-amber-500/40" : "bg-background border-border hover:bg-accent/40 text-foreground"}`}
+              className={`py-2 px-2 rounded-lg text-[11px] font-semibold border transition-all duration-150 text-center active:scale-[0.97] ${isLogo ? "bg-amber-500/15 text-amber-400 border-amber-500/35" : "bg-muted/40 border-border/60 hover:bg-muted hover:text-foreground text-muted-foreground"}`}
             >
-              {isLogo ? "Hide Logo" : "Show Logo"}
+              {isLogo ? "Hide Logo" : "Logo"}
             </button>
           </div>
         </div>
 
+        {/* ── Zone 3: Item Navigation — shows what you're jumping to ── */}
+        {(() => {
+          let prevIdx = selectedSongIdx - 1;
+          while (prevIdx >= 0 && liveSongs[prevIdx]?.itemType === "section") prevIdx--;
+          let nextIdx = selectedSongIdx + 1;
+          while (nextIdx < liveSongs.length && liveSongs[nextIdx]?.itemType === "section") nextIdx++;
+          const prevItem = prevIdx >= 0 ? liveSongs[prevIdx] : null;
+          const nextItem = nextIdx < liveSongs.length ? liveSongs[nextIdx] : null;
+          return (
+            <div className="px-3 py-2.5 border-b border-border shrink-0">
+              <div className="flex gap-1.5">
+                <button
+                  onClick={goPrevSong}
+                  disabled={!prevItem}
+                  title={prevItem?.title}
+                  className="flex-1 flex items-center gap-1 py-2 px-2 rounded-lg text-xs font-semibold border border-border/70 bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground transition-all duration-150 disabled:opacity-25 disabled:cursor-not-allowed active:scale-[0.97] min-w-0"
+                >
+                  <SkipBack className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">{prevItem?.title ?? "—"}</span>
+                </button>
+                <button
+                  onClick={goNextSong}
+                  disabled={!nextItem}
+                  title={nextItem?.title}
+                  className="flex-1 flex items-center justify-end gap-1 py-2 px-2 rounded-lg text-xs font-semibold border border-border/70 bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground transition-all duration-150 disabled:opacity-25 disabled:cursor-not-allowed active:scale-[0.97] min-w-0"
+                >
+                  <span className="truncate">{nextItem?.title ?? "—"}</span>
+                  <SkipForward className="h-3.5 w-3.5 shrink-0" />
+                </button>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* ── Zone 4: NEXT Preview ── */}
+        {nextUp && nextUp.slide.sectionType !== "blank" && (() => {
+          const nextUpSong = nextUp.songTitle ? nextSong : currentSong;
+          const nextUpTheme = nextUpSong ? resolveTheme(nextUpSong) : effectiveTheme;
+          const nextUpBg = nextUpSong ? resolveBg(nextUpSong) : effectiveBg;
+          return (
+            <div className="px-3 py-2.5 border-b border-border shrink-0">
+              <div className="flex items-center gap-1.5 mb-1.5">
+                <span className="text-[10px] font-black text-green-400 tracking-wider">NEXT</span>
+                <span className="text-[10px] text-muted-foreground truncate">
+                  {nextUp.songTitle ? `${nextUp.songTitle} — ${nextUp.slide.sectionLabel}` : nextUp.slide.sectionLabel}
+                </span>
+              </div>
+              <div className="relative overflow-hidden rounded-lg border border-green-500/35 bg-black" style={{ aspectRatio: "16/9", containerType: "inline-size" }}>
+                {nextUpBg && (
+                  nextUpBg.startsWith("color:") ? (
+                    <div className="absolute inset-0" style={{ background: nextUpBg.replace("color:", "") }} />
+                  ) : (
+                    <>
+                      <img src={`file://${nextUpBg}`} className="absolute inset-0 w-full h-full object-cover" alt="" />
+                      <div className="absolute inset-0" style={{ background: `rgba(0,0,0,${nextUpTheme.overlayOpacity / 100})` }} />
+                    </>
+                  )
+                )}
+                {nextUp.slide.sectionType === "verse" && nextUpSong?.itemType === "scripture" ? (
+                  <div className="absolute inset-0 flex flex-col px-2 pt-1.5 pb-1">
+                    <div className="flex-1 flex items-center justify-center min-h-0">
+                      <p className="text-center font-bold leading-snug whitespace-pre-wrap relative z-10 w-full"
+                        style={{ fontSize: "4.5cqw", color: nextUpTheme.textColor, fontFamily: nextUpTheme.fontFamily }}>
+                        {nextUp.slide.lines.join("\n")}
+                      </p>
+                    </div>
+                    <p className="text-center font-semibold relative z-10 shrink-0 truncate"
+                      style={{ fontSize: "2.2cqw", color: "rgba(255,255,255,0.65)" }}>
+                      {nextUp.slide.sectionLabel}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center px-2">
+                    <p className="text-center font-bold leading-snug whitespace-pre-wrap relative z-10 w-full"
+                      style={{ fontSize: "5cqw", color: nextUpTheme.textColor, fontFamily: nextUpTheme.fontFamily, textAlign: nextUpTheme.textAlign }}>
+                      {nextUp.slide.lines.join("\n")}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
         {/* Active Background — not shown for audio/video items */}
-        {!(currentSong?.itemType === "media" && /\.(mp4|webm|mov|mp3|wav|ogg|m4a|aac|flac)$/i.test(currentSong.mediaPath ?? "")) && <div className="px-4 py-3 border-b border-border shrink-0">
+        {!(currentSong?.itemType === "media" && /\.(mp4|webm|mov|mp3|wav|ogg|m4a|aac|flac)$/i.test(currentSong.mediaPath ?? "")) && <div className="px-3 py-3 border-b border-border shrink-0">
           <h3 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">Active Background</h3>
           <div
             className="flex items-center gap-2.5 p-2 rounded-md bg-background/40 border border-border cursor-pointer hover:bg-accent/30 transition-colors"
@@ -2353,16 +2407,19 @@ export default function PresenterDashboard({
 
         {/* Cue Notes */}
         {currentSong?.notes && (
-          <div className="px-4 py-3 border-b border-border shrink-0">
-            <h3 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">Cue Notes (Live)</h3>
-            <p className="text-[11px] text-amber-400/90 leading-relaxed whitespace-pre-wrap break-words">
+          <div className="px-3 py-3 border-b border-border shrink-0 bg-amber-500/5">
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-400 shrink-0" />
+              <h3 className="text-[10px] font-black uppercase tracking-wider text-amber-400/80">Cue Notes</h3>
+            </div>
+            <p className="text-[11px] text-amber-300/80 leading-relaxed whitespace-pre-wrap break-words">
               {currentSong.notes}
             </p>
           </div>
         )}
 
         {/* Output Routing */}
-        <div className="px-4 py-3 border-b border-border flex-1 overflow-y-auto">
+        <div className="px-3 py-3 border-b border-border flex-1 overflow-y-auto">
           <h3 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2.5">Output Routing</h3>
 
           <div className="flex items-center gap-2 mb-2 p-2 rounded-md bg-background/40 border border-border">

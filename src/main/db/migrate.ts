@@ -203,5 +203,16 @@ export function runMigrations(): void {
     console.error('[db] migration error (lineup_items section_order):', e)
   }
 
+  // ── Migration: add copyright column to songs ────────────────────────────
+  try {
+    const songCols = sqlite.prepare("PRAGMA table_info(songs)").all() as { name: string }[]
+    if (!songCols.some(c => c.name === 'copyright')) {
+      sqlite.exec(`ALTER TABLE songs ADD COLUMN copyright TEXT`)
+      console.log('[db] migration: added copyright column to songs')
+    }
+  } catch (e) {
+    console.error('[db] migration error (songs copyright):', e)
+  }
+
   console.log('[db] migrations complete')
 }

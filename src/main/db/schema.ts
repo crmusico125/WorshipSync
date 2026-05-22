@@ -8,6 +8,7 @@ export const songs = sqliteTable('songs', {
   key:            text('key'),
   tempo:          text('tempo', { enum: ['slow', 'medium', 'fast'] }),
   ccliNumber:     text('ccli_number'),
+  copyright:      text('copyright'),
   backgroundPath: text('background_path'),
   themeId:        integer('theme_id'),
   tags:           text('tags').notNull().default('[]'),

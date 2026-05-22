@@ -15,6 +15,7 @@ export interface Song {
   key: string | null
   tempo: string | null
   ccliNumber: string | null
+  copyright: string | null
   backgroundPath: string | null
   themeId: number | null
   tags: string

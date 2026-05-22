@@ -31,6 +31,7 @@ export function registerSongsHandlers(): void {
     key?: string
     tempo?: 'slow' | 'medium' | 'fast'
     ccliNumber?: string
+    copyright?: string
     tags: string
     sections: { type: string; label: string; lyrics: string; orderIndex: number }[]
   }) => {

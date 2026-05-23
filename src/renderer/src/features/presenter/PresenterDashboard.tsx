@@ -33,6 +33,8 @@ import {
   Megaphone,
   Plus,
   Layers,
+  CheckCircle2,
+  Circle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -1268,6 +1270,11 @@ export default function PresenterDashboard({
         displays={displays}
         selectedDisplayId={selectedDisplayId}
         onDisplayChange={setSelectedDisplayId}
+        confidenceOpen={confidenceOpen}
+        onToggleConfidence={() => {
+          if (confidenceOpen) { window.worshipsync.confidence.close(); setConfidenceOpen(false); }
+          else { window.worshipsync.confidence.open(selectedConfidenceDisplayId); setConfidenceOpen(true); }
+        }}
       />
     );
   }
@@ -2695,107 +2702,190 @@ function SwitcherRow({
 // ── Pre-Live Idle State ──────────────────────────────────────────────────────
 
 function PreLiveIdle({
-  serviceLabel,
-  songs,
-  canGoLive,
-  onStartLive,
-  displays,
-  selectedDisplayId,
-  onDisplayChange,
+  serviceLabel, songs, canGoLive, onStartLive,
+  displays, selectedDisplayId, onDisplayChange,
+  confidenceOpen, onToggleConfidence,
 }: {
-  serviceLabel: string;
-  songs: LiveSong[];
-  canGoLive: boolean;
-  onStartLive: () => void;
-  displays: {
-    id: number;
-    label: string;
-    width: number;
-    height: number;
-    isPrimary: boolean;
-  }[];
-  selectedDisplayId: number | undefined;
-  onDisplayChange: (id: number) => void;
+  serviceLabel: string
+  songs: LiveSong[]
+  canGoLive: boolean
+  onStartLive: () => void
+  displays: { id: number; label: string; width: number; height: number; isPrimary: boolean }[]
+  selectedDisplayId: number | undefined
+  onDisplayChange: (id: number) => void
+  confidenceOpen: boolean
+  onToggleConfidence: () => void
 }) {
-  const totalSlides = songs.reduce((sum, s) => sum + s.slides.length, 0);
+  const totalSlides = songs.reduce((sum, s) => sum + s.slides.filter(sl => sl.sectionType !== "blank").length, 0)
+  const itemCount = songs.filter(s => s.itemType !== "section").length
+
+  // Find the first real slide for the preview
+  const firstSlide = useMemo(() => {
+    for (const song of songs) {
+      const slide = song.slides.find(s => s.sectionType !== "blank" && s.lines.filter(Boolean).length > 0)
+      if (slide) return { song, slide }
+    }
+    return null
+  }, [songs])
+
+  const checks = [
+    { label: `${itemCount} item${itemCount !== 1 ? "s" : ""} in lineup`, done: itemCount > 0, warn: itemCount === 0 },
+    { label: "Output display selected", done: selectedDisplayId !== undefined, warn: false },
+    { label: `Confidence monitor ${confidenceOpen ? "ON" : "OFF"}`, done: confidenceOpen, warn: false },
+  ]
 
   return (
-    <div className="h-full flex flex-col items-center justify-center bg-background text-foreground px-8">
-      <div className="w-full max-w-md text-center">
-        <div className="h-16 w-16 rounded-lg bg-secondary flex items-center justify-center mx-auto mb-5">
-          <MonitorOff className="h-8 w-8 text-muted-foreground" />
+    <div className="h-full flex flex-col bg-background text-foreground overflow-hidden">
+      {/* Header */}
+      <div className="px-6 py-4 border-b border-border bg-card shrink-0 flex items-center gap-3">
+        <div className="flex h-2 w-2 relative">
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-muted-foreground/40" />
+        </div>
+        <div className="min-w-0">
+          <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Pre-Flight Check</span>
+          <p className="text-sm font-semibold text-foreground truncate">{serviceLabel}</p>
+        </div>
+      </div>
+
+      {/* Body — two columns */}
+      <div className="flex-1 flex min-h-0 overflow-hidden">
+
+        {/* Left: checklist + controls */}
+        <div className="w-[340px] shrink-0 border-r border-border flex flex-col p-6 gap-5 overflow-y-auto">
+
+          {/* Checklist */}
+          <div className="flex flex-col gap-2">
+            <h3 className="text-[10px] font-black uppercase tracking-wider text-muted-foreground mb-1">Checklist</h3>
+            {checks.map(c => (
+              <div key={c.label} className="flex items-center gap-2.5">
+                {c.done
+                  ? <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
+                  : c.warn
+                    ? <AlertCircle className="h-4 w-4 text-amber-400 shrink-0" />
+                    : <Circle className="h-4 w-4 text-muted-foreground/50 shrink-0" />
+                }
+                <span className={`text-[13px] ${c.done ? "text-foreground" : c.warn ? "text-amber-400" : "text-muted-foreground"}`}>
+                  {c.label}
+                </span>
+              </div>
+            ))}
+          </div>
+
+          <div className="h-px bg-border" />
+
+          {/* Output display */}
+          <div className="flex flex-col gap-2">
+            <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Output Display</label>
+            <div className="flex items-center gap-2">
+              <Tv className="h-4 w-4 text-muted-foreground shrink-0" />
+              <select
+                className="flex-1 bg-input border border-border rounded-md px-3 py-1.5 text-[13px] text-foreground cursor-pointer outline-none focus:border-primary/50"
+                value={selectedDisplayId ?? ""}
+                onChange={(e) => onDisplayChange(Number(e.target.value))}
+              >
+                {displays.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.label}{d.isPrimary ? " (Primary)" : ""} — {d.width}×{d.height}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Confidence monitor */}
+          <div className="flex flex-col gap-2">
+            <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Confidence Monitor</label>
+            <button
+              onClick={onToggleConfidence}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-all ${
+                confidenceOpen
+                  ? "bg-amber-500/10 border-amber-500/40 text-amber-300"
+                  : "bg-muted/40 border-border text-muted-foreground hover:text-foreground hover:bg-muted"
+              }`}
+            >
+              <span className={`h-2 w-2 rounded-full shrink-0 ${confidenceOpen ? "bg-amber-400" : "bg-muted-foreground/40"}`} />
+              <span className="text-[13px] font-medium flex-1 text-left">
+                {confidenceOpen ? "On — showing to presenter" : "Off — click to enable"}
+              </span>
+              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${confidenceOpen ? "bg-amber-500/20 text-amber-400" : "bg-muted text-muted-foreground"}`}>
+                {confidenceOpen ? "ON" : "OFF"}
+              </span>
+            </button>
+          </div>
+
+          {/* Stats */}
+          {canGoLive && (
+            <div className="flex gap-4 mt-auto pt-2">
+              <div className="text-center">
+                <p className="text-2xl font-black text-foreground">{itemCount}</p>
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Items</p>
+              </div>
+              <div className="h-full w-px bg-border" />
+              <div className="text-center">
+                <p className="text-2xl font-black text-foreground">{totalSlides}</p>
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Slides</p>
+              </div>
+            </div>
+          )}
+          {!canGoLive && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-400">No items in this lineup. Add songs in the Builder first.</p>
+            </div>
+          )}
         </div>
 
-        <h1 className="text-2xl font-bold mb-2">Ready to go live</h1>
-        <p className="text-sm text-muted-foreground mb-1">{serviceLabel}</p>
-        <p className="text-xs text-muted-foreground mb-4">
-          The projection window is{" "}
-          <span className="font-semibold">not open</span>. Choose a display and
-          click Go Live.
-        </p>
-
-        {/* Display picker */}
-        {displays.length > 0 && (
-          <div className="flex items-center gap-2 justify-center mb-5">
-            <Tv className="h-4 w-4 text-muted-foreground shrink-0" />
-            <select
-              className="bg-input border border-border rounded-md px-3 py-1.5 text-xs text-foreground cursor-pointer"
-              value={selectedDisplayId ?? ""}
-              onChange={(e) => onDisplayChange(Number(e.target.value))}
-            >
-              {displays.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.label}
-                  {d.isPrimary ? " (Primary)" : ""} — {d.width}×{d.height}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        {canGoLive ? (
-          <div className="rounded-lg border border-border bg-card p-4 mb-5 flex items-center gap-4 justify-center">
-            <div className="text-center">
-              <div className="text-xl font-bold text-foreground">
-                {songs.length}
+        {/* Right: first slide preview */}
+        <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8">
+          <p className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">First Slide</p>
+          {firstSlide ? (
+            <div className="w-full max-w-lg flex flex-col gap-2">
+              <div
+                className="relative overflow-hidden rounded-xl border-2 border-border bg-black w-full shadow-[0_0_32px_rgba(0,0,0,0.4)]"
+                style={{ aspectRatio: "16/9", containerType: "inline-size" }}
+              >
+                {firstSlide.song.backgroundPath && (
+                  <>
+                    <img src={`file://${firstSlide.song.backgroundPath}`} className="absolute inset-0 w-full h-full object-cover" alt="" />
+                    <div className="absolute inset-0" style={{ background: "rgba(0,0,0,0.45)" }} />
+                  </>
+                )}
+                <div className="absolute inset-0 flex items-center justify-center px-8">
+                  <p className="text-center font-bold leading-snug text-white" style={{ fontSize: "5cqw" }}>
+                    {firstSlide.slide.lines.filter(Boolean).join("\n")}
+                  </p>
+                </div>
               </div>
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground mt-0.5">
-                {songs.length === 1 ? "Song" : "Songs"}
-              </div>
+              <p className="text-center text-[11px] text-muted-foreground">
+                {firstSlide.song.title}
+                {firstSlide.slide.sectionLabel ? ` · ${firstSlide.slide.sectionLabel}` : ""}
+              </p>
             </div>
-            <div className="h-8 w-px bg-border" />
-            <div className="text-center">
-              <div className="text-xl font-bold text-foreground">
-                {totalSlides}
-              </div>
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground mt-0.5">
-                Slides
-              </div>
+          ) : (
+            <div className="w-full max-w-lg aspect-video rounded-xl border border-dashed border-border bg-muted/20 flex items-center justify-center">
+              <p className="text-sm text-muted-foreground">No slides to preview</p>
             </div>
-          </div>
-        ) : (
-          <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 mb-5 flex items-center gap-2 justify-center">
-            <AlertCircle className="h-4 w-4 text-amber-500 shrink-0" />
-            <p className="text-xs text-amber-400">
-              No songs in this lineup — add some in the Builder first.
-            </p>
-          </div>
-        )}
+          )}
+          <p className="text-[11px] text-muted-foreground/60 text-center max-w-xs">
+            This is what the congregation will see the moment you go live.
+          </p>
+        </div>
+      </div>
 
-        <Button
-          size="lg"
-          className="gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-          disabled={!canGoLive}
+      {/* Bottom: big START LIVE button */}
+      <div className="px-6 py-4 border-t border-border bg-card shrink-0">
+        <button
           onClick={onStartLive}
+          disabled={!canGoLive}
+          className="w-full py-4 rounded-xl text-base font-black uppercase tracking-widest flex items-center justify-center gap-3 transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed
+            bg-green-600 hover:bg-green-500 text-white
+            shadow-[0_0_24px_rgba(34,197,94,0.2)] hover:shadow-[0_0_32px_rgba(34,197,94,0.35)]
+            active:scale-[0.99]"
         >
-          <Play className="h-4 w-4 fill-current" />
-          Go Live
-        </Button>
-
-        <p className="text-[10px] text-muted-foreground mt-5">
-          This will open the projection window on your external display.
-        </p>
+          <Play className="h-5 w-5 fill-white" />
+          Start Live
+        </button>
       </div>
     </div>
-  );
+  )
 }

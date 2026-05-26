@@ -230,7 +230,9 @@ export default function PresenterDashboard({
   >(undefined);
   const [confidenceOpen, setConfidenceOpen] = useState(false);
   const [selectedConfidenceDisplayId, setSelectedConfidenceDisplayId] = useState<number | undefined>(undefined);
-  const slideGridRef = useRef<HTMLDivElement>(null);
+  const slideGridRef    = useRef<HTMLDivElement>(null);
+  const liveItemIdxRef  = useRef<number>(-1);
+  const liveSlideIdxRef = useRef<number>(-1);
 
   // ── Scripture picker ─────────────────────────────────────────────────────
 
@@ -578,6 +580,9 @@ export default function PresenterDashboard({
       setIsBlank(false);
       setIsLogo(false);
       setIsTextCleared(false);
+      // Record what's actually live so Run-of-Show navigation can restore it
+      liveItemIdxRef.current  = songIdx;
+      liveSlideIdxRef.current = slideIdx;
 
       // Compute next slide for stage display
       let nextLines: string[] | undefined;
@@ -1495,8 +1500,18 @@ export default function PresenterDashboard({
               <button
                 key={song.lineupItemId}
                 onClick={() => {
+                  const isLiveItem = i === liveItemIdxRef.current;
                   setSelectedSongIdx(i);
-                  setActiveSlideIdx(-1);
+                  if (isLiveItem) {
+                    // Restore the projected slide so the grid scrolls back to it
+                    setActiveSlideIdx(liveSlideIdxRef.current);
+                  } else {
+                    // New item — reset to -1 and scroll grid to top
+                    setActiveSlideIdx(-1);
+                    requestAnimationFrame(() => {
+                      if (slideGridRef.current) slideGridRef.current.scrollTop = 0;
+                    });
+                  }
                   // Stop the timer — stamp when we stopped so restore can calculate elapsed time
                   if (videoTimerRef.current) {
                     clearInterval(videoTimerRef.current);

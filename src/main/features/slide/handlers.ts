@@ -41,6 +41,8 @@ export function registerSlideHandlers(): void {
 
   ipcMain.on('slide:logo', (_event, show: boolean) => {
     windows.projection?.webContents.send('slide:logo', show)
+    stage.logo = show
+    broadcastAll({ type: 'logo', isLogo: show })
   })
 
   ipcMain.on('slide:countdown', (_event, data: { targetTime: string; running: boolean }) => {

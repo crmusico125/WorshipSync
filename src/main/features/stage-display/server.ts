@@ -1,4 +1,4 @@
-import { createServer } from 'http'
+import { createServer, IncomingMessage, ServerResponse } from 'http'
 import { networkInterfaces, hostname } from 'os'
 import { execSync } from 'child_process'
 import {
@@ -8,10 +8,11 @@ import {
   getStagePingInterval, setStagePingInterval,
   getBonjourService, setBonjourService,
   bonjour,
-  stage,
+  stage, windows,
 } from '../../lib/state'
 import { broadcastAll, formatDuration } from '../../lib/broadcast'
 import { STAGE_DISPLAY_HTML } from './html'
+import { PWA_CONTROLLER_HTML } from '../pwa/html'
 
 function parseDeviceLabel(ua: string): string {
   if (/iPhone/i.test(ua))                      return 'iPhone'
@@ -75,10 +76,31 @@ export function startStageServer(port = 4040): Promise<boolean> {
           connectedAt: Date.now(),
         }
         setSseClients([...getSseClients(), client])
-        // Stage display only needs slide/blank/countdown — no lineup
-        client.send({ type: 'init', slide: stage.slide, blank: stage.blank, countdown: stage.countdown, nextLines: stage.nextLines, nextSectionLabel: stage.nextLabel })
+        client.send({ type: 'init', slide: stage.slide, blank: stage.blank, logo: stage.logo, countdown: stage.countdown, nextLines: stage.nextLines, nextSectionLabel: stage.nextLabel, lineup: stage.lineup, currentLineupIdx: stage.currentLineupIdx })
         req.on('close', () => { setSseClients(getSseClients().filter(c => c !== client)) })
         sock.on('error', () => { setSseClients(getSseClients().filter(c => c !== client)) })
+      } else if (req.url === '/controller') {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' })
+        res.end(PWA_CONTROLLER_HTML)
+
+      } else if (req.url === '/controller/state') {
+        const payload = JSON.stringify({
+          slide: stage.slide,
+          blank: stage.blank,
+          logo: stage.logo,
+          countdown: stage.countdown,
+          nextLines: stage.nextLines,
+          nextLabel: stage.nextLabel,
+          lineup: stage.lineup,
+          currentLineupIdx: stage.currentLineupIdx,
+          currentSlideIdx: (stage.slide as any)?.slideIndex ?? -1,
+        })
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' })
+        res.end(payload)
+
+      } else if (req.url === '/controller/cmd' && req.method === 'POST') {
+        handleControllerCommand(req, res)
+
       } else if (req.url === '/status') {
         const clientData = getSseClients().map(c => ({
           ip: c.ip,
@@ -111,6 +133,141 @@ export function startStageServer(port = 4040): Promise<boolean> {
       resolve(true)
     })
   })
+}
+
+function handleControllerCommand(req: IncomingMessage, res: ServerResponse): void {
+  const cors = { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' }
+  let body = ''
+  req.on('data', chunk => { body += chunk })
+  req.on('end', () => {
+    let cmd: Record<string, unknown>
+    try { cmd = JSON.parse(body) } catch {
+      res.writeHead(400, cors); res.end(JSON.stringify({ error: 'bad json' })); return
+    }
+
+    const send = (channel: string, ...args: unknown[]) => {
+      if (windows.projection && !windows.projection.isDestroyed())
+        windows.projection.webContents.send(channel, ...args)
+      if (windows.confidence && !windows.confidence.isDestroyed())
+        windows.confidence.webContents.send(channel, ...args)
+    }
+
+    switch (cmd.action) {
+      case 'blank': {
+        const isBlank = Boolean(cmd.value)
+        send('slide:blank', isBlank)
+        stage.blank = isBlank
+        if (isBlank) {
+          stage.logo = false
+          broadcastAll({ type: 'blank', isBlank: true })
+        } else {
+          broadcastAll({ type: 'blank', isBlank: false })
+        }
+        notifyControl({ type: 'blank', isBlank })
+        break
+      }
+      case 'logo': {
+        const isLogo = Boolean(cmd.value)
+        windows.projection?.webContents.send('slide:logo', isLogo)
+        stage.logo = isLogo
+        if (isLogo) stage.blank = false
+        broadcastAll({ type: 'logo', isLogo })
+        notifyControl({ type: 'logo', isLogo })
+        break
+      }
+      case 'show-slide': {
+        const { lineupItemId, slideIdx } = cmd as { lineupItemId: number; slideIdx: number }
+        const item = stage.lineup.find(i => i.id === lineupItemId)
+        if (!item) { res.writeHead(404, cors); res.end(JSON.stringify({ error: 'item not found' })); return }
+        const slide = item.slides[slideIdx as number]
+        if (!slide) { res.writeHead(404, cors); res.end(JSON.stringify({ error: 'slide not found' })); return }
+        const payload = buildSlidePayload(item, slide)
+        send('slide:show', payload)
+        stage.slide = payload
+        stage.blank = false
+        stage.logo = false
+        const lineupIdx = stage.lineup.indexOf(item)
+        stage.currentLineupIdx = lineupIdx
+        broadcastAll({ type: 'slide', payload, lineupIdx, slideIdx })
+        broadcastStageNext(item, slideIdx as number)
+        notifyControl({ type: 'slide', lineupIdx, slideIdx })
+        break
+      }
+      case 'next-slide':
+      case 'prev-slide': {
+        const delta = cmd.action === 'next-slide' ? 1 : -1
+        const item = stage.lineup[stage.currentLineupIdx]
+        if (item?.slides.length) {
+          const cur = (stage.slide as any)?.slideIndex ?? 0
+          const next = Math.max(0, Math.min(item.slides.length - 1, cur + delta))
+          const slide = item.slides[next]
+          if (slide) {
+            const payload = buildSlidePayload(item, slide)
+            send('slide:show', payload)
+            stage.slide = payload
+            stage.blank = false
+            stage.logo = false
+            broadcastAll({ type: 'slide', payload, lineupIdx: stage.currentLineupIdx, slideIdx: next })
+            broadcastStageNext(item, next)
+            notifyControl({ type: 'slide', lineupIdx: stage.currentLineupIdx, slideIdx: next })
+          }
+        }
+        break
+      }
+      case 'countdown': {
+        const data = { targetTime: String(cmd.targetTime), running: Boolean(cmd.running) }
+        send('slide:countdown', data)
+        stage.countdown = data
+        broadcastAll({ type: 'countdown', data })
+        break
+      }
+      default:
+        res.writeHead(400, cors); res.end(JSON.stringify({ error: 'unknown action' })); return
+    }
+
+    res.writeHead(200, cors)
+    res.end(JSON.stringify({ ok: true }))
+  })
+}
+
+function buildSlidePayload(item: import('../../lib/state').PwaLineupItem, slide: import('../../lib/state').PwaSlide) {
+  return {
+    lines: slide.lines,
+    songTitle: item.title,
+    sectionLabel: slide.sectionLabel,
+    sectionType: slide.sectionType,
+    itemType: item.itemType,
+    slideIndex: slide.idx,
+    backgroundPath: item.backgroundPath ?? null,
+    theme: item.theme ?? undefined,
+  }
+}
+
+function broadcastStageNext(item: import('../../lib/state').PwaLineupItem, currentSlideIdx: number): void {
+  const nextSlide = item.slides[currentSlideIdx + 1]
+  if (nextSlide) {
+    stage.nextLines = nextSlide.lines
+    stage.nextLabel = nextSlide.sectionLabel
+    broadcastAll({ type: 'stageNext', nextLines: nextSlide.lines, nextSectionLabel: nextSlide.sectionLabel })
+  } else {
+    // Try the first slide of the next lineup item
+    const nextItem = stage.lineup[stage.currentLineupIdx + 1]
+    const firstSlide = nextItem?.slides[0]
+    if (firstSlide) {
+      stage.nextLines = firstSlide.lines
+      stage.nextLabel = firstSlide.sectionLabel
+      broadcastAll({ type: 'stageNext', nextLines: firstSlide.lines, nextSectionLabel: firstSlide.sectionLabel })
+    } else {
+      stage.nextLines = null
+      stage.nextLabel = ''
+    }
+  }
+}
+
+function notifyControl(update: Record<string, unknown>): void {
+  if (windows.control && !windows.control.isDestroyed()) {
+    windows.control.webContents.send('pwa:stateUpdate', update)
+  }
 }
 
 export function stopStageServer(): void {

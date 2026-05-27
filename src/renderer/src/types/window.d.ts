@@ -187,8 +187,27 @@ declare global {
         ready:    ()                   => void
         onClosed: (cb: () => void)     => () => void
       }
+      pwa: {
+        syncLineup: (items: PwaLineupItem[], currentIdx: number) => void
+        onStateUpdate: (cb: (update: PwaStateUpdate) => void) => () => void
+      }
     }
   }
 }
+
+interface PwaLineupItem {
+  id: number
+  itemType: string
+  title: string
+  slides: Array<{ idx: number; sectionLabel: string; sectionType: string; lines: string[] }>
+  mediaPath?: string | null
+  backgroundPath?: string | null
+  theme?: Record<string, unknown> | null
+}
+
+type PwaStateUpdate =
+  | { type: 'slide'; lineupIdx: number; slideIdx: number }
+  | { type: 'blank'; isBlank: boolean }
+  | { type: 'logo'; isLogo: boolean }
 
 export {}

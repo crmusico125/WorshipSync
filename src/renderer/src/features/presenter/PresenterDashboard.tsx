@@ -537,7 +537,6 @@ export default function PresenterDashboard({
     setLiveSongs(built);
   }, [lineup, themeCache]);
 
-  // Sync lineup to stage display / PWA controller whenever the live song list or selection changes
 
   // ── Theme + background resolution ────────────────────────────────────────
   const resolveTheme = useCallback(
@@ -574,6 +573,26 @@ export default function PresenterDashboard({
     },
     [themeCache, defaultThemeBg],
   );
+
+  // Sync lineup + resolved bg/theme to PWA controller after every liveSongs/selection change.
+  // Placed after resolveTheme/resolveBg so they are in scope.
+  useEffect(() => {
+    const items = liveSongs.map(s => ({
+      id: s.lineupItemId,
+      itemType: s.itemType,
+      title: s.title,
+      mediaPath: s.mediaPath,
+      backgroundPath: resolveBg(s) ?? null,
+      theme: resolveTheme(s) as unknown as Record<string, unknown>,
+      slides: s.slides.map((sl, idx) => ({
+        idx,
+        sectionLabel: sl.sectionLabel,
+        sectionType: sl.sectionType,
+        lines: sl.lines,
+      })),
+    }))
+    window.worshipsync.pwa?.syncLineup?.(items, selectedSongIdx)
+  }, [liveSongs, selectedSongIdx, resolveTheme, resolveBg])
 
   // ── Slide projection ─────────────────────────────────────────────────────
   const sendSlide = useCallback(
@@ -1038,6 +1057,29 @@ export default function PresenterDashboard({
   // version without making it a reactive dep of the effect below.
   const restoreProjectionStateRef = useRef(restoreProjectionState);
   restoreProjectionStateRef.current = restoreProjectionState;
+
+  // Sync presenter state when PWA controller projects a slide or changes output state
+  useEffect(() => {
+    const cleanup = window.worshipsync.pwa?.onStateUpdate?.((update) => {
+      const u = update as { type: string; lineupIdx?: number; slideIdx?: number; isBlank?: boolean; isLogo?: boolean }
+      if (u.type === 'slide' && u.lineupIdx !== undefined && u.slideIdx !== undefined) {
+        setSelectedSongIdx(u.lineupIdx)
+        setActiveSlideIdx(u.slideIdx)
+        setIsBlank(false)
+        setIsLogo(false)
+        setIsTextCleared(false)
+        liveItemIdxRef.current  = u.lineupIdx
+        liveSlideIdxRef.current = u.slideIdx
+      } else if (u.type === 'blank') {
+        setIsBlank(Boolean(u.isBlank))
+        if (u.isBlank) setIsLogo(false)
+      } else if (u.type === 'logo') {
+        setIsLogo(Boolean(u.isLogo))
+        if (u.isLogo) setIsBlank(false)
+      }
+    })
+    return () => cleanup?.()
+  }, [])
 
   // When going live, start blank and register the projection:ready listener.
   // The same listener fires after a display move — refs ensure it restores

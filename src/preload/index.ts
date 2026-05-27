@@ -173,6 +173,15 @@ contextBridge.exposeInMainWorld('worshipsync', {
       return () => ipcRenderer.removeListener('window:confidenceClosed', cb)
     },
   },
+
+  pwa: {
+    syncLineup: (items: unknown[], currentIdx: number) =>
+      ipcRenderer.send('pwa:syncLineup', items, currentIdx),
+    onStateUpdate: (cb: (update: unknown) => void) => {
+      ipcRenderer.on('pwa:stateUpdate', (_e, update) => cb(update))
+      return () => ipcRenderer.removeAllListeners('pwa:stateUpdate')
+    },
+  },
 })
 
 interface SlidePayload {

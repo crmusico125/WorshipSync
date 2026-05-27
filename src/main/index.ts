@@ -26,6 +26,7 @@ import { registerBackgroundsHandlers } from './features/backgrounds/handlers'
 import { registerAnalyticsHandlers } from './features/analytics/handlers'
 import { registerAppStateHandlers, readAppState, writeAppState } from './features/app-state/handlers'
 import { registerDataHandlers } from './features/data/handlers'
+import { registerPwaHandlers } from './features/pwa/handlers'
 
 // ── App lifecycle ──────────────────────────────────────────────────────────────
 
@@ -52,6 +53,7 @@ app.whenReady().then(() => {
   registerAnalyticsHandlers()
   registerAppStateHandlers()
   registerDataHandlers()
+  registerPwaHandlers()
 
   // Create the control window
   createControlWindow()

@@ -28,18 +28,53 @@ export const windows: {
 
 // ── Stage display state ───────────────────────────────────────────────────────
 
+export interface PwaSlide {
+  idx: number
+  sectionLabel: string
+  sectionType: string
+  lines: string[]
+}
+
+export interface PwaItemTheme {
+  fontFamily: string
+  fontSize: number
+  fontWeight: string
+  textColor: string
+  textAlign: string
+  textPosition: string
+  overlayOpacity: number
+  textShadowOpacity: number
+  maxLinesPerSlide: number
+}
+
+export interface PwaLineupItem {
+  id: number
+  itemType: string
+  title: string
+  slides: PwaSlide[]
+  mediaPath?: string | null
+  backgroundPath?: string | null
+  theme?: PwaItemTheme | null
+}
+
 export const stage: {
   slide: unknown
   blank: boolean
+  logo: boolean
   countdown: unknown
   nextLines: string[] | null
   nextLabel: string
+  lineup: PwaLineupItem[]
+  currentLineupIdx: number
 } = {
   slide: null,
   blank: false,
+  logo: false,
   countdown: null,
   nextLines: null,
   nextLabel: '',
+  lineup: [],
+  currentLineupIdx: -1,
 }
 
 // ── SSE clients ───────────────────────────────────────────────────────────────

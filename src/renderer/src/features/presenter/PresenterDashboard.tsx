@@ -2523,8 +2523,8 @@ export default function PresenterDashboard({
           );
         })()}
 
-        {/* ── Image controls — shown only for image media items ── */}
-        {currentSong?.itemType === "media" && (() => {
+        {/* ── Image controls — shown only for image media items (not audio/video) ── */}
+        {currentSong?.itemType === "media" && !/\.(mp4|webm|mov|mp3|wav|ogg|m4a|aac|flac)$/i.test(currentSong.mediaPath ?? "") && (() => {
           const imgPath = currentSong.mediaPath;
           const isLive = !isBlank && !isLogo && activeSlideIdx === 0 && liveItemIdxRef.current === selectedSongIdx;
           const showImage = () => {

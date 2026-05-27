@@ -190,6 +190,8 @@ declare global {
       pwa: {
         syncLineup: (items: PwaLineupItem[], currentIdx: number) => void
         onStateUpdate: (cb: (update: PwaStateUpdate) => void) => () => void
+        onAudioCmd: (cb: (data: { action: string; lineupItemId: number }) => void) => () => void
+        broadcastAudioState: (state: { isPlaying: boolean; currentTime: number; duration: number; lineupItemId: number } | null) => void
       }
     }
   }

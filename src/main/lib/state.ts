@@ -67,6 +67,7 @@ export const stage: {
   nextLabel: string
   lineup: PwaLineupItem[]
   currentLineupIdx: number
+  audioState: { isPlaying: boolean; currentTime: number; duration: number; lineupItemId: number } | null
 } = {
   slide: null,
   blank: false,
@@ -76,6 +77,7 @@ export const stage: {
   nextLabel: '',
   lineup: [],
   currentLineupIdx: -1,
+  audioState: null,
 }
 
 // ── SSE clients ───────────────────────────────────────────────────────────────

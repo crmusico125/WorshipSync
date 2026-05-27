@@ -94,6 +94,7 @@ export function startStageServer(port = 4040): Promise<boolean> {
           lineup: stage.lineup,
           currentLineupIdx: stage.currentLineupIdx,
           currentSlideIdx: (stage.slide as any)?.slideIndex ?? -1,
+          audioState: stage.audioState,
         })
         res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' })
         res.end(payload)
@@ -245,6 +246,17 @@ function handleControllerCommand(req: IncomingMessage, res: ServerResponse): voi
         send('slide:countdown', data)
         stage.countdown = data
         broadcastAll({ type: 'countdown', data })
+        break
+      }
+      case 'audio-play':
+      case 'audio-pause':
+      case 'audio-stop': {
+        if (windows.control && !windows.control.isDestroyed()) {
+          windows.control.webContents.send('pwa:audioCmd', {
+            action: cmd.action,
+            lineupItemId: cmd.lineupItemId as number,
+          })
+        }
         break
       }
       default:

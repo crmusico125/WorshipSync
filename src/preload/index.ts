@@ -181,6 +181,12 @@ contextBridge.exposeInMainWorld('worshipsync', {
       ipcRenderer.on('pwa:stateUpdate', (_e, update) => cb(update))
       return () => ipcRenderer.removeAllListeners('pwa:stateUpdate')
     },
+    onAudioCmd: (cb: (data: unknown) => void) => {
+      ipcRenderer.on('pwa:audioCmd', (_e, data) => cb(data))
+      return () => ipcRenderer.removeAllListeners('pwa:audioCmd')
+    },
+    broadcastAudioState: (state: unknown) =>
+      ipcRenderer.send('pwa:broadcastAudioState', state),
   },
 })
 

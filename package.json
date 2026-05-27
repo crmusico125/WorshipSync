@@ -1,6 +1,6 @@
 {
   "name": "worshipsync",
-  "version": "2.6.1",
+  "version": "2.6.2",
   "description": "Church worship presentation app",
   "main": "out/main/index.js",
   "type": "module",

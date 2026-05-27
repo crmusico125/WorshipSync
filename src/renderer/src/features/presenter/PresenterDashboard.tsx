@@ -237,6 +237,9 @@ export default function PresenterDashboard({
   const liveItemIdxRef  = useRef<number>(-1);
   const liveSlideIdxRef = useRef<number>(-1);
   const liveImgScaleModeRef = useRef<'cover' | 'contain' | 'stretch'>('contain');
+  const triggerAudioPlayRef  = useRef<(() => void) | null>(null);
+  const triggerAudioPauseRef = useRef<(() => void) | null>(null);
+  const pendingAudioPlayRef  = useRef<number | null>(null);
 
   // ── Scripture picker ─────────────────────────────────────────────────────
 
@@ -1082,6 +1085,68 @@ export default function PresenterDashboard({
     return () => cleanup?.()
   }, [])
 
+  // Handle audio play/pause commands from PWA controller
+  useEffect(() => {
+    const cleanup = window.worshipsync.pwa?.onAudioCmd?.((data) => {
+      const { action, lineupItemId } = data as { action: string; lineupItemId: number }
+      const idx = liveSongs.findIndex(s => s.lineupItemId === lineupItemId)
+      if (action === 'audio-play') {
+        if (triggerAudioPlayRef.current && idx === selectedSongIdxRef.current) {
+          // Panel already rendered — call directly
+          triggerAudioPlayRef.current()
+        } else {
+          // Navigate to item first, then auto-play after render
+          if (idx !== -1) setSelectedSongIdx(idx)
+          pendingAudioPlayRef.current = lineupItemId
+        }
+      } else if (action === 'audio-pause') {
+        triggerAudioPauseRef.current?.()
+      } else if (action === 'audio-stop') {
+        triggerAudioPauseRef.current?.()
+        if (audioRef.current) { audioRef.current.currentTime = 0; setAudioCurrentTime(0); }
+      }
+    })
+    return () => cleanup?.()
+  }, [liveSongs])
+
+  // Execute pending auto-play after the audio item is selected and rendered
+  useEffect(() => {
+    if (pendingAudioPlayRef.current === null) return
+    const song = liveSongs[selectedSongIdx]
+    if (!song || song.lineupItemId !== pendingAudioPlayRef.current) return
+    pendingAudioPlayRef.current = null
+    requestAnimationFrame(() => triggerAudioPlayRef.current?.())
+  }, [selectedSongIdx, liveSongs])
+
+  // Broadcast audio state on play/pause/duration changes
+  useEffect(() => {
+    const song = liveSongs[selectedSongIdxRef.current]
+    if (!song || song.itemType !== 'media') return
+    window.worshipsync.pwa?.broadcastAudioState?.({
+      isPlaying: audioPlaying,
+      currentTime: audioRef.current?.currentTime ?? 0,
+      duration: audioRef.current?.duration || audioDuration,
+      lineupItemId: song.lineupItemId,
+    })
+  }, [audioPlaying, audioDuration, liveSongs])
+
+  // Broadcast current time every second while playing so PWA progress bar stays in sync
+  useEffect(() => {
+    if (!audioPlaying) return
+    const interval = setInterval(() => {
+      if (!audioRef.current) return
+      const song = liveSongs[selectedSongIdxRef.current]
+      if (!song) return
+      window.worshipsync.pwa?.broadcastAudioState?.({
+        isPlaying: true,
+        currentTime: audioRef.current.currentTime,
+        duration: audioRef.current.duration || 0,
+        lineupItemId: song.lineupItemId,
+      })
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [audioPlaying, liveSongs])
+
   // When going live, start blank and register the projection:ready listener.
   // The same listener fires after a display move — refs ensure it restores
   // the current state rather than the initial blank.
@@ -1917,6 +1982,9 @@ export default function PresenterDashboard({
               startViz();
             };
             const handlePause = () => { audioRef.current?.pause(); setAudioPlaying(false); if (audioTimerRef.current) { clearInterval(audioTimerRef.current); audioTimerRef.current = null; } stopViz(); };
+            // Expose to PWA command handler
+            triggerAudioPlayRef.current  = handlePlay;
+            triggerAudioPauseRef.current = handlePause;
             const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => { if (!audioDuration || !audioRef.current) return; const rect = e.currentTarget.getBoundingClientRect(); audioRef.current.currentTime = Math.max(0, Math.min(audioDuration, ((e.clientX - rect.left) / rect.width) * audioDuration)); setAudioCurrentTime(audioRef.current.currentTime); };
             const handleSkip = (delta: number) => { if (!audioRef.current) return; audioRef.current.currentTime = Math.max(0, Math.min(audioDuration, audioRef.current.currentTime + delta)); setAudioCurrentTime(audioRef.current.currentTime); };
             const handleToggleLoop = () => { const next = !audioLoop; setAudioLoop(next); if (audioRef.current) audioRef.current.loop = next; };

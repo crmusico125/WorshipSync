@@ -17,6 +17,7 @@ export interface LineupItem {
   mediaPath: string | null
   sectionOrder: string | null
   itemStyle: string | null
+  imageScaleMode: 'cover' | 'contain' | 'stretch' | null
   song: {
     id: number
     title: string
@@ -55,6 +56,7 @@ interface ServiceStore {
 
   loadLineup: (serviceDateId: number) => Promise<void>
   patchLineupItemSectionOrder: (lineupItemId: number, sectionIds: number[]) => void
+  patchImageScaleMode: (lineupItemId: number, mode: 'cover' | 'contain' | 'stretch') => void
   addSongToLineup: (songId: number) => Promise<void>
   addScriptureToLineup: (data: { title: string; scriptureRef: string }) => Promise<void>
   addMediaToLineup: (data: { title: string; mediaPath: string }) => Promise<void>
@@ -126,6 +128,15 @@ export const useServiceStore = create<ServiceStore>((set, get) => ({
           : item
       ),
     }))
+  },
+
+  patchImageScaleMode: (lineupItemId: number, mode: 'cover' | 'contain' | 'stretch') => {
+    set(state => ({
+      lineup: state.lineup.map(item =>
+        item.id === lineupItemId ? { ...item, imageScaleMode: mode } : item
+      ),
+    }))
+    window.worshipsync.lineup.setImageScaleMode(lineupItemId, mode)
   },
 
   addSongToLineup: async (songId: number) => {

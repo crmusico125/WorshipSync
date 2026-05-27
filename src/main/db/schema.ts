@@ -55,6 +55,7 @@ export const lineupItems = sqliteTable('lineup_items', {
   mediaPath:              text('media_path'),
   sectionOrder:           text('section_order'),
   itemStyle:              text('item_style'),
+  imageScaleMode:         text('image_scale_mode', { enum: ['cover', 'contain', 'stretch'] }),
 })
 
 // ── Themes ────────────────────────────────────────────────────────────────────

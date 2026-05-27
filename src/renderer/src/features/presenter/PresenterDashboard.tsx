@@ -75,6 +75,7 @@ interface LiveSong {
   themeId: number | null;
   notes: string | null;
   itemStyle: string | null;
+  imageScaleMode: 'cover' | 'contain' | 'stretch' | null;
   slides: Slide[];
 }
 
@@ -193,6 +194,7 @@ export default function PresenterDashboard({
     addAnnouncementToLineup,
     reorderLineup,
     mediaLoopPrefs,
+    patchImageScaleMode,
   } = useServiceStore();
 
   const [liveSongs, setLiveSongs] = useState<LiveSong[]>([]);
@@ -209,6 +211,7 @@ export default function PresenterDashboard({
   const [defaultThemeBg, setDefaultThemeBg] = useState<string | null>(null);
   const defaultScriptureThemeBgRef = useRef<string | null>(null);
   const defaultAnnouncementThemeBgRef = useRef<string | null>(null);
+  const [imgScaleMode, setImgScaleMode] = useState<'cover' | 'contain' | 'stretch'>('contain');
   const [showLibrary, setShowLibrary] = useState(false);
   const [insertAfterSectionId, setInsertAfterSectionId] = useState<number | null>(null);
   const [showBgPicker, setShowBgPicker] = useState(false);
@@ -233,6 +236,7 @@ export default function PresenterDashboard({
   const slideGridRef    = useRef<HTMLDivElement>(null);
   const liveItemIdxRef  = useRef<number>(-1);
   const liveSlideIdxRef = useRef<number>(-1);
+  const liveImgScaleModeRef = useRef<'cover' | 'contain' | 'stretch'>('contain');
 
   // ── Scripture picker ─────────────────────────────────────────────────────
 
@@ -370,6 +374,7 @@ export default function PresenterDashboard({
           themeId: null,
           notes: null,
           itemStyle: null,
+          imageScaleMode: null,
           slides: [],
         };
       }
@@ -387,6 +392,7 @@ export default function PresenterDashboard({
           themeId: null,
           notes: item.notes ?? null,
           itemStyle: null,
+          imageScaleMode: null,
           slides: [],
         };
       }
@@ -417,6 +423,7 @@ export default function PresenterDashboard({
           themeId: null,
           notes: item.notes ?? null,
           itemStyle: null,
+          imageScaleMode: null,
           slides: scriptureSlides,
         };
       }
@@ -446,6 +453,7 @@ export default function PresenterDashboard({
           themeId: null,
           notes: item.notes ?? null,
           itemStyle: item.itemStyle ?? null,
+          imageScaleMode: null,
           slides: announcementSlides,
         };
       }
@@ -465,6 +473,7 @@ export default function PresenterDashboard({
           themeId: null,
           notes: item.notes ?? null,
           itemStyle: null,
+          imageScaleMode: (item.imageScaleMode as 'cover' | 'contain' | 'stretch') ?? 'contain',
           slides: [],
         };
       }
@@ -484,6 +493,7 @@ export default function PresenterDashboard({
           themeId: null,
           notes: item.notes ?? null,
           itemStyle: null,
+          imageScaleMode: null,
           slides: [],
         };
       }
@@ -520,6 +530,7 @@ export default function PresenterDashboard({
         themeId: item.song.themeId ?? null,
         notes: item.notes ?? null,
         itemStyle: null,
+        imageScaleMode: null,
         slides: buildSlidesForSong(filtered, maxLines),
       };
     });
@@ -785,6 +796,16 @@ export default function PresenterDashboard({
     else goNextSong();
   }, [activeSlideIdx, selectedSongIdx, liveSongs, sendSlide, goNextSong]);
 
+  // Sync imgScaleMode toggle from the lineup item when the selected item changes.
+  // Only updates UI state — liveImgScaleModeRef tracks what was last *projected*
+  // and is only written in showImage().
+  useEffect(() => {
+    const song = liveSongs[selectedSongIdx];
+    if (song?.itemType === "media") {
+      setImgScaleMode(song.imageScaleMode ?? 'contain');
+    }
+  }, [selectedSongIdx, liveSongs]);
+
   const startLive = () => {
     window.worshipsync.window.openProjection(selectedDisplayId);
     onProjectionChange(true);
@@ -1013,6 +1034,11 @@ export default function PresenterDashboard({
     }
   }, [getTargetTime, sendSlide]);
 
+  // Keep a stable ref so the projection:ready listener always calls the latest
+  // version without making it a reactive dep of the effect below.
+  const restoreProjectionStateRef = useRef(restoreProjectionState);
+  restoreProjectionStateRef.current = restoreProjectionState;
+
   // When going live, start blank and register the projection:ready listener.
   // The same listener fires after a display move — refs ensure it restores
   // the current state rather than the initial blank.
@@ -1021,9 +1047,9 @@ export default function PresenterDashboard({
     window.worshipsync.slide.blank(true);
     setIsBlank(true);
     setActiveSlideIdx(-1);
-    const cleanup = window.worshipsync.window.onProjectionReady(restoreProjectionState);
+    const cleanup = window.worshipsync.window.onProjectionReady(() => restoreProjectionStateRef.current());
     return cleanup;
-  }, [projectionOpen, restoreProjectionState]);
+  }, [projectionOpen]); // intentionally excludes restoreProjectionState — use ref above
 
   // Live runtime counter
   useEffect(() => {
@@ -1979,56 +2005,51 @@ export default function PresenterDashboard({
           })()
         ) : currentSong?.itemType === "media" ? (
           /* ── Image media ── */
-          <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
-            {(() => {
-              const imgPath = currentSong.mediaPath;
-              return (
-                <>
-                  <div className="rounded-2xl border border-border overflow-hidden mb-6 w-full max-w-lg" style={{ aspectRatio: "16/9" }}>
+          (() => {
+            const imgPath = currentSong.mediaPath;
+            const isLive = !isBlank && !isLogo && activeSlideIdx === 0 && liveItemIdxRef.current === selectedSongIdx;
+            const previewObjectFit = imgScaleMode === "stretch" ? "fill" : imgScaleMode;
+            return (
+              <div className="flex-1 flex flex-col overflow-hidden">
+                {/* Header */}
+                <div className="px-5 py-3 border-b border-border bg-card shrink-0 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <ImageIcon className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <span className="text-sm font-semibold truncate">{currentSong.title}</span>
+                  </div>
+                  <span className="text-[11px] text-muted-foreground shrink-0">
+                    {isLive ? "On screen" : "Not on screen"}
+                  </span>
+                </div>
+
+                {/* Image preview — fills available space */}
+                <div className="flex-1 flex items-center justify-center p-6 min-h-0 bg-background/50">
+                  <div
+                    className={`relative overflow-hidden rounded-xl border-2 w-full transition-all duration-200 ${
+                      isLive
+                        ? "border-red-500/70 shadow-[0_0_24px_rgba(239,68,68,0.18)]"
+                        : "border-border"
+                    }`}
+                    style={{ aspectRatio: "16/9", maxHeight: "100%", background: "#000" }}
+                  >
                     {imgPath ? (
-                      <img src={`file://${imgPath}`} className="w-full h-full object-cover" alt="" />
+                      <img
+                        src={`file://${imgPath}`}
+                        className="absolute inset-0 w-full h-full"
+                        style={{ objectFit: previewObjectFit }}
+                        alt=""
+                      />
                     ) : (
-                      <div className="w-full h-full bg-black flex items-center justify-center">
+                      <div className="absolute inset-0 flex items-center justify-center">
                         <ImageIcon className="h-12 w-12 text-muted-foreground" />
                       </div>
                     )}
                   </div>
-                  <h2 className="text-lg font-bold mb-1">{currentSong.title}</h2>
-                  <p className="text-sm text-muted-foreground mb-6">Image · Click Show to project</p>
-                  <Button size="lg" className="gap-2" disabled={!imgPath} onClick={() => {
-                    if (!imgPath) return;
-                    window.worshipsync.slide.blank(false);
-                    window.worshipsync.slide.logo(false);
-                    window.worshipsync.slide.show({
-                      lines: [],
-                      songTitle: currentSong.title,
-                      sectionLabel: "",
-                      itemType: "media",
-                      slideIndex: 0,
-                      totalSlides: 1,
-                      backgroundPath: imgPath,
-                      theme: {
-                        fontFamily: DEFAULT_THEME.fontFamily,
-                        fontSize: DEFAULT_THEME.fontSize,
-                        fontWeight: DEFAULT_THEME.fontWeight,
-                        textColor: DEFAULT_THEME.textColor,
-                        textAlign: DEFAULT_THEME.textAlign,
-                        textPosition: DEFAULT_THEME.textPosition,
-                        overlayOpacity: 0,
-                        textShadowOpacity: 0,
-                        maxLinesPerSlide: DEFAULT_THEME.maxLinesPerSlide,
-                      },
-                    });
-                    setIsBlank(false);
-                    setIsLogo(false);
-                  }}>
-                    <Cast className="h-5 w-5" /> Show on Screen
-                  </Button>
-                  <p className="text-[11px] text-muted-foreground mt-6 max-w-sm">The image will be shown full-screen on the projection display.</p>
-                </>
-              );
-            })()}
-          </div>
+                </div>
+
+              </div>
+            );
+          })()
         ) : currentSong ? (
           /* ── Song / Scripture — hero LIVE preview layout ── */
           <>
@@ -2391,8 +2412,88 @@ export default function PresenterDashboard({
           );
         })()}
 
-        {/* Active Background — not shown for audio/video items */}
-        {!(currentSong?.itemType === "media" && /\.(mp4|webm|mov|mp3|wav|ogg|m4a|aac|flac)$/i.test(currentSong.mediaPath ?? "")) && <div className="px-3 py-3 border-b border-border shrink-0">
+        {/* ── Image controls — shown only for image media items ── */}
+        {currentSong?.itemType === "media" && (() => {
+          const imgPath = currentSong.mediaPath;
+          const isLive = !isBlank && !isLogo && activeSlideIdx === 0 && liveItemIdxRef.current === selectedSongIdx;
+          const showImage = () => {
+            if (!imgPath) return;
+            window.worshipsync.slide.blank(false);
+            window.worshipsync.slide.logo(false);
+            window.worshipsync.slide.show({
+              lines: [],
+              songTitle: currentSong.title,
+              sectionLabel: "",
+              itemType: "media",
+              slideIndex: 0,
+              totalSlides: 1,
+              backgroundPath: imgPath,
+              theme: {
+                fontFamily: DEFAULT_THEME.fontFamily,
+                fontSize: DEFAULT_THEME.fontSize,
+                fontWeight: DEFAULT_THEME.fontWeight,
+                textColor: DEFAULT_THEME.textColor,
+                textAlign: DEFAULT_THEME.textAlign,
+                textPosition: DEFAULT_THEME.textPosition,
+                overlayOpacity: 0,
+                textShadowOpacity: 0,
+                maxLinesPerSlide: DEFAULT_THEME.maxLinesPerSlide,
+                backgroundScaleMode: imgScaleMode,
+              },
+            });
+            setIsBlank(false);
+            setIsLogo(false);
+            setActiveSlideIdx(0);
+            liveItemIdxRef.current      = selectedSongIdx;
+            liveSlideIdxRef.current     = 0;
+            liveImgScaleModeRef.current = imgScaleMode;
+          };
+          const scaleModes: { value: typeof imgScaleMode; label: string }[] = [
+            { value: "cover",   label: "Fill" },
+            { value: "contain", label: "Fit" },
+            { value: "stretch", label: "Stretch" },
+          ];
+          const handleScaleMode = (mode: typeof imgScaleMode) => {
+            setImgScaleMode(mode);
+            patchImageScaleMode(currentSong.lineupItemId, mode);
+          };
+          return (
+            <div className="px-3 py-3 border-b border-border shrink-0 flex flex-col gap-2.5">
+              {/* Scale mode toggle */}
+              <div>
+                <h3 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">Scale Mode</h3>
+                <div className="flex rounded-lg overflow-hidden border border-border">
+                  {scaleModes.map(m => (
+                    <button
+                      key={m.value}
+                      onClick={() => handleScaleMode(m.value)}
+                      className={`flex-1 py-1.5 text-[11px] font-semibold transition-colors ${
+                        imgScaleMode === m.value
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-background text-muted-foreground hover:bg-accent/40"
+                      }`}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Show on Screen */}
+              <button
+                onClick={showImage}
+                disabled={!imgPath || (isLive && imgScaleMode === liveImgScaleModeRef.current)}
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-black uppercase tracking-wide transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] bg-primary hover:bg-primary/90 text-primary-foreground shadow-[0_0_12px_rgba(139,92,246,0.2)]"
+              >
+                <Cast className="h-4 w-4" />
+                {isLive && imgScaleMode !== liveImgScaleModeRef.current ? "Update Scale" : "Show on Screen"}
+              </button>
+            </div>
+          );
+        })()}
+
+        {/* Active Background — not shown for media items (image/audio/video) */}
+        {!(currentSong?.itemType === "media") && <div className="px-3 py-3 border-b border-border shrink-0">
           <h3 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">Active Background</h3>
           <div
             className="flex items-center gap-2.5 p-2 rounded-md bg-background/40 border border-border cursor-pointer hover:bg-accent/30 transition-colors"

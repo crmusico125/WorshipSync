@@ -25,6 +25,7 @@ interface LineupItemWithSong {
   mediaPath: string | null
   sectionOrder: string | null
   itemStyle: string | null
+  imageScaleMode: 'cover' | 'contain' | 'stretch' | null
   song: SongWithSections | null
 }
 interface Theme {
@@ -121,7 +122,7 @@ declare global {
         addSong:        (serviceDateId: number, songId: number) => Promise<unknown>
         addCountdown:   (serviceDateId: number) => Promise<unknown>
         addScripture:   (serviceDateId: number, data: { title: string; scriptureRef: string }) => Promise<unknown>
-        addMedia:       (serviceDateId: number, data: { title: string; mediaPath: string }) => Promise<unknown>
+        addMedia:       (serviceDateId: number, data: { title: string; mediaPath: string; imageScaleMode?: 'cover' | 'contain' | 'stretch' }) => Promise<unknown>
         removeSong:     (lineupItemId: number) => Promise<boolean>
         reorder:        (serviceDateId: number, ids: number[]) => Promise<boolean>
         toggleSection:  (lineupItemId: number, sectionId: number, included: boolean) => Promise<number[]>
@@ -134,6 +135,7 @@ declare global {
         updateAnnouncement: (lineupItemId: number, data: { title?: string; content?: string }) => Promise<boolean>
         updateScripture:    (lineupItemId: number, data: { title?: string; scriptureRef?: string }) => Promise<boolean>
         setItemStyle:       (lineupItemId: number, style: string) => Promise<boolean>
+        setImageScaleMode:  (lineupItemId: number, mode: 'cover' | 'contain' | 'stretch') => Promise<boolean>
       }
       themes: {
         getAll:     () => Promise<Theme[]>

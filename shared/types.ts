@@ -58,5 +58,6 @@ export interface SlidePayload {
     overlayOpacity: number
     textShadowOpacity: number
     maxLinesPerSlide: number
+    backgroundScaleMode?: 'cover' | 'contain' | 'stretch'
   }
 }

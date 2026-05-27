@@ -203,6 +203,17 @@ export function runMigrations(): void {
     console.error('[db] migration error (lineup_items section_order):', e)
   }
 
+  // ── Migration: add image_scale_mode column to lineup_items ─────────────
+  try {
+    const colsScale = sqlite.prepare("PRAGMA table_info(lineup_items)").all() as { name: string }[]
+    if (!colsScale.some(c => c.name === 'image_scale_mode')) {
+      sqlite.exec(`ALTER TABLE lineup_items ADD COLUMN image_scale_mode TEXT DEFAULT 'contain'`)
+      console.log('[db] migration: added image_scale_mode column to lineup_items')
+    }
+  } catch (e) {
+    console.error('[db] migration error (lineup_items image_scale_mode):', e)
+  }
+
   // ── Migration: add copyright column to songs ────────────────────────────
   try {
     const songCols = sqlite.prepare("PRAGMA table_info(songs)").all() as { name: string }[]

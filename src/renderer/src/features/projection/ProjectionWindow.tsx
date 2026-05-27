@@ -13,6 +13,7 @@ const DEFAULT_THEME = {
   overlayOpacity: 45,
   textShadowOpacity: 40,
   maxLinesPerSlide: 2,
+  backgroundScaleMode: "cover" as const,
 };
 
 export default function ProjectionWindow() {
@@ -211,6 +212,9 @@ export default function ProjectionWindow() {
   const theme = slide?.theme ?? DEFAULT_THEME;
   const overlayAlpha = (theme.overlayOpacity / 100).toFixed(2);
   const shadowOpacity = (theme.textShadowOpacity / 100).toFixed(2);
+  const scaleMode = theme.backgroundScaleMode ?? "cover";
+  const imgBgSize = scaleMode === "stretch" ? "100% 100%" : scaleMode;
+  const videoObjectFit = scaleMode === "stretch" ? "fill" : scaleMode as "cover" | "contain";
 
   // Auto-scale font size to fit the container
   const fitText = useCallback(() => {
@@ -283,7 +287,8 @@ export default function ProjectionWindow() {
               zIndex: 1,
               width: "100%",
               height: "100%",
-              objectFit: "cover",
+              objectFit: videoObjectFit,
+              background: "#000",
             }}
             src={`file://${encodeURI(backgroundPath)}`}
           />
@@ -293,9 +298,11 @@ export default function ProjectionWindow() {
               position: "absolute",
               inset: 0,
               zIndex: 1,
+              backgroundColor: "#000",
               backgroundImage: `url("file://${encodeURI(backgroundPath)}")`,
-              backgroundSize: "cover",
+              backgroundSize: imgBgSize,
               backgroundPosition: "center",
+              backgroundRepeat: "no-repeat",
             }}
           />
         ))}

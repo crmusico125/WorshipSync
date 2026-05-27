@@ -96,7 +96,7 @@ contextBridge.exposeInMainWorld('worshipsync', {
     addCountdown:   (serviceDateId: number)                    => ipcRenderer.invoke('lineup:addCountdown', serviceDateId),
     addScripture:   (serviceDateId: number, data: { title: string; scriptureRef: string }) =>
                         ipcRenderer.invoke('lineup:addScripture', serviceDateId, data),
-    addMedia:       (serviceDateId: number, data: { title: string; mediaPath: string }) =>
+    addMedia:       (serviceDateId: number, data: { title: string; mediaPath: string; imageScaleMode?: 'cover' | 'contain' | 'stretch' }) =>
                         ipcRenderer.invoke('lineup:addMedia', serviceDateId, data),
     addAnnouncement: (serviceDateId: number, data: { title: string; content: string }) =>
                         ipcRenderer.invoke('lineup:addAnnouncement', serviceDateId, data),
@@ -118,8 +118,10 @@ contextBridge.exposeInMainWorld('worshipsync', {
                           ipcRenderer.invoke('lineup:setOverrideBg', lineupItemId, path),
     setSectionOrder:  (lineupItemId: number, sectionIds: number[]) =>
                           ipcRenderer.invoke('lineup:setSectionOrder', lineupItemId, sectionIds),
-    setItemStyle:     (lineupItemId: number, style: string) =>
+    setItemStyle:      (lineupItemId: number, style: string) =>
                           ipcRenderer.invoke('lineup:setItemStyle', lineupItemId, style),
+    setImageScaleMode: (lineupItemId: number, mode: 'cover' | 'contain' | 'stretch') =>
+                          ipcRenderer.invoke('lineup:setImageScaleMode', lineupItemId, mode),
   },
   themes: {
     getAll:     ()                    => ipcRenderer.invoke('themes:getAll'),

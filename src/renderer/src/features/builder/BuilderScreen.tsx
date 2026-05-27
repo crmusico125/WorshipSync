@@ -205,7 +205,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
     addScriptureToLineup, addMediaToLineup, addAnnouncementToLineup,
     removeSongFromLineup, loadServices, selectService,
     services, reorderLineup, updateStatus, updateService,
-    patchLineupItemSectionOrder, setMediaLoop, addSectionToLineup,
+    patchLineupItemSectionOrder, patchImageScaleMode, setMediaLoop, addSectionToLineup,
   } = useServiceStore()
   const { loadSongs } = useSongStore()
 
@@ -1241,6 +1241,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
               }
 
               // Image media
+              const scaleMode = (currentItem!.imageScaleMode ?? 'contain') as 'cover' | 'contain' | 'stretch'
               return (
                 <>
                   <div className="px-5 py-3 border-b border-border bg-card flex items-center justify-between gap-4 shrink-0">
@@ -1251,18 +1252,22 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
                       </div>
                     </div>
                   </div>
-                  <div className="flex-1 flex flex-col items-center justify-center p-8 bg-muted/20">
-                    <div className="w-full max-w-2xl flex flex-col gap-4">
-                      <div className="rounded-xl overflow-hidden border border-border bg-black shadow-md" style={{ aspectRatio: '16/9' }}>
+                  <div className="flex-1 flex items-center justify-center p-4 bg-muted/20 min-h-0">
+                    <div className="w-full h-full max-w-4xl flex items-center">
+                      <div className="rounded-xl overflow-hidden border border-border bg-black shadow-md w-full" style={{ aspectRatio: '16/9' }}>
                         {mediaPath ? (
-                          <img src={`file://${mediaPath}`} className="w-full h-full object-cover" alt="" />
+                          <img
+                            src={`file://${mediaPath}`}
+                            className="w-full h-full"
+                            style={{ objectFit: scaleMode === 'stretch' ? 'fill' : scaleMode }}
+                            alt=""
+                          />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center">
                             <ImageIcon className="h-16 w-16 text-muted-foreground/30" />
                           </div>
                         )}
                       </div>
-                      <p className="text-center text-[11px] text-muted-foreground">This image will be shown full-screen on the projection display</p>
                     </div>
                   </div>
                 </>
@@ -1496,6 +1501,10 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
         <div className="w-[300px] shrink-0 border-l border-border flex flex-col bg-card overflow-hidden">
           <ItemSettingsPanel
             currentItem={currentItem}
+            onScaleModeChange={(mode) => {
+              if (!currentItem) return
+              patchImageScaleMode(currentItem.id, mode)
+            }}
             notes={notesMap[currentItem?.id ?? -1] ?? ""}
             onNotesChange={(val) => {
               if (!currentItem) return
@@ -1713,7 +1722,7 @@ function ItemSettingsPanel({
   currentItem, notes, onNotesChange, onNotesBlur,
   slide, theme, bg, canCustomize, readOnly, isOverridden,
   pendingBg, savingBg, onSaveBgToSong, onSaveBgToService, onDiscardBg,
-  onThemeChange, onBgChange,
+  onThemeChange, onBgChange, onScaleModeChange,
   annPreviewTitle, annPreviewContent,
 }: {
   currentItem: LineupItemWithSong | null
@@ -1733,6 +1742,7 @@ function ItemSettingsPanel({
   onDiscardBg: () => void
   onThemeChange: (key: keyof ThemeStyle, value: any) => void
   onBgChange: (path: string | null) => void
+  onScaleModeChange: (mode: 'cover' | 'contain' | 'stretch') => void
   annPreviewTitle?: string
   annPreviewContent?: string
 }) {
@@ -1758,6 +1768,38 @@ function ItemSettingsPanel({
             className="w-full text-xs text-foreground bg-background border border-border rounded-md px-3 py-2 resize-none outline-none placeholder:text-muted-foreground/40 focus:border-primary/50 transition-colors leading-relaxed"
           />
         </div>
+
+        {/* Scale mode — image media only */}
+        {currentItem?.itemType === 'media' && !/\.(mp4|webm|mov|mp3|wav|ogg|m4a|aac|flac)$/i.test(currentItem.mediaPath ?? '') && (() => {
+          const scaleMode = (currentItem.imageScaleMode ?? 'contain') as 'cover' | 'contain' | 'stretch'
+          const scaleModes = [
+            { value: 'cover'   as const, label: 'Fill',    title: 'Fill screen (may crop)' },
+            { value: 'contain' as const, label: 'Fit',     title: 'Show full image (may letterbox)' },
+            { value: 'stretch' as const, label: 'Stretch', title: 'Stretch to fill (distorts)' },
+          ]
+          return (
+            <div className="px-4 py-3 border-b border-border">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-2">Scale Mode</label>
+              <div className="flex rounded-lg overflow-hidden border border-border">
+                {scaleModes.map(m => (
+                  <button
+                    key={m.value}
+                    title={m.title}
+                    disabled={readOnly}
+                    onClick={() => onScaleModeChange(m.value)}
+                    className={`flex-1 py-1.5 text-[11px] font-semibold transition-colors disabled:opacity-40 ${
+                      scaleMode === m.value
+                        ? 'bg-primary text-primary-foreground'
+                        : 'bg-background text-muted-foreground hover:bg-accent/40'
+                    }`}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )
+        })()}
 
         {/* Slide preview */}
         {canCustomize && (

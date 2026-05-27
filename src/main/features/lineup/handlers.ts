@@ -150,6 +150,7 @@ export function registerLineupHandlers(): void {
   ipcMain.handle('lineup:addMedia', (_e, serviceDateId: number, data: {
     title: string
     mediaPath: string
+    imageScaleMode?: 'cover' | 'contain' | 'stretch'
   }) => {
     const existing = db.select().from(lineupItems)
       .where(eq(lineupItems.serviceDateId, serviceDateId))
@@ -161,8 +162,14 @@ export function registerLineupHandlers(): void {
       selectedSections: '[]',
       title: data.title,
       mediaPath: data.mediaPath,
+      imageScaleMode: data.imageScaleMode ?? 'contain',
     }).returning().all()
     return item
+  })
+
+  ipcMain.handle('lineup:setImageScaleMode', (_e, lineupItemId: number, mode: 'cover' | 'contain' | 'stretch') => {
+    db.update(lineupItems).set({ imageScaleMode: mode }).where(eq(lineupItems.id, lineupItemId)).run()
+    return true
   })
 
   ipcMain.handle('lineup:removeSong', (_e, lineupItemId: number) => {

@@ -55,6 +55,7 @@ export interface PwaLineupItem {
   mediaPath?: string | null
   backgroundPath?: string | null
   theme?: PwaItemTheme | null
+  imageScaleMode?: string | null
 }
 
 export const stage: {

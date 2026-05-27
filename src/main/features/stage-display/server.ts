@@ -179,6 +179,32 @@ function handleControllerCommand(req: IncomingMessage, res: ServerResponse): voi
         const { lineupItemId, slideIdx } = cmd as { lineupItemId: number; slideIdx: number }
         const item = stage.lineup.find(i => i.id === lineupItemId)
         if (!item) { res.writeHead(404, cors); res.end(JSON.stringify({ error: 'item not found' })); return }
+
+        // Media items have no slides array — build payload directly from mediaPath
+        if (item.itemType === 'media') {
+          const payload = {
+            lines: [] as string[],
+            songTitle: item.title,
+            sectionLabel: '',
+            sectionType: 'media',
+            itemType: 'media',
+            slideIndex: 0,
+            backgroundPath: item.mediaPath ?? null,
+            theme: item.theme
+              ? { ...item.theme, overlayOpacity: 0, textShadowOpacity: 0, backgroundScaleMode: item.imageScaleMode ?? 'contain' }
+              : { overlayOpacity: 0, textShadowOpacity: 0, backgroundScaleMode: item.imageScaleMode ?? 'contain' },
+          }
+          send('slide:show', payload)
+          stage.slide = payload
+          stage.blank = false
+          stage.logo = false
+          const lineupIdx = stage.lineup.indexOf(item)
+          stage.currentLineupIdx = lineupIdx
+          broadcastAll({ type: 'slide', payload, lineupIdx, slideIdx: 0 })
+          notifyControl({ type: 'slide', lineupIdx, slideIdx: 0 })
+          break
+        }
+
         const slide = item.slides[slideIdx as number]
         if (!slide) { res.writeHead(404, cors); res.end(JSON.stringify({ error: 'slide not found' })); return }
         const payload = buildSlidePayload(item, slide)

@@ -584,6 +584,7 @@ export default function PresenterDashboard({
       mediaPath: s.mediaPath,
       backgroundPath: resolveBg(s) ?? null,
       theme: resolveTheme(s) as unknown as Record<string, unknown>,
+      imageScaleMode: s.imageScaleMode ?? null,
       slides: s.slides.map((sl, idx) => ({
         idx,
         sectionLabel: sl.sectionLabel,

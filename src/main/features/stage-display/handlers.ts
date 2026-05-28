@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron'
 import { startStageServer, stopStageServer, getLocalIP, getMdnsHostname } from './server'
-import { getSseClients, getStageServer, getStagePort } from '../../lib/state'
+import { getSseClients, getPwaClients, getStageServer, getStagePort } from '../../lib/state'
 
 // writeAppState is provided by a callback to avoid circular deps
 let _writeAppState: ((data: Record<string, unknown>) => void) | null = null
@@ -22,20 +22,27 @@ export function registerStageDisplayHandlers(writeAppState: (data: Record<string
 
   ipcMain.handle('stageDisplay:getStatus', () => {
     const now = Date.now()
-    const clients = getSseClients()
+    const stageClients = getSseClients()
+    const pwaClients   = getPwaClients()
+    const mapClient = (c: ReturnType<typeof getSseClients>[0]) => ({
+      ip: c.ip,
+      device: parseDeviceLabel(c.userAgent),
+      connectedAt: c.connectedAt,
+      connectedForSeconds: Math.floor((now - c.connectedAt) / 1000),
+    })
     return {
       running: !!getStageServer(),
       url: `http://${getLocalIP()}:${getStagePort()}`,
       mdnsUrl: `http://${getMdnsHostname()}:${getStagePort()}`,
       port: getStagePort(),
-      clients: clients.length,
+      clients: stageClients.length + pwaClients.length,
+      stageClients: stageClients.length,
+      pwaClients: pwaClients.length,
       localIP: getLocalIP(),
-      clientList: clients.map(c => ({
-        ip: c.ip,
-        device: parseDeviceLabel(c.userAgent),
-        connectedAt: c.connectedAt,
-        connectedForSeconds: Math.floor((now - c.connectedAt) / 1000),
-      })),
+      clientList: [
+        ...stageClients.map(c => ({ ...mapClient(c), type: 'stage' })),
+        ...pwaClients.map(c => ({ ...mapClient(c), type: 'pwa' })),
+      ],
     }
   })
 }

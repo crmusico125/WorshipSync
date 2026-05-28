@@ -14,7 +14,14 @@ export function registerSlideHandlers(): void {
     stage.blank = false
     stage.nextLines = null
     stage.nextLabel = ''
-    broadcastAll({ type: 'slide', payload })
+
+    // Derive lineup context from lineupItemId so the PWA can highlight the correct item/slide
+    const lineupItemId = (payload as any).lineupItemId as number | undefined
+    if (lineupItemId !== undefined) {
+      const idx = stage.lineup.findIndex(i => i.id === lineupItemId)
+      if (idx !== -1) stage.currentLineupIdx = idx
+    }
+    broadcastAll({ type: 'slide', payload, lineupIdx: stage.currentLineupIdx, slideIdx: (payload as any).slideIndex ?? -1 })
   })
 
   ipcMain.on('slide:blank', (_event, isBlank: boolean) => {

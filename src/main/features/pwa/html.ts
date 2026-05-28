@@ -213,7 +213,7 @@ let es = null, reconnectTimer = null, reconnectDelay = 1000
 
 function connect() {
   if (es) { try { es.close() } catch {} }
-  es = new EventSource('/events')
+  es = new EventSource('/controller/events')
 
   es.onopen = () => {
     S.connected = true
@@ -482,16 +482,21 @@ function renderSlides() {
     '<div id="slides-title">' + esc(item.title) + '</div>'
     + '<div id="slide-grid">'
     + item.slides.map((sl, i) => {
-      const liveIdx = S.activeLineupIdx
       const active = isActive && i === S.activeSlideIdx
       const linesHtml = sl.lines.map(l => esc(l)).join('<br>')
-      return '<button class="slide-btn' + (active ? ' active' : '') + '" onclick="showSlide(' + S.activeLineupIdx + ',' + i + ')">'
+      return '<button class="slide-btn' + (active ? ' active' : '') + '" data-idx="' + i + '" onclick="showSlide(' + S.activeLineupIdx + ',' + i + ')">'
         + '<span class="s-label">' + esc(sl.sectionLabel) + '</span>'
         + '<span class="s-lines">' + (linesHtml || '<em style="color:var(--muted)">Empty slide</em>') + '</span>'
         + (active ? '<span class="s-live"></span>' : '')
         + '</button>'
     }).join('')
     + '</div>'
+
+  // Scroll active slide into view after DOM paint
+  requestAnimationFrame(() => {
+    const el = document.querySelector('#slide-grid .slide-btn.active')
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  })
 }
 
 function renderMediaPanel(container, item) {

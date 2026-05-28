@@ -3,6 +3,7 @@ import { networkInterfaces, hostname } from 'os'
 import { execSync } from 'child_process'
 import {
   getSseClients, setSseClients,
+  getPwaClients, setPwaClients,
   getStageServer, setStageServer,
   getStagePort, setStagePort,
   getStagePingInterval, setStagePingInterval,
@@ -10,7 +11,7 @@ import {
   bonjour,
   stage, windows,
 } from '../../lib/state'
-import { broadcastAll, formatDuration } from '../../lib/broadcast'
+import { broadcastAll, broadcastPwa, formatDuration } from '../../lib/broadcast'
 import { STAGE_DISPLAY_HTML } from './html'
 import { PWA_CONTROLLER_HTML } from '../pwa/html'
 
@@ -49,7 +50,8 @@ export function startStageServer(port = 4040): Promise<boolean> {
     if (getStageServer()) { resolve(true); return }
     setStagePort(port)
     const server = createServer((req, res) => {
-      if (req.url === '/events') {
+      if (req.url === '/events' || req.url === '/controller/events') {
+        const isPwa = req.url === '/controller/events'
         const sock = req.socket
         sock.setNoDelay(true)
         sock.setKeepAlive(true, 1000)
@@ -60,9 +62,6 @@ export function startStageServer(port = 4040): Promise<boolean> {
           'X-Accel-Buffering': 'no',
           'Access-Control-Allow-Origin': '*',
         })
-        // Use res.write() — the standard SSE path. res.write() owns the chunked
-        // encoding, cork/uncork, and flush lifecycle correctly. Writing directly to
-        // the socket while res is still open interferes with that and adds latency.
         const sseSend = (data: string): boolean => {
           if (!res.writable) return false
           try { res.write(data); return true } catch { return false }
@@ -75,10 +74,19 @@ export function startStageServer(port = 4040): Promise<boolean> {
           userAgent: req.headers['user-agent'] ?? '',
           connectedAt: Date.now(),
         }
-        setSseClients([...getSseClients(), client])
-        client.send({ type: 'init', slide: stage.slide, blank: stage.blank, logo: stage.logo, countdown: stage.countdown, nextLines: stage.nextLines, nextSectionLabel: stage.nextLabel, lineup: stage.lineup, currentLineupIdx: stage.currentLineupIdx, serviceDate: stage.serviceDate, serviceTime: stage.serviceTime })
-        req.on('close', () => { setSseClients(getSseClients().filter(c => c !== client)) })
-        sock.on('error', () => { setSseClients(getSseClients().filter(c => c !== client)) })
+        if (isPwa) {
+          setPwaClients([...getPwaClients(), client])
+          // Full snapshot for PWA: includes lineup, audio/video state, service date/time
+          client.send({ type: 'init', slide: stage.slide, blank: stage.blank, logo: stage.logo, countdown: stage.countdown, nextLines: stage.nextLines, nextSectionLabel: stage.nextLabel, lineup: stage.lineup, currentLineupIdx: stage.currentLineupIdx, serviceDate: stage.serviceDate, serviceTime: stage.serviceTime, audioState: stage.audioState, videoState: stage.videoState })
+          req.on('close', () => { setPwaClients(getPwaClients().filter(c => c !== client)) })
+          sock.on('error', () => { setPwaClients(getPwaClients().filter(c => c !== client)) })
+        } else {
+          setSseClients([...getSseClients(), client])
+          // Stage display snapshot: slide/blank/countdown only — no lineup or media state
+          client.send({ type: 'init', slide: stage.slide, blank: stage.blank, countdown: stage.countdown, nextLines: stage.nextLines, nextSectionLabel: stage.nextLabel })
+          req.on('close', () => { setSseClients(getSseClients().filter(c => c !== client)) })
+          sock.on('error', () => { setSseClients(getSseClients().filter(c => c !== client)) })
+        }
       } else if (req.url === '/controller') {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' })
         res.end(PWA_CONTROLLER_HTML)
@@ -133,6 +141,7 @@ export function startStageServer(port = 4040): Promise<boolean> {
       }
       setStagePingInterval(setInterval(() => {
         setSseClients(getSseClients().filter(c => c.ping()))
+        setPwaClients(getPwaClients().filter(c => c.ping()))
       }, 250))
       resolve(true)
     })
@@ -326,11 +335,13 @@ function notifyControl(update: Record<string, unknown>): void {
 export function stopStageServer(): void {
   const pingInterval = getStagePingInterval()
   if (pingInterval) { clearInterval(pingInterval); setStagePingInterval(null) }
-  getSseClients().forEach(c => {
+  const allClients = [...getSseClients(), ...getPwaClients()]
+  allClients.forEach(c => {
     try { c.send({ type: 'shutdown' }) } catch { /* ignore */ }
     try { c.socket.destroy() } catch { /* ignore */ }
   })
   setSseClients([])
+  setPwaClients([])
   getStageServer()?.close()
   setStageServer(null)
   const svc = getBonjourService()

@@ -590,7 +590,14 @@ export default function PresenterDashboard({
       title: s.title,
       mediaPath: s.mediaPath,
       backgroundPath: resolveBg(s) ?? null,
-      theme: resolveTheme(s) as unknown as Record<string, unknown>,
+      theme: (() => {
+        const t = resolveTheme(s)
+        return {
+          ...t,
+          // Match sendSlide logic: use display-calibrated size when theme uses the default
+          fontSize: t.fontSize !== DEFAULT_THEME.fontSize ? t.fontSize : projectionFontSize,
+        } as unknown as Record<string, unknown>
+      })(),
       imageScaleMode: s.imageScaleMode ?? null,
       mediaSubtype: s.itemType === 'media'
         ? (/\.(mp4|webm|mov)$/i.test(s.mediaPath ?? '') ? 'video' as const
@@ -605,7 +612,7 @@ export default function PresenterDashboard({
       })),
     }))
     window.worshipsync.pwa?.syncLineup?.(items, selectedSongIdx, selectedService?.date ?? null, serviceTime)
-  }, [liveSongs, selectedSongIdx, resolveTheme, resolveBg, selectedService, serviceTime])
+  }, [liveSongs, selectedSongIdx, resolveTheme, resolveBg, selectedService, serviceTime, projectionFontSize])
 
   // ── Slide projection ─────────────────────────────────────────────────────
   const sendSlide = useCallback(
@@ -670,6 +677,7 @@ export default function PresenterDashboard({
           itemType: song.itemType,
           slideIndex: slide.globalIndex,
           totalSlides: song.slides.length,
+          lineupItemId: song.lineupItemId,
           backgroundPath: bg,
           nextLines,
           nextSectionLabel,

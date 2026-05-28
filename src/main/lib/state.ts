@@ -89,15 +89,17 @@ export const stage: {
 
 // ── SSE clients ───────────────────────────────────────────────────────────────
 
+// Stage display clients — receive slide/blank/logo/countdown/stageNext only
 let _sseClients: StageClient[] = []
 
-export function getSseClients(): StageClient[] {
-  return _sseClients
-}
+export function getSseClients(): StageClient[] { return _sseClients }
+export function setSseClients(clients: StageClient[]): void { _sseClients = clients }
 
-export function setSseClients(clients: StageClient[]): void {
-  _sseClients = clients
-}
+// PWA controller clients — receive all events including lineup/audioState/videoState
+let _pwaClients: StageClient[] = []
+
+export function getPwaClients(): StageClient[] { return _pwaClients }
+export function setPwaClients(clients: StageClient[]): void { _pwaClients = clients }
 
 // ── Stage server ──────────────────────────────────────────────────────────────
 

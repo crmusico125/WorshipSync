@@ -56,6 +56,7 @@ export interface PwaLineupItem {
   backgroundPath?: string | null
   theme?: PwaItemTheme | null
   imageScaleMode?: string | null
+  mediaSubtype?: 'image' | 'audio' | 'video' | null
 }
 
 export const stage: {
@@ -68,6 +69,7 @@ export const stage: {
   lineup: PwaLineupItem[]
   currentLineupIdx: number
   audioState: { isPlaying: boolean; currentTime: number; duration: number; lineupItemId: number } | null
+  videoState: { isPlaying: boolean; currentTime: number; duration: number; lineupItemId: number } | null
 } = {
   slide: null,
   blank: false,
@@ -78,6 +80,7 @@ export const stage: {
   lineup: [],
   currentLineupIdx: -1,
   audioState: null,
+  videoState: null,
 }
 
 // ── SSE clients ───────────────────────────────────────────────────────────────

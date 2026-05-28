@@ -13,4 +13,9 @@ export function registerPwaHandlers(): void {
     stage.audioState = state
     if (state) broadcastAll({ type: 'audioState', ...state })
   })
+
+  ipcMain.on('pwa:broadcastVideoState', (_event, state: typeof stage.videoState) => {
+    stage.videoState = state
+    if (state) broadcastAll({ type: 'videoState', ...state })
+  })
 }

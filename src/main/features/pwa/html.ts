@@ -203,6 +203,7 @@ const S = {
   countdownInterval: null,
   countdownMs: 0,
   audioState: null,   // { isPlaying, currentTime, duration, lineupItemId }
+  videoState: null,   // { isPlaying, currentTime, duration, lineupItemId }
 }
 
 // ── SSE Connection ─────────────────────────────────────────────────────────
@@ -260,6 +261,7 @@ function handleEvent(ev) {
       S.slide = ev.slide ?? null
       S.countdown = ev.countdown ?? null
       S.audioState = ev.audioState ?? null
+      S.videoState = ev.videoState ?? null
       if (ev.lineup?.length) {
         S.lineup = ev.lineup
         S.currentLineupIdx = ev.currentLineupIdx ?? -1
@@ -269,6 +271,10 @@ function handleEvent(ev) {
       break
     case 'audioState':
       S.audioState = { isPlaying: ev.isPlaying, currentTime: ev.currentTime, duration: ev.duration, lineupItemId: ev.lineupItemId }
+      renderSlides()
+      break
+    case 'videoState':
+      S.videoState = { isPlaying: ev.isPlaying, currentTime: ev.currentTime, duration: ev.duration, lineupItemId: ev.lineupItemId }
       renderSlides()
       break
     case 'slide':
@@ -483,26 +489,23 @@ function renderSlides() {
 }
 
 function renderMediaPanel(container, item) {
+  const sub = item.mediaSubtype  // 'image' | 'audio' | 'video' | null/undefined
+
+  if (sub === 'audio') { renderAudioPanel(container, item); return }
+  if (sub === 'video') { renderVideoPanel(container, item); return }
+
+  // Image (or unknown — fall back to image panel)
   const mediaPath = item.mediaPath ?? ''
-  const isImg = /\\.(jpe?g|png|gif|webp|bmp|svg)$/i.test(mediaPath)
-  const isAud = /\\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(mediaPath)
-  const isVid = /\\.(mp4|webm|mov)$/i.test(mediaPath)
-
-  if (isAud) {
-    renderAudioPanel(container, item)
-    return
-  }
-
   const isLive = S.activeLineupIdx === S.currentLineupIdx && !S.blank
-  const thumbHtml = isImg
+  const thumbHtml = mediaPath
     ? '<img src="file://' + encodeURI(mediaPath) + '" style="width:100%;height:100%;object-fit:contain" alt="">'
-    : '<span class="media-icon">' + (isVid ? '▶' : '🖼') + '</span>'
+    : '<span class="media-icon">🖼</span>'
 
   container.innerHTML =
     '<div id="media-panel">'
     + '<div class="media-thumb">' + thumbHtml + '</div>'
     + '<div class="media-info"><h2>' + esc(item.title.replace(/^(Image|Video|Audio):\\s*/i,'')) + '</h2>'
-    + '<p>' + (isImg ? 'Image' : isVid ? 'Video' : 'Media') + '</p></div>'
+    + '<p>Image</p></div>'
     + '<button class="btn-show" ' + (isLive ? 'disabled' : '') + ' onclick="showSlide(' + S.activeLineupIdx + ',0)">'
     + (isLive ? 'On Screen' : 'Show on Screen') + '</button>'
     + '</div>'
@@ -528,6 +531,36 @@ function renderAudioPanel(container, item) {
     + '<button class="btn-show" onclick="toggleAudio(' + S.activeLineupIdx + ')">'
     + (isPlaying ? '⏸ Pause' : '▶ Play') + '</button>'
     + '</div>'
+}
+
+function renderVideoPanel(container, item) {
+  const vs = (S.videoState?.lineupItemId === item.id) ? S.videoState : null
+  const isPlaying = vs?.isPlaying ?? false
+  const cur = vs?.currentTime ?? 0
+  const dur = vs?.duration ?? 0
+  const pct = dur > 0 ? (cur / dur) * 100 : 0
+  const fmt = (s) => pad(Math.floor(s/60)) + ':' + pad(Math.floor(s%60))
+  const name = item.title.replace(/^Video:\\s*/i, '')
+
+  container.innerHTML =
+    '<div id="media-panel">'
+    + '<div class="media-thumb" style="background:#000"><span class="media-icon">▶</span></div>'
+    + '<div class="media-info"><h2>' + esc(name) + '</h2>'
+    + '<p style="font-size:11px;color:var(--muted)">' + fmt(cur) + ' / ' + fmt(dur) + '</p></div>'
+    + '<div style="width:100%;max-width:340px;height:4px;background:var(--border);border-radius:2px;overflow:hidden">'
+    + '<div style="height:100%;width:' + pct + '%;background:var(--primary);border-radius:2px;transition:width .1s linear"></div>'
+    + '</div>'
+    + '<button class="btn-show" onclick="toggleVideo(' + S.activeLineupIdx + ')">'
+    + (isPlaying ? '⏸ Pause' : '▶ Play') + '</button>'
+    + '</div>'
+}
+
+function toggleVideo(lineupIdx) {
+  const item = S.lineup[lineupIdx]
+  if (!item) return
+  const vs = S.videoState?.lineupItemId === item.id ? S.videoState : null
+  const action = vs?.isPlaying ? 'video-pause' : 'video-play'
+  cmd(action, { lineupItemId: item.id })
 }
 
 function toggleAudio(lineupIdx) {

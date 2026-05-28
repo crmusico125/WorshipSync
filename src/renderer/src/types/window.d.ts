@@ -192,6 +192,8 @@ declare global {
         onStateUpdate: (cb: (update: PwaStateUpdate) => void) => () => void
         onAudioCmd: (cb: (data: { action: string; lineupItemId: number }) => void) => () => void
         broadcastAudioState: (state: { isPlaying: boolean; currentTime: number; duration: number; lineupItemId: number } | null) => void
+        onVideoCmd: (cb: (data: { action: string; lineupItemId: number }) => void) => () => void
+        broadcastVideoState: (state: { isPlaying: boolean; currentTime: number; duration: number; lineupItemId: number } | null) => void
       }
     }
   }

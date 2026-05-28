@@ -187,6 +187,12 @@ contextBridge.exposeInMainWorld('worshipsync', {
     },
     broadcastAudioState: (state: unknown) =>
       ipcRenderer.send('pwa:broadcastAudioState', state),
+    onVideoCmd: (cb: (data: unknown) => void) => {
+      ipcRenderer.on('pwa:videoCmd', (_e, data) => cb(data))
+      return () => ipcRenderer.removeAllListeners('pwa:videoCmd')
+    },
+    broadcastVideoState: (state: unknown) =>
+      ipcRenderer.send('pwa:broadcastVideoState', state),
   },
 })
 

@@ -240,6 +240,10 @@ export default function PresenterDashboard({
   const triggerAudioPlayRef  = useRef<(() => void) | null>(null);
   const triggerAudioPauseRef = useRef<(() => void) | null>(null);
   const pendingAudioPlayRef  = useRef<number | null>(null);
+  const triggerVideoPlayRef   = useRef<(() => void) | null>(null);
+  const triggerVideoResumeRef = useRef<(() => void) | null>(null);
+  const triggerVideoPauseRef  = useRef<(() => void) | null>(null);
+  const pendingVideoPlayRef   = useRef<number | null>(null);
 
   // ── Scripture picker ─────────────────────────────────────────────────────
 
@@ -588,6 +592,11 @@ export default function PresenterDashboard({
       backgroundPath: resolveBg(s) ?? null,
       theme: resolveTheme(s) as unknown as Record<string, unknown>,
       imageScaleMode: s.imageScaleMode ?? null,
+      mediaSubtype: s.itemType === 'media'
+        ? (/\.(mp4|webm|mov)$/i.test(s.mediaPath ?? '') ? 'video' as const
+          : /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(s.mediaPath ?? '') ? 'audio' as const
+          : 'image' as const)
+        : null,
       slides: s.slides.map((sl, idx) => ({
         idx,
         sectionLabel: sl.sectionLabel,
@@ -1118,6 +1127,43 @@ export default function PresenterDashboard({
     requestAnimationFrame(() => triggerAudioPlayRef.current?.())
   }, [selectedSongIdx, liveSongs])
 
+  // Handle video play/pause commands from PWA controller
+  useEffect(() => {
+    const cleanup = window.worshipsync.pwa?.onVideoCmd?.((data) => {
+      const { action, lineupItemId } = data as { action: string; lineupItemId: number }
+      const idx = liveSongs.findIndex(s => s.lineupItemId === lineupItemId)
+      if (action === 'video-play') {
+        if (triggerVideoPlayRef.current && idx === selectedSongIdxRef.current) {
+          const currentTime = videoPreviewRef.current?.currentTime ?? 0
+          if (currentTime > 0.1 && triggerVideoResumeRef.current) {
+            triggerVideoResumeRef.current()
+          } else {
+            triggerVideoPlayRef.current()
+          }
+        } else {
+          if (idx !== -1) setSelectedSongIdx(idx)
+          pendingVideoPlayRef.current = lineupItemId
+        }
+      } else if (action === 'video-pause') {
+        triggerVideoPauseRef.current?.()
+      } else if (action === 'video-stop') {
+        triggerVideoPauseRef.current?.()
+        if (videoPreviewRef.current) { videoPreviewRef.current.currentTime = 0; setVideoCurrentTime(0); }
+        window.worshipsync.slide.blank(true); setIsBlank(true);
+      }
+    })
+    return () => cleanup?.()
+  }, [liveSongs])
+
+  // Execute pending video auto-play after item is selected and rendered
+  useEffect(() => {
+    if (pendingVideoPlayRef.current === null) return
+    const song = liveSongs[selectedSongIdx]
+    if (!song || song.lineupItemId !== pendingVideoPlayRef.current) return
+    pendingVideoPlayRef.current = null
+    requestAnimationFrame(() => triggerVideoPlayRef.current?.())
+  }, [selectedSongIdx, liveSongs])
+
   // Broadcast audio state on play/pause/duration changes
   useEffect(() => {
     const song = liveSongs[selectedSongIdxRef.current]
@@ -1146,6 +1192,35 @@ export default function PresenterDashboard({
     }, 1000)
     return () => clearInterval(interval)
   }, [audioPlaying, liveSongs])
+
+  // Broadcast video state on play/pause/duration changes
+  useEffect(() => {
+    const song = liveSongs[selectedSongIdxRef.current]
+    if (!song || song.itemType !== 'media') return
+    window.worshipsync.pwa?.broadcastVideoState?.({
+      isPlaying: videoPlaying,
+      currentTime: videoPreviewRef.current?.currentTime ?? 0,
+      duration: videoPreviewRef.current?.duration || videoDuration,
+      lineupItemId: song.lineupItemId,
+    })
+  }, [videoPlaying, videoDuration, liveSongs])
+
+  // Broadcast video progress every second while playing
+  useEffect(() => {
+    if (!videoPlaying) return
+    const interval = setInterval(() => {
+      if (!videoPreviewRef.current) return
+      const song = liveSongs[selectedSongIdxRef.current]
+      if (!song) return
+      window.worshipsync.pwa?.broadcastVideoState?.({
+        isPlaying: true,
+        currentTime: videoPreviewRef.current.currentTime,
+        duration: videoPreviewRef.current.duration || 0,
+        lineupItemId: song.lineupItemId,
+      })
+    }, 1000)
+    return () => clearInterval(interval)
+  }, [videoPlaying, liveSongs])
 
   // When going live, start blank and register the projection:ready listener.
   // The same listener fires after a display move — refs ensure it restores
@@ -1820,6 +1895,17 @@ export default function PresenterDashboard({
               setVideoPlaying(false);
               if (videoTimerRef.current) { clearInterval(videoTimerRef.current); videoTimerRef.current = null; }
             };
+            const handleResume = () => {
+              window.worshipsync.slide.videoControl("play");
+              videoPreviewRef.current?.play().catch(() => {});
+              setVideoPlaying(true);
+              if (videoTimerRef.current) clearInterval(videoTimerRef.current);
+              videoTimerRef.current = setInterval(() => setVideoCurrentTime(videoPreviewRef.current?.currentTime ?? 0), 100);
+            };
+            // Expose to PWA command handler
+            triggerVideoPlayRef.current   = handlePlay;
+            triggerVideoResumeRef.current = handleResume;
+            triggerVideoPauseRef.current  = handlePause;
             const handleToggleLoop = () => {
               const next = !videoLoop;
               setVideoLoop(next);

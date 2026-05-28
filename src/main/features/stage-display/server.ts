@@ -95,6 +95,7 @@ export function startStageServer(port = 4040): Promise<boolean> {
           currentLineupIdx: stage.currentLineupIdx,
           currentSlideIdx: (stage.slide as any)?.slideIndex ?? -1,
           audioState: stage.audioState,
+          videoState: stage.videoState,
         })
         res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' })
         res.end(payload)
@@ -250,9 +251,13 @@ function handleControllerCommand(req: IncomingMessage, res: ServerResponse): voi
       }
       case 'audio-play':
       case 'audio-pause':
-      case 'audio-stop': {
+      case 'audio-stop':
+      case 'video-play':
+      case 'video-pause':
+      case 'video-stop': {
+        const channel = (cmd.action as string).startsWith('audio') ? 'pwa:audioCmd' : 'pwa:videoCmd'
         if (windows.control && !windows.control.isDestroyed()) {
-          windows.control.webContents.send('pwa:audioCmd', {
+          windows.control.webContents.send(channel, {
             action: cmd.action,
             lineupItemId: cmd.lineupItemId as number,
           })

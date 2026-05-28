@@ -1,9 +1,10 @@
-import { useEffect, useState, useMemo, useCallback } from "react"
+import { useEffect, useState, useMemo, useCallback, useRef } from "react"
 import {
   Search, Upload, Trash2, Image as ImageIcon, X, Check,
   FolderOpen, Music, Play, Volume2, Calendar,
   Folder as FolderIcon, FolderPlus, Move, ChevronRight,
-  MoreHorizontal, BookMarked,
+  MoreHorizontal, BookMarked, LayoutGrid, Grid3X3, Rows3,
+  ArrowUpDown,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -24,7 +25,10 @@ interface MediaItem {
   serviceCount: number
 }
 
-type ViewMode = "all" | "recent" | string   // string = folderId
+type ViewMode  = "all" | "recent" | string   // string = folderId
+type SortBy    = "name-asc" | "name-desc" | "recent" | "most-used"
+type TypeFilter = "all" | "image" | "video" | "audio"
+type GridSize  = "sm" | "md" | "lg"
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -68,9 +72,48 @@ export default function MediaLibraryScreen() {
   const [folders,    setFolders]    = useState<Folder[]>([])
   const [fileFolder, setFileFolder] = useState<Record<string, string | null>>({})
 
+  // Default background paths (loaded from theme, used by card context menus)
+  const [scriptureDefault,     setScriptureDefault]     = useState<string | null>(null)
+  const [announcementDefault,  setAnnouncementDefault]  = useState<string | null>(null)
+
+  const loadDefaults = useCallback(async () => {
+    const t = await window.worshipsync.themes.getDefault() as any
+    if (!t?.settings) return
+    try {
+      const s = JSON.parse(t.settings)
+      setScriptureDefault(s.scriptureBackgroundPath ?? null)
+      setAnnouncementDefault(s.announcementBackgroundPath ?? null)
+    } catch {}
+  }, [])
+
+  const handleSetScriptureDefault = useCallback(async (path: string) => {
+    const t = await window.worshipsync.themes.getDefault() as any
+    if (!t) return
+    const s = (() => { try { return JSON.parse(t.settings) } catch { return {} } })()
+    s.scriptureBackgroundPath = path
+    await window.worshipsync.themes.update(t.id, { ...t, settings: JSON.stringify(s) })
+    setScriptureDefault(path)
+  }, [])
+
+  const handleSetAnnouncementDefault = useCallback(async (path: string) => {
+    const t = await window.worshipsync.themes.getDefault() as any
+    if (!t) return
+    const s = (() => { try { return JSON.parse(t.settings) } catch { return {} } })()
+    s.announcementBackgroundPath = path
+    await window.worshipsync.themes.update(t.id, { ...t, settings: JSON.stringify(s) })
+    setAnnouncementDefault(path)
+  }, [])
+
   // Navigation & filters
   const [view,        setView]        = useState<ViewMode>("all")
   const [searchQuery, setSearchQuery] = useState("")
+  const [sortBy,      setSortBy]      = useState<SortBy>("name-asc")
+  const [typeFilter,  setTypeFilter]  = useState<TypeFilter>("all")
+  const [gridSize,    setGridSize]    = useState<GridSize>("md")
+
+  // Drag-and-drop
+  const [isDragOver, setIsDragOver] = useState(false)
+  const dragCounter = useRef(0)
 
   // Selection (multi-select)
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set())
@@ -123,7 +166,7 @@ export default function MediaLibraryScreen() {
         const savedFolders: Folder[]                      = state.mediaFolders    ?? []
         const savedFileFolder: Record<string, string | null> = state.mediaFileFolder ?? {}
         setFolders(savedFolders)
-        await loadFiles(savedFileFolder)
+        await Promise.all([loadFiles(savedFileFolder), loadDefaults()])
       } catch {
         setFiles([])
       }
@@ -179,6 +222,19 @@ export default function MediaLibraryScreen() {
     setDetailItem(null)
     await loadFiles(newFF)
   }
+
+  const handleDropFiles = useCallback(async (droppedPaths: string[]) => {
+    const valid = droppedPaths.filter(p =>
+      /\.(jpg|jpeg|png|webp|mp4|webm|mov|mp3|wav|ogg|m4a|aac|flac)$/i.test(p)
+    )
+    if (!valid.length) return
+    const targetFolder = isFolderView(view) ? view : null
+    const newFF = { ...fileFolder }
+    valid.forEach(p => { newFF[p] = targetFolder })
+    setFileFolder(newFF)
+    await saveFolderState(folders, newFF)
+    await loadFiles(newFF)
+  }, [view, fileFolder, folders, saveFolderState, loadFiles])
 
   const handleCreateFolder = useCallback(async (name: string) => {
     const parentId = isFolderView(view) ? view : null
@@ -236,12 +292,23 @@ export default function MediaLibraryScreen() {
     return files.filter(f => fileFolder[f.path] === view)
   }, [view, files, fileFolder])
 
-  // Apply search filter
+  // Apply search → type → sort pipeline
   const filteredFiles = useMemo(() => {
-    if (!searchQuery) return viewFiles
-    const q = searchQuery.toLowerCase()
-    return viewFiles.filter(f => f.filename.toLowerCase().includes(q))
-  }, [viewFiles, searchQuery])
+    let arr = searchQuery
+      ? viewFiles.filter(f => f.filename.toLowerCase().includes(searchQuery.toLowerCase()))
+      : viewFiles
+
+    if (typeFilter === "image") arr = arr.filter(f => isImage(f.path))
+    else if (typeFilter === "video") arr = arr.filter(f => isVideoFile(f.path))
+    else if (typeFilter === "audio") arr = arr.filter(f => isAudioFile(f.path))
+
+    const sorted = [...arr]
+    if (sortBy === "name-asc")   sorted.sort((a, b) => a.filename.localeCompare(b.filename))
+    if (sortBy === "name-desc")  sorted.sort((a, b) => b.filename.localeCompare(a.filename))
+    if (sortBy === "most-used")  sorted.sort((a, b) => (b.usageCount + b.serviceCount) - (a.usageCount + a.serviceCount))
+    // "recent" keeps insertion order (already reversed for "recent" view)
+    return sorted
+  }, [viewFiles, searchQuery, typeFilter, sortBy])
 
   // Selection helpers
   const toggleSelect = useCallback((path: string) => {
@@ -362,8 +429,11 @@ export default function MediaLibraryScreen() {
               ))}
             </div>
 
-            {/* Actions */}
+            {/* Actions + item count */}
             <div className="flex items-center gap-2 shrink-0">
+              <span className="text-[11px] text-muted-foreground mr-1">
+                {filteredFiles.length + (isFolderView(view) ? subFolders.length : 0)} items
+              </span>
               <button
                 onClick={() => setShowCreateFolder(true)}
                 className="flex items-center gap-1.5 text-xs font-medium border border-border rounded-md px-3 py-1.5 hover:bg-accent transition-colors"
@@ -380,9 +450,10 @@ export default function MediaLibraryScreen() {
             </div>
           </div>
 
-          {/* Search + type pills */}
-          <div className="flex items-center gap-3">
-            <div className="relative flex-1 max-w-xs">
+          {/* Search | Type chips | Sort + Grid (right-aligned) */}
+          <div className="flex items-center gap-2">
+            {/* Search */}
+            <div className="relative w-44 shrink-0">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
               <Input
                 className="pl-8 h-8 text-xs"
@@ -397,14 +468,76 @@ export default function MediaLibraryScreen() {
               )}
             </div>
 
-            <span className="ml-auto text-[11px] text-muted-foreground">
-              {filteredFiles.length + (isFolderView(view) ? subFolders.length : 0)} items
-            </span>
+            {/* Type filter chips */}
+            <div className="flex items-center gap-1">
+              {(["all", "image", "video", "audio"] as const).map(t => (
+                <button
+                  key={t}
+                  onClick={() => setTypeFilter(t)}
+                  className={`h-8 px-2.5 rounded-md text-[11px] font-semibold transition-colors ${
+                    typeFilter === t
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  }`}
+                >
+                  {t === "all" ? "All" : t === "image" ? "Images" : t === "video" ? "Video" : "Audio"}
+                </button>
+              ))}
+            </div>
+
+            {/* Sort + grid size — grouped on the right */}
+            <div className="ml-auto flex items-center gap-1.5 shrink-0">
+              <div className="relative flex items-center">
+                <ArrowUpDown className="absolute left-2 h-3 w-3 text-muted-foreground pointer-events-none" />
+                <select
+                  value={sortBy}
+                  onChange={e => setSortBy(e.target.value as SortBy)}
+                  className="h-8 pl-6 pr-2 text-[11px] bg-muted/50 border border-border rounded-md text-foreground focus:outline-none focus:border-primary/50 cursor-pointer appearance-none"
+                >
+                  <option value="name-asc">Name A→Z</option>
+                  <option value="name-desc">Name Z→A</option>
+                  <option value="recent">Recently Added</option>
+                  <option value="most-used">Most Used</option>
+                </select>
+              </div>
+              <div className="flex items-center gap-0.5 bg-muted/50 rounded-md p-0.5">
+                {([["sm", Rows3], ["md", Grid3X3], ["lg", LayoutGrid]] as const).map(([size, Icon]) => (
+                  <button
+                    key={size}
+                    title={size === "sm" ? "Small" : size === "md" ? "Medium" : "Large"}
+                    onClick={() => setGridSize(size)}
+                    className={`p-1.5 rounded transition-colors ${gridSize === size ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Grid */}
-        <div className="flex-1 overflow-y-auto p-5 relative">
+        {/* Grid — with drag-and-drop */}
+        <div
+          className="flex-1 overflow-y-auto p-5 relative"
+          onDragEnter={e => { e.preventDefault(); dragCounter.current++; setIsDragOver(true) }}
+          onDragOver={e => e.preventDefault()}
+          onDragLeave={() => { dragCounter.current--; if (dragCounter.current === 0) setIsDragOver(false) }}
+          onDrop={e => {
+            e.preventDefault()
+            dragCounter.current = 0
+            setIsDragOver(false)
+            const paths = Array.from(e.dataTransfer.files).map(f => (f as any).path as string).filter(Boolean)
+            if (paths.length) handleDropFiles(paths)
+          }}
+        >
+          {/* Drop overlay */}
+          {isDragOver && (
+            <div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-primary/5 border-2 border-dashed border-primary/50 rounded-lg m-2 pointer-events-none">
+              <Upload className="h-10 w-10 text-primary/70" />
+              <p className="text-sm font-semibold text-primary/80">Drop files to add to library</p>
+              <p className="text-xs text-muted-foreground">JPG, PNG, WebP, MP4, WebM, MOV, MP3, WAV, OGG, M4A</p>
+            </div>
+          )}
           {loading ? (
             <div className="h-full flex items-center justify-center">
               <p className="text-sm text-muted-foreground">Loading media…</p>
@@ -421,6 +554,30 @@ export default function MediaLibraryScreen() {
                 { label: "Audio",  items: auds },
               ].filter(g => g.items.length > 0)
 
+              const colMin = gridSize === "sm" ? "140px" : gridSize === "lg" ? "240px" : "180px"
+              const gridStyle = { display: "grid", gridTemplateColumns: `repeat(auto-fill,minmax(${colMin},1fr))`, gap: "1rem" }
+
+              const MediaGrid = ({ items }: { items: MediaItem[] }) => (
+                <div style={gridStyle}>
+                  {items.map(item => (
+                    <MediaCard
+                      key={item.path}
+                      item={item}
+                      selected={selectedPaths.has(item.path)}
+                      selectionMode={selectedPaths.size > 0}
+                      onSelect={() => toggleSelect(item.path)}
+                      onInfo={() => setDetailItem(prev => prev?.path === item.path ? null : item)}
+                      onDelete={() => handleDelete([item.path])}
+                      onMove={() => { toggleSelect(item.path); setShowMoveDialog(true) }}
+                      isScriptureDefault={scriptureDefault === item.path}
+                      isAnnouncementDefault={announcementDefault === item.path}
+                      onSetScriptureDefault={() => handleSetScriptureDefault(item.path)}
+                      onSetAnnouncementDefault={() => handleSetAnnouncementDefault(item.path)}
+                    />
+                  ))}
+                </div>
+              )
+
               return (
                 <div className="space-y-8">
                   {/* Folder cards */}
@@ -429,7 +586,7 @@ export default function MediaLibraryScreen() {
                       <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-3">
                         Folders <span className="font-normal normal-case tracking-normal text-muted-foreground/60">({subFolders.length})</span>
                       </h3>
-                      <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-4">
+                      <div style={gridStyle}>
                         {subFolders.map(folder => (
                           <FolderCard
                             key={folder.id}
@@ -444,26 +601,19 @@ export default function MediaLibraryScreen() {
                     </div>
                   )}
 
-                  {/* File groups */}
-                  {groups.map(group => (
-                    <div key={group.label}>
-                      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-3">
-                        {group.label} <span className="font-normal normal-case tracking-normal text-muted-foreground/60">({group.items.length})</span>
-                      </h3>
-                      <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-4">
-                        {group.items.map(item => (
-                          <MediaCard
-                            key={item.path}
-                            item={item}
-                            selected={selectedPaths.has(item.path)}
-                            selectionMode={selectedPaths.size > 0}
-                            onSelect={() => toggleSelect(item.path)}
-                            onInfo={() => setDetailItem(prev => prev?.path === item.path ? null : item)}
-                          />
-                        ))}
+                  {/* File groups — flat when type filter active, grouped when showing all */}
+                  {typeFilter !== "all" ? (
+                    <MediaGrid items={filteredFiles} />
+                  ) : (
+                    groups.map(group => (
+                      <div key={group.label}>
+                        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+                          {group.label} <span className="font-normal normal-case tracking-normal text-muted-foreground/60">({group.items.length})</span>
+                        </h3>
+                        <MediaGrid items={group.items} />
                       </div>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
               )
             })()}
@@ -681,15 +831,30 @@ function FolderCard({
 
 // ── Media Card ────────────────────────────────────────────────────────────────
 
+const AUDIO_WAVEFORM = [3,5,7,4,8,6,9,5,7,4,6,8,5,7,4,6,9,5,7,3]
+
 function MediaCard({
-  item, selected, onSelect, onInfo, selectionMode,
+  item, selected, onSelect, onInfo, selectionMode, onDelete, onMove,
+  isScriptureDefault, isAnnouncementDefault,
+  onSetScriptureDefault, onSetAnnouncementDefault,
 }: {
   item: MediaItem
   selected: boolean
   onSelect: () => void
   onInfo: () => void
   selectionMode: boolean
+  onDelete: () => void
+  onMove: () => void
+  isScriptureDefault: boolean
+  isAnnouncementDefault: boolean
+  onSetScriptureDefault: () => void
+  onSetAnnouncementDefault: () => void
 }) {
+  const [showMenu, setShowMenu] = useState(false)
+  const isAudio = isAudioFile(item.path)
+  const isVideo = isVideoFile(item.path)
+  const ext = item.path.split(".").pop()?.toUpperCase() ?? ""
+
   return (
     <div
       className={`group relative rounded-lg overflow-hidden border-2 transition-all cursor-pointer ${
@@ -700,18 +865,22 @@ function MediaCard({
       style={{ aspectRatio: "16/9" }}
       onClick={selectionMode ? onSelect : onInfo}
     >
-      {isVideoFile(item.path) ? (
+      {/* Background / preview */}
+      {isVideo ? (
         <video
           src={`file://${encodeURI(item.path)}`}
           className="absolute inset-0 w-full h-full object-cover"
           muted preload="metadata"
         />
-      ) : isAudioFile(item.path) ? (
-        <div className="absolute inset-0 bg-muted flex flex-col items-center justify-center gap-1.5">
-          <Volume2 className="h-7 w-7 text-muted-foreground" />
-          <span className="text-[9px] font-semibold uppercase text-muted-foreground">
-            {item.path.split(".").pop()?.toUpperCase()}
-          </span>
+      ) : isAudio ? (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2"
+          style={{ background: "linear-gradient(135deg,#1e1b4b 0%,#0f172a 100%)" }}>
+          <div className="flex items-end gap-[2px] h-7">
+            {AUDIO_WAVEFORM.map((h, i) => (
+              <div key={i} className="w-[3px] rounded-full bg-primary/50" style={{ height: `${h * 3}px` }} />
+            ))}
+          </div>
+          <span className="text-[9px] font-bold uppercase tracking-widest text-primary/60">{ext}</span>
         </div>
       ) : (
         <div
@@ -720,11 +889,11 @@ function MediaCard({
         />
       )}
 
-      {/* Overlay */}
+      {/* Hover overlay */}
       <div className={`absolute inset-0 transition-colors ${selected ? "bg-black/10" : "bg-black/0 group-hover:bg-black/20"}`} />
 
-      {/* Type badge */}
-      {isVideoFile(item.path) && (
+      {/* Video play badge */}
+      {isVideo && (
         <div className="absolute bottom-2 right-2 h-5 w-5 rounded-full bg-black/60 flex items-center justify-center">
           <Play className="h-2.5 w-2.5 text-white fill-white" />
         </div>
@@ -739,7 +908,7 @@ function MediaCard({
         </div>
       )}
 
-      {/* Checkbox — click toggles multi-select without opening detail panel */}
+      {/* Checkbox */}
       <div
         className={`absolute top-2 right-2 transition-opacity ${selected ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
         onClick={e => { e.stopPropagation(); onSelect() }}
@@ -751,10 +920,73 @@ function MediaCard({
         </div>
       </div>
 
-      {/* Filename on hover */}
-      <div className="absolute bottom-0 left-0 right-0 px-2 py-1.5 bg-gradient-to-t from-black/70 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
-        <p className="text-[10px] text-white truncate">{item.filename}</p>
+      {/* Filename + three-dot on hover */}
+      <div className="absolute bottom-0 left-0 right-0 px-2 py-1.5 bg-gradient-to-t from-black/75 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end gap-1">
+        <p className="text-[10px] text-white truncate flex-1">{item.filename}</p>
+        <button
+          onClick={e => { e.stopPropagation(); setShowMenu(v => !v) }}
+          className="shrink-0 p-0.5 rounded hover:bg-white/20 transition-colors"
+        >
+          <MoreHorizontal className="h-3.5 w-3.5 text-white" />
+        </button>
       </div>
+
+      {/* Context menu */}
+      {showMenu && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={e => { e.stopPropagation(); setShowMenu(false) }} />
+          <div className="absolute right-2 bottom-8 z-50 bg-card border border-border rounded-md shadow-lg overflow-hidden min-w-[190px]">
+            <button
+              onClick={e => { e.stopPropagation(); setShowMenu(false); onInfo() }}
+              className="w-full text-left px-3 py-2 text-xs hover:bg-accent flex items-center gap-2"
+            >
+              <ImageIcon className="h-3.5 w-3.5 text-muted-foreground" /> File info
+            </button>
+            <button
+              onClick={e => { e.stopPropagation(); setShowMenu(false); onMove() }}
+              className="w-full text-left px-3 py-2 text-xs hover:bg-accent flex items-center gap-2"
+            >
+              <Move className="h-3.5 w-3.5 text-muted-foreground" /> Move to…
+            </button>
+            {!isAudio && !isVideo && (
+              <>
+                <div className="h-px bg-border" />
+                <button
+                  onClick={e => { e.stopPropagation(); setShowMenu(false); if (!isScriptureDefault) onSetScriptureDefault() }}
+                  disabled={isScriptureDefault}
+                  className={`w-full text-left px-3 py-2 text-xs flex items-center gap-2 ${isScriptureDefault ? "opacity-50 cursor-default" : "hover:bg-accent"}`}
+                >
+                  {isScriptureDefault
+                    ? <Check className="h-3.5 w-3.5 text-violet-400" />
+                    : <BookMarked className="h-3.5 w-3.5 text-muted-foreground" />}
+                  <span className={isScriptureDefault ? "text-violet-400" : ""}>
+                    {isScriptureDefault ? "Scripture Default ✓" : "Set Scripture Default"}
+                  </span>
+                </button>
+                <button
+                  onClick={e => { e.stopPropagation(); setShowMenu(false); if (!isAnnouncementDefault) onSetAnnouncementDefault() }}
+                  disabled={isAnnouncementDefault}
+                  className={`w-full text-left px-3 py-2 text-xs flex items-center gap-2 ${isAnnouncementDefault ? "opacity-50 cursor-default" : "hover:bg-accent"}`}
+                >
+                  {isAnnouncementDefault
+                    ? <Check className="h-3.5 w-3.5 text-amber-400" />
+                    : <BookMarked className="h-3.5 w-3.5 text-muted-foreground" />}
+                  <span className={isAnnouncementDefault ? "text-amber-400" : ""}>
+                    {isAnnouncementDefault ? "Announcement Default ✓" : "Set Announcement Default"}
+                  </span>
+                </button>
+              </>
+            )}
+            <div className="h-px bg-border" />
+            <button
+              onClick={e => { e.stopPropagation(); setShowMenu(false); onDelete() }}
+              className="w-full text-left px-3 py-2 text-xs text-destructive hover:bg-destructive/10 flex items-center gap-2"
+            >
+              <Trash2 className="h-3.5 w-3.5" /> Delete
+            </button>
+          </div>
+        </>
+      )}
     </div>
   )
 }
@@ -852,7 +1084,7 @@ function MediaDetailPanel({
               <Volume2 className="h-8 w-8 text-muted-foreground" />
             </div>
           ) : (
-            <img src={`file://${item.path}`} className="absolute inset-0 w-full h-full object-cover" alt="" />
+            <img src={`file://${item.path}`} className="absolute inset-0 w-full h-full object-contain bg-black" alt="" />
           )}
         </div>
       </div>

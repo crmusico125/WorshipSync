@@ -45,6 +45,7 @@ export interface SlidePayload {
   artist?: string
   slideIndex?: number
   totalSlides?: number
+  lineupItemId?: number
   backgroundPath?: string | null
   nextLines?: string[]
   nextSectionLabel?: string

@@ -549,21 +549,23 @@ export default function ProjectionWindow() {
               </div>
             </div>
 
-            {/* Scripture reference \u2014 always below the verse, never overlapping */}
-            <div
-              style={{
-                textAlign: "center",
-                padding: "2% 0 4%",
-                fontSize: Math.max(28, Math.round(scaledFontSize * 0.65)),
-                fontFamily: theme.fontFamily,
-                fontWeight: "600",
-                color: "rgba(255,255,255,0.85)",
-                letterSpacing: "0.04em",
-                flexShrink: 0,
-              }}
-            >
-              {slide.sectionLabel}
-            </div>
+            {/* Scripture reference \u2014 only shown for real verses, not blank slides */}
+            {slide.sectionType !== "blank" && (
+              <div
+                style={{
+                  textAlign: "center",
+                  padding: "2% 0 4%",
+                  fontSize: Math.max(28, Math.round(scaledFontSize * 0.65)),
+                  fontFamily: theme.fontFamily,
+                  fontWeight: "600",
+                  color: "rgba(255,255,255,0.85)",
+                  letterSpacing: "0.04em",
+                  flexShrink: 0,
+                }}
+              >
+                {slide.sectionLabel}
+              </div>
+            )}
           </div>
         ) : (
           <div

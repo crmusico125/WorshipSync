@@ -737,9 +737,15 @@ export default function PresenterDashboard({
       setIsBlank(true);
       return;
     }
+    const currentSlide = song.slides[activeSlideIdx];
+    // Blank-type slides have no text to clear — blank the screen instead
+    if (currentSlide?.sectionType === "blank") {
+      window.worshipsync.slide.blank(true);
+      setIsBlank(true);
+      return;
+    }
     const theme = resolveTheme(song);
     const bg = resolveBg(song);
-    const currentSlide = song.slides[activeSlideIdx];
     window.worshipsync.slide.blank(false);
     window.worshipsync.slide.logo(false);
     window.worshipsync.slide.show({

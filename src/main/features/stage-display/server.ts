@@ -234,21 +234,43 @@ function handleControllerCommand(req: IncomingMessage, res: ServerResponse): voi
       }
       case 'next-slide':
       case 'prev-slide': {
-        const delta = cmd.action === 'next-slide' ? 1 : -1
+        const isNext = cmd.action === 'next-slide'
+        const delta = isNext ? 1 : -1
         const item = stage.lineup[stage.currentLineupIdx]
+        const cur = (stage.slide as any)?.slideIndex ?? 0
+        const targetSlideIdx = cur + delta
+
+        const projectSlide = (li: number, si: number) => {
+          const tItem = stage.lineup[li]
+          if (!tItem) return
+          const tSlide = tItem.slides[si]
+          if (!tSlide) return
+          const payload = buildSlidePayload(tItem, tSlide)
+          send('slide:show', payload)
+          stage.slide = payload
+          stage.blank = false
+          stage.logo = false
+          stage.currentLineupIdx = li
+          broadcastAll({ type: 'slide', payload, lineupIdx: li, slideIdx: si })
+          broadcastStageNext(tItem, si)
+          notifyControl({ type: 'slide', lineupIdx: li, slideIdx: si })
+        }
+
         if (item?.slides.length) {
-          const cur = (stage.slide as any)?.slideIndex ?? 0
-          const next = Math.max(0, Math.min(item.slides.length - 1, cur + delta))
-          const slide = item.slides[next]
-          if (slide) {
-            const payload = buildSlidePayload(item, slide)
-            send('slide:show', payload)
-            stage.slide = payload
-            stage.blank = false
-            stage.logo = false
-            broadcastAll({ type: 'slide', payload, lineupIdx: stage.currentLineupIdx, slideIdx: next })
-            broadcastStageNext(item, next)
-            notifyControl({ type: 'slide', lineupIdx: stage.currentLineupIdx, slideIdx: next })
+          if (targetSlideIdx >= 0 && targetSlideIdx < item.slides.length) {
+            // Stay within current item
+            projectSlide(stage.currentLineupIdx, targetSlideIdx)
+          } else if (isNext) {
+            // Past last slide — advance to first slide of next item (skip sections)
+            let nextIdx = stage.currentLineupIdx + 1
+            while (nextIdx < stage.lineup.length && stage.lineup[nextIdx]?.itemType === 'section') nextIdx++
+            if (nextIdx < stage.lineup.length) projectSlide(nextIdx, 0)
+          } else {
+            // Before first slide — go to last slide of previous item (skip sections)
+            let prevIdx = stage.currentLineupIdx - 1
+            while (prevIdx >= 0 && stage.lineup[prevIdx]?.itemType === 'section') prevIdx--
+            const prevItem = stage.lineup[prevIdx]
+            if (prevItem?.slides.length) projectSlide(prevIdx, prevItem.slides.length - 1)
           }
         }
         break

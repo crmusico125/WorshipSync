@@ -204,6 +204,8 @@ const S = {
   countdownMs: 0,
   audioState: null,   // { isPlaying, currentTime, duration, lineupItemId }
   videoState: null,   // { isPlaying, currentTime, duration, lineupItemId }
+  serviceDate: null,  // 'YYYY-MM-DD'
+  serviceTime: null,  // 'HH:MM'
 }
 
 // ── SSE Connection ─────────────────────────────────────────────────────────
@@ -262,6 +264,8 @@ function handleEvent(ev) {
       S.countdown = ev.countdown ?? null
       S.audioState = ev.audioState ?? null
       S.videoState = ev.videoState ?? null
+      S.serviceDate = ev.serviceDate ?? null
+      S.serviceTime = ev.serviceTime ?? null
       if (ev.lineup?.length) {
         S.lineup = ev.lineup
         S.currentLineupIdx = ev.currentLineupIdx ?? -1
@@ -311,6 +315,8 @@ function handleEvent(ev) {
       S.lineup = ev.items ?? []
       S.currentLineupIdx = ev.currentIdx ?? -1
       S.activeLineupIdx = S.currentLineupIdx
+      if (ev.serviceDate) S.serviceDate = ev.serviceDate
+      if (ev.serviceTime) S.serviceTime = ev.serviceTime
       renderLineupList()
       renderSlides()
       renderStatus()
@@ -573,13 +579,43 @@ function toggleAudio(lineupIdx) {
 
 function renderCountdownPanel(container, item) {
   const running = S.countdown?.running ?? false
-  const cd = computeCountdown()
+  const cd = running ? computeCountdown() : computePreviewCountdown()
+  const targetLabel = serviceTargetLabel()
   container.innerHTML =
     '<div id="countdown-panel">'
-    + '<div id="countdown-display">' + cd + '</div>'
+    + (targetLabel ? '<p style="font-size:12px;color:var(--muted);margin-bottom:6px;text-align:center">' + esc(targetLabel) + '</p>' : '')
+    + '<div id="countdown-display" style="' + (!running ? 'opacity:.45' : '') + '">' + cd + '</div>'
     + '<button class="btn-countdown ' + (running ? 'running' : '') + '" onclick="toggleCountdown()">'
     + (running ? '■ Stop Countdown' : '▶ Start Countdown') + '</button>'
     + '</div>'
+}
+
+function serviceTargetLabel() {
+  const date = S.serviceDate
+  const time = S.serviceTime
+  if (!date) return ''
+  try {
+    const d = new Date(date + 'T' + (time ?? '00:00') + ':00')
+    return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+      + ' · ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+  } catch { return '' }
+}
+
+function computePreviewCountdown() {
+  // Show how long until the service even when countdown isn't running
+  const date = S.serviceDate
+  const time = S.serviceTime
+  if (!date || !time) return '--:--'
+  const target = new Date(date + 'T' + time + ':00').getTime()
+  if (isNaN(target)) return '--:--'
+  const diff = Math.max(0, target - Date.now())
+  const d = Math.floor(diff / 86400000)
+  const h = Math.floor((diff % 86400000) / 3600000)
+  const m = Math.floor((diff % 3600000) / 60000)
+  const s = Math.floor((diff % 60000) / 1000)
+  if (d > 0) return d + 'd ' + pad(h) + ':' + pad(m) + ':' + pad(s)
+  if (h > 0) return pad(h) + ':' + pad(m) + ':' + pad(s)
+  return pad(m) + ':' + pad(s)
 }
 
 function renderTransport() {
@@ -608,19 +644,20 @@ function startCountdownTick() {
 function computeCountdown() {
   if (!S.countdown?.running || !S.countdown?.targetTime) return '00:00'
   const target = new Date(S.countdown.targetTime).getTime()
+  if (isNaN(target)) return '00:00'
   const diff = Math.max(0, target - Date.now())
-  const h = Math.floor(diff / 3600000)
+  const d = Math.floor(diff / 86400000)
+  const h = Math.floor((diff % 86400000) / 3600000)
   const m = Math.floor((diff % 3600000) / 60000)
   const s = Math.floor((diff % 60000) / 1000)
-  return h > 0
-    ? pad(h) + ':' + pad(m) + ':' + pad(s)
-    : pad(m) + ':' + pad(s)
+  if (d > 0) return d + 'd ' + pad(h) + ':' + pad(m) + ':' + pad(s)
+  if (h > 0) return pad(h) + ':' + pad(m) + ':' + pad(s)
+  return pad(m) + ':' + pad(s)
 }
 
 function toggleCountdown() {
-  const running = !(S.countdown?.running ?? false)
-  const targetTime = S.countdown?.targetTime ?? new Date(Date.now() + 30 * 60000).toISOString()
-  cmd('countdown', { targetTime, running })
+  const action = S.countdown?.running ? 'countdown-stop' : 'countdown-start'
+  cmd(action)
 }
 
 // ── Helpers ─────────────────────────────────────────────────────────────────

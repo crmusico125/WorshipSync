@@ -68,6 +68,8 @@ export const stage: {
   nextLabel: string
   lineup: PwaLineupItem[]
   currentLineupIdx: number
+  serviceDate: string | null
+  serviceTime: string | null
   audioState: { isPlaying: boolean; currentTime: number; duration: number; lineupItemId: number } | null
   videoState: { isPlaying: boolean; currentTime: number; duration: number; lineupItemId: number } | null
 } = {
@@ -79,6 +81,8 @@ export const stage: {
   nextLabel: '',
   lineup: [],
   currentLineupIdx: -1,
+  serviceDate: null,
+  serviceTime: null,
   audioState: null,
   videoState: null,
 }

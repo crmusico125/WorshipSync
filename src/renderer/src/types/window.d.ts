@@ -188,12 +188,13 @@ declare global {
         onClosed: (cb: () => void)     => () => void
       }
       pwa: {
-        syncLineup: (items: PwaLineupItem[], currentIdx: number) => void
+        syncLineup: (items: PwaLineupItem[], currentIdx: number, serviceDate: string | null, serviceTime: string | null) => void
         onStateUpdate: (cb: (update: PwaStateUpdate) => void) => () => void
         onAudioCmd: (cb: (data: { action: string; lineupItemId: number }) => void) => () => void
         broadcastAudioState: (state: { isPlaying: boolean; currentTime: number; duration: number; lineupItemId: number } | null) => void
         onVideoCmd: (cb: (data: { action: string; lineupItemId: number }) => void) => () => void
         broadcastVideoState: (state: { isPlaying: boolean; currentTime: number; duration: number; lineupItemId: number } | null) => void
+        onCountdownCmd: (cb: (action: string) => void) => () => void
       }
     }
   }

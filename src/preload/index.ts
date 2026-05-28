@@ -175,8 +175,8 @@ contextBridge.exposeInMainWorld('worshipsync', {
   },
 
   pwa: {
-    syncLineup: (items: unknown[], currentIdx: number) =>
-      ipcRenderer.send('pwa:syncLineup', items, currentIdx),
+    syncLineup: (items: unknown[], currentIdx: number, serviceDate: string | null, serviceTime: string | null) =>
+      ipcRenderer.send('pwa:syncLineup', items, currentIdx, serviceDate, serviceTime),
     onStateUpdate: (cb: (update: unknown) => void) => {
       ipcRenderer.on('pwa:stateUpdate', (_e, update) => cb(update))
       return () => ipcRenderer.removeAllListeners('pwa:stateUpdate')
@@ -193,6 +193,10 @@ contextBridge.exposeInMainWorld('worshipsync', {
     },
     broadcastVideoState: (state: unknown) =>
       ipcRenderer.send('pwa:broadcastVideoState', state),
+    onCountdownCmd: (cb: (action: string) => void) => {
+      ipcRenderer.on('pwa:countdownCmd', (_e, action) => cb(action))
+      return () => ipcRenderer.removeAllListeners('pwa:countdownCmd')
+    },
   },
 })
 

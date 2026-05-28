@@ -76,7 +76,7 @@ export function startStageServer(port = 4040): Promise<boolean> {
           connectedAt: Date.now(),
         }
         setSseClients([...getSseClients(), client])
-        client.send({ type: 'init', slide: stage.slide, blank: stage.blank, logo: stage.logo, countdown: stage.countdown, nextLines: stage.nextLines, nextSectionLabel: stage.nextLabel, lineup: stage.lineup, currentLineupIdx: stage.currentLineupIdx })
+        client.send({ type: 'init', slide: stage.slide, blank: stage.blank, logo: stage.logo, countdown: stage.countdown, nextLines: stage.nextLines, nextSectionLabel: stage.nextLabel, lineup: stage.lineup, currentLineupIdx: stage.currentLineupIdx, serviceDate: stage.serviceDate, serviceTime: stage.serviceTime })
         req.on('close', () => { setSseClients(getSseClients().filter(c => c !== client)) })
         sock.on('error', () => { setSseClients(getSseClients().filter(c => c !== client)) })
       } else if (req.url === '/controller') {
@@ -96,6 +96,8 @@ export function startStageServer(port = 4040): Promise<boolean> {
           currentSlideIdx: (stage.slide as any)?.slideIndex ?? -1,
           audioState: stage.audioState,
           videoState: stage.videoState,
+          serviceDate: stage.serviceDate,
+          serviceTime: stage.serviceTime,
         })
         res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' })
         res.end(payload)
@@ -247,6 +249,14 @@ function handleControllerCommand(req: IncomingMessage, res: ServerResponse): voi
         send('slide:countdown', data)
         stage.countdown = data
         broadcastAll({ type: 'countdown', data })
+        break
+      }
+      case 'countdown-start':
+      case 'countdown-stop': {
+        if (windows.control && !windows.control.isDestroyed()) {
+          windows.control.webContents.send('pwa:countdownCmd',
+            cmd.action === 'countdown-start' ? 'start' : 'stop')
+        }
         break
       }
       case 'audio-play':

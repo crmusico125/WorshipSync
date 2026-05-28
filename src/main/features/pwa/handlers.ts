@@ -3,10 +3,12 @@ import { stage, type PwaLineupItem } from '../../lib/state'
 import { broadcastAll } from '../../lib/broadcast'
 
 export function registerPwaHandlers(): void {
-  ipcMain.on('pwa:syncLineup', (_event, items: PwaLineupItem[], currentIdx: number) => {
+  ipcMain.on('pwa:syncLineup', (_event, items: PwaLineupItem[], currentIdx: number, serviceDate: string | null, serviceTime: string | null) => {
     stage.lineup = items
     stage.currentLineupIdx = currentIdx
-    broadcastAll({ type: 'lineup', items, currentIdx })
+    stage.serviceDate = serviceDate ?? null
+    stage.serviceTime = serviceTime ?? null
+    broadcastAll({ type: 'lineup', items, currentIdx, serviceDate, serviceTime })
   })
 
   ipcMain.on('pwa:broadcastAudioState', (_event, state: typeof stage.audioState) => {

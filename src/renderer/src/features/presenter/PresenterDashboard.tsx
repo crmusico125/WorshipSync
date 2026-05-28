@@ -604,8 +604,8 @@ export default function PresenterDashboard({
         lines: sl.lines,
       })),
     }))
-    window.worshipsync.pwa?.syncLineup?.(items, selectedSongIdx)
-  }, [liveSongs, selectedSongIdx, resolveTheme, resolveBg])
+    window.worshipsync.pwa?.syncLineup?.(items, selectedSongIdx, selectedService?.date ?? null, serviceTime)
+  }, [liveSongs, selectedSongIdx, resolveTheme, resolveBg, selectedService, serviceTime])
 
   // ── Slide projection ─────────────────────────────────────────────────────
   const sendSlide = useCallback(
@@ -697,6 +697,8 @@ export default function PresenterDashboard({
   // projection:ready callback so display moves restore the correct content.
   const countdownRunningRef = useRef(countdownRunning);
   countdownRunningRef.current = countdownRunning;
+  const startCountdownRef = useRef<(() => void) | null>(null);
+  const stopCountdownRef  = useRef<(() => void) | null>(null);
   const isBlankRef = useRef(isBlank);
   isBlankRef.current = isBlank;
   const isLogoRef = useRef(isLogo);
@@ -1048,7 +1050,9 @@ export default function PresenterDashboard({
   const getTargetTime = useCallback(() => {
     const tz = getEffectiveTz();
     const dateStr = selectedService?.date ?? new Date().toLocaleDateString("en-CA", { timeZone: tz });
-    return `${dateStr}T${serviceTime}:00`;
+    // Return a UTC ISO string (with Z suffix) so every consumer — projection window,
+    // stage display, PWA browser — parses it unambiguously regardless of timezone.
+    return new Date(`${dateStr}T${serviceTime}:00`).toISOString();
   }, [serviceTime, getEffectiveTz, selectedService]);
 
   // Restore whatever is currently active on a freshly created projection window.
@@ -1126,6 +1130,15 @@ export default function PresenterDashboard({
     pendingAudioPlayRef.current = null
     requestAnimationFrame(() => triggerAudioPlayRef.current?.())
   }, [selectedSongIdx, liveSongs])
+
+  // Handle countdown start/stop from PWA controller
+  useEffect(() => {
+    const cleanup = window.worshipsync.pwa?.onCountdownCmd?.((action: string) => {
+      if (action === 'start' && !countdownRunningRef.current) startCountdownRef.current?.()
+      else if (action === 'stop' && countdownRunningRef.current)  stopCountdownRef.current?.()
+    })
+    return () => cleanup?.()
+  }, [])
 
   // Handle video play/pause commands from PWA controller
   useEffect(() => {
@@ -1344,6 +1357,10 @@ export default function PresenterDashboard({
     window.worshipsync.slide.countdown({ targetTime: "", running: false });
     window.worshipsync.slide.blank(true);
   }, []);
+
+  // Keep refs current so the PWA countdown handler always calls the latest version
+  startCountdownRef.current = startCountdown;
+  stopCountdownRef.current  = stopCountdown;
 
   // Cleanup on unmount
   useEffect(() => {

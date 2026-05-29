@@ -1,14 +1,20 @@
 import { ipcMain } from 'electron'
-import { startStageServer, stopStageServer, getLocalIP, getMdnsHostname } from './server'
+import { startStageServer, stopStageServer, getLocalIP, getMdnsHostname, setControllerPin } from './server'
 import { getSseClients, getPwaClients, getStageServer, getStagePort } from '../../lib/state'
+import { readAppState } from '../app-state/handlers'
 
 // writeAppState is provided by a callback to avoid circular deps
 let _writeAppState: ((data: Record<string, unknown>) => void) | null = null
+// Tracks whether the server was auto-started by a live session (vs manually enabled)
+let _sessionAutoStarted = false
 
 export function registerStageDisplayHandlers(writeAppState: (data: Record<string, unknown>) => void): void {
   _writeAppState = writeAppState
 
   ipcMain.handle('stageDisplay:start', async (_e, port: number = 4040) => {
+    const state = readAppState()
+    const pin = (state.controllerPin as string) || null
+    setControllerPin(pin)
     const ok = await startStageServer(port)
     if (ok && _writeAppState) _writeAppState({ stageDisplayEnabled: true, stageDisplayPort: port })
     return { ok, url: `http://${getLocalIP()}:${getStagePort()}`, port: getStagePort() }
@@ -17,6 +23,31 @@ export function registerStageDisplayHandlers(writeAppState: (data: Record<string
   ipcMain.handle('stageDisplay:stop', () => {
     stopStageServer()
     if (_writeAppState) _writeAppState({ stageDisplayEnabled: false })
+    _sessionAutoStarted = false
+    return true
+  })
+
+  // Called automatically when operator goes live — starts server only if not already running
+  ipcMain.handle('stageDisplay:sessionStart', async () => {
+    if (!getStageServer()) {
+      const state = readAppState()
+      const port = (state.stageDisplayPort as number) || 4040
+      const pin = (state.controllerPin as string) || null
+      setControllerPin(pin)
+      await startStageServer(port)
+      _sessionAutoStarted = true
+    } else {
+      _sessionAutoStarted = false  // already running via always-on toggle
+    }
+    return { ok: true, url: `http://${getLocalIP()}:${getStagePort()}`, port: getStagePort() }
+  })
+
+  // Called when live session ends — stops server only if it was auto-started (not always-on)
+  ipcMain.handle('stageDisplay:sessionEnd', () => {
+    if (_sessionAutoStarted) {
+      stopStageServer()
+    }
+    _sessionAutoStarted = false
     return true
   })
 

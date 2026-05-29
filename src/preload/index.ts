@@ -158,9 +158,11 @@ contextBridge.exposeInMainWorld('worshipsync', {
     import: () => ipcRenderer.invoke('data:import'),
   },
   stageDisplay: {
-    start:     (port?: number) => ipcRenderer.invoke('stageDisplay:start', port),
-    stop:      ()              => ipcRenderer.invoke('stageDisplay:stop'),
-    getStatus: ()              => ipcRenderer.invoke('stageDisplay:getStatus'),
+    start:        (port?: number) => ipcRenderer.invoke('stageDisplay:start', port),
+    stop:         ()              => ipcRenderer.invoke('stageDisplay:stop'),
+    getStatus:    ()              => ipcRenderer.invoke('stageDisplay:getStatus'),
+    sessionStart: ()              => ipcRenderer.invoke('stageDisplay:sessionStart'),
+    sessionEnd:   ()              => ipcRenderer.invoke('stageDisplay:sessionEnd'),
   },
   confidence: {
     open:      (displayId?: number) => ipcRenderer.send('window:openConfidence', displayId),

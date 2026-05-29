@@ -881,6 +881,7 @@ export default function PresenterDashboard({
     setAudioPlaying(false); setAudioCurrentTime(0); setAudioDuration(0);
     window.worshipsync.slide.blank(true);
     window.worshipsync.window.closeProjection();
+    window.worshipsync.stageDisplay.sessionEnd().catch(() => {});
     onProjectionChange(false);
     onExitLive();
   };
@@ -1249,11 +1250,12 @@ export default function PresenterDashboard({
     return () => clearInterval(interval)
   }, [videoPlaying, liveSongs])
 
-  // When going live, start blank and register the projection:ready listener.
-  // The same listener fires after a display move — refs ensure it restores
-  // the current state rather than the initial blank.
+  // When going live, auto-start the network server (stage display + PWA controller)
+  // and register the projection:ready listener. Server stops automatically when
+  // the session ends unless the operator has "always-on" enabled in settings.
   useEffect(() => {
     if (!projectionOpen) return;
+    window.worshipsync.stageDisplay.sessionStart().catch(() => {});
     window.worshipsync.slide.blank(true);
     setIsBlank(true);
     setActiveSlideIdx(-1);

@@ -128,6 +128,17 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 #disconnected p{font-size:13px;color:var(--muted);line-height:1.5}
 .spinner{width:32px;height:32px;border:3px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .8s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── PIN overlay ── */
+#pin-overlay{display:none;position:fixed;inset:0;background:rgba(10,10,18,.97);z-index:1000;align-items:center;justify-content:center;flex-direction:column;gap:16px;text-align:center;padding:32px}
+#pin-overlay.show{display:flex}
+#pin-overlay h2{font-size:20px;font-weight:700}
+#pin-overlay p{font-size:13px;color:var(--muted);line-height:1.5;max-width:280px}
+.pin-input{background:var(--surface);border:2px solid var(--border);border-radius:12px;color:var(--text);font-size:24px;font-weight:700;letter-spacing:.3em;text-align:center;padding:12px 16px;width:200px;outline:none;-webkit-appearance:none}
+.pin-input:focus{border-color:var(--primary)}
+.pin-error{font-size:12px;color:var(--live);min-height:18px}
+.btn-pin{background:var(--primary);color:#fff;border:none;border-radius:12px;padding:14px 32px;font-size:14px;font-weight:700;cursor:pointer;width:200px;transition:opacity .12s}
+.btn-pin:active{opacity:.8}
 </style>
 </head>
 <body>
@@ -188,6 +199,16 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
   <p>Waiting for WorshipSync desktop app</p>
 </div>
 
+<!-- PIN overlay -->
+<div id="pin-overlay">
+  <div style="font-size:40px">🔒</div>
+  <h2>PIN Required</h2>
+  <p>Enter the PIN set by your operator to access the controller</p>
+  <input id="pin-input" class="pin-input" type="password" inputmode="numeric" pattern="[0-9]*" placeholder="••••" maxlength="8" onkeydown="if(event.key==='Enter')submitPin()">
+  <div id="pin-error" class="pin-error"></div>
+  <button class="btn-pin" onclick="submitPin()">Unlock</button>
+</div>
+
 <script>
 // ── State ──────────────────────────────────────────────────────────────────
 const S = {
@@ -206,6 +227,55 @@ const S = {
   videoState: null,   // { isPlaying, currentTime, duration, lineupItemId }
   serviceDate: null,  // 'YYYY-MM-DD'
   serviceTime: null,  // 'HH:MM'
+  pin: '',            // controller PIN (empty = no PIN required or not yet entered)
+}
+
+// ── PIN helpers ────────────────────────────────────────────────────────────
+function initPin() {
+  // URL param ?p= takes priority (used by QR code that embeds the PIN)
+  const params = new URLSearchParams(window.location.search)
+  const urlPin = params.get('p')
+  if (urlPin) {
+    S.pin = urlPin
+    try { localStorage.setItem('ws_pin', urlPin) } catch {}
+    return
+  }
+  // Fall back to locally stored PIN
+  try { S.pin = localStorage.getItem('ws_pin') || '' } catch {}
+}
+
+function showPinOverlay() {
+  document.getElementById('pin-overlay').classList.add('show')
+  setTimeout(() => {
+    const el = document.getElementById('pin-input')
+    if (el) { el.value = ''; el.focus() }
+  }, 50)
+}
+function hidePinOverlay() {
+  document.getElementById('pin-overlay').classList.remove('show')
+  document.getElementById('pin-error').textContent = ''
+}
+
+async function submitPin() {
+  const input = document.getElementById('pin-input')
+  const pin = (input.value || '').trim()
+  if (!pin) {
+    document.getElementById('pin-error').textContent = 'Please enter the PIN'
+    return
+  }
+  S.pin = pin
+  const status = await cmd('ping')
+  if (status === 401) {
+    S.pin = ''
+    try { localStorage.removeItem('ws_pin') } catch {}
+    document.getElementById('pin-error').textContent = 'Incorrect PIN — try again'
+    input.value = ''
+    input.focus()
+  } else if (status === 200) {
+    try { localStorage.setItem('ws_pin', pin) } catch {}
+    hidePinOverlay()
+    fetchState()
+  }
 }
 
 // ── SSE Connection ─────────────────────────────────────────────────────────
@@ -242,6 +312,12 @@ async function fetchState() {
     const r = await fetch('/controller/state')
     if (!r.ok) return
     const s = await r.json()
+    // If PIN is required and we don't have one, show the PIN overlay
+    if (s.pinRequired && !S.pin) {
+      showPinOverlay()
+      return
+    }
+    hidePinOverlay()
     S.blank = s.blank ?? false
     S.logo = s.logo ?? false
     S.slide = s.slide ?? null
@@ -330,12 +406,20 @@ function handleEvent(ev) {
 // ── Commands ───────────────────────────────────────────────────────────────
 async function cmd(action, data = {}) {
   try {
-    await fetch('/controller/cmd', {
+    const body = S.pin ? { action, pin: S.pin, ...data } : { action, ...data }
+    const r = await fetch('/controller/cmd', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, ...data }),
+      body: JSON.stringify(body),
     })
-  } catch { /* offline — ignore */ }
+    if (r.status === 401) {
+      // PIN was invalidated (e.g. admin changed it) — clear and re-prompt
+      S.pin = ''
+      try { localStorage.removeItem('ws_pin') } catch {}
+      showPinOverlay()
+    }
+    return r.status
+  } catch { return 0 }
 }
 
 function showSlide(lineupIdx, slideIdx) {
@@ -678,6 +762,7 @@ function typeLabel(t) {
 }
 
 // ── Boot ───────────────────────────────────────────────────────────────────
+initPin()
 connect()
 </script>
 </body>

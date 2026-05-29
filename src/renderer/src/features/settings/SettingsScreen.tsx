@@ -3,7 +3,7 @@ import { QRCodeSVG } from "qrcode.react"
 import {
   Download, Upload, CheckCircle2, AlertCircle, Database, Clock,
   Church, CalendarDays, Plus, Trash2, X, Monitor, Wifi, Copy, Check,
-  Users,
+  Users, Lock,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -204,11 +204,13 @@ export default function SettingsScreen() {
   const [stageMdnsURL, setStageMdnsURL]     = useState("")
   const [stagePortInput, setStagePortInput] = useState("4040")
   const [stageClients, setStageClients]     = useState(0)
-  const [stageClientList, setStageClientList] = useState<{ ip: string; device: string; connectedAt: number; connectedForSeconds: number }[]>([])
-  const [stageCopied, setStageCopied]       = useState(false)
+  const [stageClientList, setStageClientList] = useState<{ ip: string; device: string; connectedAt: number; connectedForSeconds: number; type?: 'stage' | 'pwa' }[]>([])
+  const [stageCopied, setStageCopied]         = useState(false)
   const [stageMdnsCopied, setStageMdnsCopied] = useState(false)
-  const [stageLoading, setStageLoading]     = useState(false)
-  const [showQR, setShowQR]                 = useState(false)
+  const [stageLoading, setStageLoading]       = useState(false)
+  const [showQR, setShowQR]                   = useState<'controller' | 'stage' | null>(null)
+  const [controllerPin, setControllerPin]     = useState("")
+  const [pinSaved, setPinSaved]               = useState(false)
 
   const refreshStageStatus = useCallback(async () => {
     const s = await window.worshipsync.stageDisplay.getStatus()
@@ -228,6 +230,7 @@ export default function SettingsScreen() {
       if (state.serviceTimezone)  { setServiceTimezone(state.serviceTimezone); setNewTimezone(state.serviceTimezone) }
       if (state.projectionFontSize) setProjectionFontSize(state.projectionFontSize)
       if (state.slideTransitionMs !== undefined) setSlideTransitionMs(state.slideTransitionMs)
+      if (state.controllerPin !== undefined) setControllerPin(state.controllerPin ?? "")
     }).catch(() => {})
     refreshStageStatus().catch(() => {})
   }, [refreshStageStatus])
@@ -285,6 +288,14 @@ export default function SettingsScreen() {
     setTimeout(() => setTransitionSaved(false), 2000)
   }
 
+  const handleSavePin = async () => {
+    const pin = controllerPin.trim()
+    await window.worshipsync.appState.set({ controllerPin: pin || null })
+    setControllerPin(pin)
+    setPinSaved(true)
+    setTimeout(() => setPinSaved(false), 2000)
+  }
+
   const handleExport = async () => {
     setDataStatus(null)
     const res = await (window.worshipsync as any).data.export()
@@ -322,13 +333,6 @@ export default function SettingsScreen() {
     })
   }
 
-  const handleCopyMdnsURL = () => {
-    navigator.clipboard.writeText(stageMdnsURL).then(() => {
-      setStageMdnsCopied(true)
-      setTimeout(() => setStageMdnsCopied(false), 2000)
-    })
-  }
-
   // ── Nav items ─────────────────────────────────────────────────────────────
 
   type Tab = "church" | "service" | "projection" | "stage" | "data"
@@ -338,7 +342,7 @@ export default function SettingsScreen() {
     { value: "church",     icon: Church,   label: "Church"        },
     { value: "service",    icon: Clock,    label: "Service"       },
     { value: "projection", icon: Monitor,  label: "Projection"    },
-    { value: "stage",      icon: Wifi,     label: "Stage Display" },
+    { value: "stage",      icon: Wifi,     label: "Network" },
     { value: "data",       icon: Database, label: "Data"          },
   ]
 
@@ -572,22 +576,22 @@ export default function SettingsScreen() {
           </div>
         )}
 
-        {/* Stage display */}
+        {/* Network / Remote Control */}
         {activeTab === "stage" && (
           <div className="p-6 flex flex-col gap-4 max-w-2xl">
             <Card>
               <CardHeader
                 icon={Wifi}
-                title="Stage display"
-                description="Open this URL on any phone, tablet, or laptop on the same Wi-Fi network to see a live stage display — current lyrics, song info, and countdown."
+                title="Network & Remote Control"
+                description="Enables the stage display and PWA controller on your local Wi-Fi network. Starts automatically when you go live — or turn this on to keep it running between services."
               />
 
               {/* Toggle */}
               <div className="flex items-center justify-between mb-4">
                 <div>
-                  <p className="text-sm font-medium">Stage display server</p>
+                  <p className="text-sm font-medium">Always-on network access</p>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    {stageRunning ? "Running — devices can connect now" : "Stopped"}
+                    {stageRunning ? "Running — devices can connect now" : "Off — will start automatically when you go live"}
                   </p>
                 </div>
                 <button
@@ -628,17 +632,23 @@ export default function SettingsScreen() {
                     <span className="text-xs font-medium text-green-500">Live on your local network</span>
                   </div>
 
-                  {/* mDNS URL — works on most phones, tablets, laptops */}
+                  {/* PWA Controller URL */}
                   <div className="flex flex-col gap-1">
                     <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      Device name <span className="normal-case font-normal">(phones, tablets, laptops on same Wi-Fi)</span>
+                      PWA Controller <span className="normal-case font-normal">(remote control from any phone or tablet)</span>
                     </span>
                     <div className="flex items-center gap-2">
                       <code className="flex-1 text-sm font-mono font-semibold bg-background border border-border rounded-lg px-3 py-2 truncate">
-                        {stageMdnsURL}
+                        {stageMdnsURL ? `${stageMdnsURL}/controller` : `${stageURL}/controller`}
                       </code>
                       <button
-                        onClick={handleCopyMdnsURL}
+                        onClick={() => {
+                          const url = stageMdnsURL ? `${stageMdnsURL}/controller` : `${stageURL}/controller`
+                          navigator.clipboard.writeText(url).then(() => {
+                            setStageMdnsCopied(true)
+                            setTimeout(() => setStageMdnsCopied(false), 2000)
+                          })
+                        }}
                         className="h-9 px-3 flex items-center gap-1.5 rounded-md border border-border text-xs font-medium hover:bg-accent transition-colors shrink-0"
                       >
                         {stageMdnsCopied
@@ -648,14 +658,14 @@ export default function SettingsScreen() {
                     </div>
                   </div>
 
-                  {/* IP URL — fallback for smart TVs and older devices */}
+                  {/* Stage Display URL */}
                   <div className="flex flex-col gap-1">
                     <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      IP address <span className="normal-case font-normal">(smart TVs, older devices)</span>
+                      Stage Display <span className="normal-case font-normal">(lyrics for worship leader)</span>
                     </span>
                     <div className="flex items-center gap-2">
                       <code className="flex-1 text-sm font-mono bg-background border border-border rounded-lg px-3 py-2 truncate text-muted-foreground">
-                        {stageURL}
+                        {stageMdnsURL || stageURL}
                       </code>
                       <button
                         onClick={handleCopyURL}
@@ -668,34 +678,53 @@ export default function SettingsScreen() {
                     </div>
                   </div>
 
-                  {/* QR code */}
-                  <div>
+                  {/* QR codes */}
+                  <div className="flex gap-2">
                     <button
-                      onClick={() => setShowQR(v => !v)}
-                      className="text-xs font-medium text-primary hover:text-primary/80 transition-colors"
+                      onClick={() => setShowQR(v => v === 'controller' ? null : 'controller')}
+                      className={`text-xs font-medium transition-colors flex items-center gap-1 ${showQR === 'controller' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
                     >
-                      {showQR ? "Hide QR Code" : "Show QR Code"}
+                      {showQR === 'controller' ? "Hide" : "QR"} — Controller
                     </button>
-                    {showQR && (
-                      <div className="mt-3 flex flex-col items-center gap-2">
+                    <span className="text-muted-foreground/40">·</span>
+                    <button
+                      onClick={() => setShowQR(v => v === 'stage' ? null : 'stage')}
+                      className={`text-xs font-medium transition-colors flex items-center gap-1 ${showQR === 'stage' ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+                    >
+                      {showQR === 'stage' ? "Hide" : "QR"} — Stage Display
+                    </button>
+                  </div>
+                  {showQR === 'controller' && (() => {
+                    const base = stageMdnsURL || stageURL
+                    const controllerUrl = controllerPin.trim()
+                      ? `${base}/controller?p=${encodeURIComponent(controllerPin.trim())}`
+                      : `${base}/controller`
+                    return (
+                      <div className="flex flex-col items-center gap-2">
                         <div className="bg-white p-3 rounded-xl inline-block">
-                          <QRCodeSVG
-                            value={stageMdnsURL || stageURL}
-                            size={180}
-                            level="M"
-                          />
+                          <QRCodeSVG value={controllerUrl} size={180} level="M" />
                         </div>
                         <p className="text-[11px] text-muted-foreground text-center">
-                          Scan to open the stage display on any device on the same Wi-Fi
+                          Scan to open the PWA controller
+                          {controllerPin.trim() ? " — PIN is embedded in the QR code" : ""}
                         </p>
-                        {stageMdnsURL && stageURL && (
-                          <p className="text-[10px] text-muted-foreground/60 text-center font-mono">
-                            fallback: {stageURL}
-                          </p>
-                        )}
                       </div>
-                    )}
-                  </div>
+                    )
+                  })()}
+                  {showQR === 'stage' && (
+                    <div className="flex flex-col items-center gap-2">
+                      <div className="bg-white p-3 rounded-xl inline-block">
+                        <QRCodeSVG
+                          value={stageMdnsURL || stageURL}
+                          size={180}
+                          level="M"
+                        />
+                      </div>
+                      <p className="text-[11px] text-muted-foreground text-center">
+                        Scan to open the stage display (lyrics monitor)
+                      </p>
+                    </div>
+                  )}
 
                   {/* Connected devices */}
                   <div className="flex flex-col gap-2">
@@ -722,6 +751,15 @@ export default function SettingsScreen() {
                           >
                             <span className="h-1.5 w-1.5 rounded-full bg-green-500 shrink-0" />
                             <span className="text-xs font-medium flex-1">{c.device}</span>
+                            {c.type && (
+                              <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${
+                                c.type === 'pwa'
+                                  ? 'bg-primary/10 text-primary'
+                                  : 'bg-muted text-muted-foreground'
+                              }`}>
+                                {c.type === 'pwa' ? 'Controller' : 'Stage'}
+                              </span>
+                            )}
                             <span className="text-[11px] text-muted-foreground font-mono">{c.ip}</span>
                             <span className="text-[11px] text-muted-foreground">
                               {c.connectedForSeconds < 60
@@ -739,18 +777,49 @@ export default function SettingsScreen() {
 
             <Card>
               <CardHeader
+                icon={Lock}
+                title="Controller PIN"
+                description="Optional PIN to prevent unauthorized access to the PWA controller. Leave blank to allow anyone on the same Wi-Fi to control slides."
+              />
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="password"
+                    placeholder="Leave blank for no PIN"
+                    value={controllerPin}
+                    maxLength={8}
+                    onChange={(e) => setControllerPin(e.target.value.replace(/[^0-9a-zA-Z]/g, ''))}
+                    className="font-mono tracking-widest w-48"
+                  />
+                  <Button size="sm" onClick={handleSavePin}>Save</Button>
+                  {pinSaved && (
+                    <span className="text-xs text-green-500 flex items-center gap-1">
+                      <CheckCircle2 className="h-3.5 w-3.5" /> Saved
+                    </span>
+                  )}
+                </div>
+                {controllerPin.trim() && (
+                  <p className="text-[11px] text-muted-foreground">
+                    The controller QR code will embed this PIN so scanning auto-unlocks.
+                    Share the PIN separately with anyone typing the URL manually.
+                  </p>
+                )}
+              </div>
+            </Card>
+
+            <Card>
+              <CardHeader
                 icon={Monitor}
-                title="What the stage display shows"
-                description="The page updates in real-time as slides advance. No app install required on the device — just a browser."
+                title="What's available on the network"
+                description="No app install required — just a browser on the same Wi-Fi. The server starts automatically when you go live."
               />
               <ul className="text-xs text-muted-foreground space-y-1.5">
                 {[
-                  "Current slide lyrics (large text)",
-                  "Song title, artist, and section label",
-                  "Slide position (e.g. 2 / 5)",
-                  "Countdown timer when active",
-                  "Blank indicator when screen is blanked",
-                  "Auto-reconnects if connection drops",
+                  "PWA Controller (/controller) — full remote control of slides, media, and countdown from any phone or tablet",
+                  "Stage Display (/) — current lyrics, song title, and countdown for the worship leader",
+                  "Both update in real-time as slides advance",
+                  "Auto-reconnect if the connection drops",
+                  "Starts automatically when you go live",
                 ].map(item => (
                   <li key={item} className="flex items-start gap-2">
                     <CheckCircle2 className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />

@@ -45,7 +45,13 @@ export function getLocalIP(): string {
   return 'localhost'
 }
 
-export function startStageServer(port = 4040): Promise<boolean> {
+let _controllerPin: string | null = null
+
+export function setControllerPin(pin: string | null): void { _controllerPin = pin ?? null }
+export function getControllerPin(): string | null { return _controllerPin }
+
+export function startStageServer(port = 4040, pin?: string | null): Promise<boolean> {
+  if (pin !== undefined) _controllerPin = pin ?? null
   return new Promise((resolve) => {
     if (getStageServer()) { resolve(true); return }
     setStagePort(port)
@@ -87,7 +93,7 @@ export function startStageServer(port = 4040): Promise<boolean> {
           req.on('close', () => { setSseClients(getSseClients().filter(c => c !== client)) })
           sock.on('error', () => { setSseClients(getSseClients().filter(c => c !== client)) })
         }
-      } else if (req.url === '/controller') {
+      } else if (req.url === '/controller' || req.url?.startsWith('/controller?')) {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' })
         res.end(PWA_CONTROLLER_HTML)
 
@@ -106,6 +112,7 @@ export function startStageServer(port = 4040): Promise<boolean> {
           videoState: stage.videoState,
           serviceDate: stage.serviceDate,
           serviceTime: stage.serviceTime,
+          pinRequired: !!_controllerPin,
         })
         res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' })
         res.end(payload)
@@ -156,6 +163,10 @@ function handleControllerCommand(req: IncomingMessage, res: ServerResponse): voi
     let cmd: Record<string, unknown>
     try { cmd = JSON.parse(body) } catch {
       res.writeHead(400, cors); res.end(JSON.stringify({ error: 'bad json' })); return
+    }
+
+    if (_controllerPin && cmd.pin !== _controllerPin) {
+      res.writeHead(401, cors); res.end(JSON.stringify({ error: 'unauthorized' })); return
     }
 
     const send = (channel: string, ...args: unknown[]) => {
@@ -305,6 +316,8 @@ function handleControllerCommand(req: IncomingMessage, res: ServerResponse): voi
         }
         break
       }
+      case 'ping':
+        break  // no-op — used to verify PIN without side effects
       default:
         res.writeHead(400, cors); res.end(JSON.stringify({ error: 'unknown action' })); return
     }

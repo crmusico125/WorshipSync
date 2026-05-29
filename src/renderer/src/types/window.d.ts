@@ -176,8 +176,12 @@ declare global {
           clients: number
           localIP: string
           allIPs: { label: string; ip: string; url: string }[]
-          clientList: { ip: string; device: string; connectedAt: number; connectedForSeconds: number }[]
+          stageClients: number
+          pwaClients: number
+          clientList: { ip: string; device: string; connectedAt: number; connectedForSeconds: number; type: 'stage' | 'pwa' }[]
         }>
+        sessionStart: () => Promise<{ ok: boolean; url: string; port: number }>
+        sessionEnd:   () => Promise<boolean>
       }
       confidence: {
         open:     (displayId?: number) => void

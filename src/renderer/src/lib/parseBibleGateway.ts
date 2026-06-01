@@ -53,8 +53,9 @@ export function parseBibleGatewayText(raw: string): ParsedScripture | null {
     const line = allLines[i]; if (!line) continue
     if (/^\d/.test(line)) break
     const cleaned = line.replace(/[()]/g, '').trim()
-    for (const [name, abbr] of Object.entries(SCRIPTURE_VERSION_MAP)) {
-      if (cleaned.toLowerCase().includes(name.toLowerCase())) { version = abbr; break }
+    const lc = cleaned.toLowerCase()
+    for (const [name, abbr] of Object.entries(SCRIPTURE_VERSION_MAP).sort((a, b) => b[0].length - a[0].length)) {
+      if (lc.includes(name.toLowerCase())) { version = abbr; break }
     }
     if (version) break
     if (/^[A-Z]{2,10}$/.test(cleaned)) { version = cleaned; break }

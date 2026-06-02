@@ -634,24 +634,26 @@ export default function PresenterDashboard({
       liveItemIdxRef.current  = songIdx;
       liveSlideIdxRef.current = slideIdx;
 
-      // Compute next slide for stage display
+      // Compute next slide for stage display / confidence monitor.
+      // Skip terminal blank slides so the "next" preview is always real content.
       let nextLines: string[] | undefined;
       let nextSectionLabel: string | undefined;
-      const nextSlide = song.slides[slideIdx + 1];
-      if (nextSlide && nextSlide.sectionType !== "blank" && nextSlide.lines.filter(Boolean).length) {
-        nextLines = nextSlide.lines;
-        nextSectionLabel = nextSlide.sectionLabel;
+      const isRealSlide = (s: { sectionType: string; lines: string[] }) =>
+        s.sectionType !== "blank" && s.lines.filter(Boolean).length > 0;
+      const nextSlideInSong = song.slides.slice(slideIdx + 1).find(isRealSlide);
+      if (nextSlideInSong) {
+        nextLines = nextSlideInSong.lines;
+        nextSectionLabel = nextSlideInSong.sectionLabel;
       }
       if (!nextLines) {
-        // Find next lineup item with real slides (skip sections which have slides:[])
-        let nextSong: typeof liveSongs[0] | null = null;
+        // Cross-item: skip items with no real content (e.g. empty notes, section dividers)
         for (let k = songIdx + 1; k < liveSongs.length; k++) {
-          if (liveSongs[k].slides.length > 0) { nextSong = liveSongs[k]; break; }
-        }
-        const firstNextSlide = nextSong?.slides.find((s) => s.sectionType !== "blank");
-        if (firstNextSlide && firstNextSlide.lines.filter(Boolean).length) {
-          nextLines = firstNextSlide.lines;
-          nextSectionLabel = `${nextSong!.title} \u2014 ${firstNextSlide.sectionLabel}`;
+          const firstReal = liveSongs[k].slides.find(isRealSlide);
+          if (firstReal) {
+            nextLines = firstReal.lines;
+            nextSectionLabel = `${liveSongs[k].title} \u2014 ${firstReal.sectionLabel}`;
+            break;
+          }
         }
       }
 
@@ -695,6 +697,12 @@ export default function PresenterDashboard({
             textShadowOpacity: theme.textShadowOpacity,
             maxLinesPerSlide: theme.maxLinesPerSlide,
           },
+        });
+        // Explicitly broadcast next lines so the confidence monitor receives them
+        // via its dedicated stageNext listener (belt-and-suspenders alongside the payload)
+        window.worshipsync.slide.stageNext({
+          nextLines: nextLines ?? [],
+          nextSectionLabel: nextSectionLabel ?? "",
         });
       }
     },

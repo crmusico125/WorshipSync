@@ -176,6 +176,29 @@ function handleControllerCommand(req: IncomingMessage, res: ServerResponse): voi
         windows.confidence.webContents.send(channel, ...args)
     }
 
+    // Compute next lines for a given lineup position — used for both SSE and confidence IPC.
+    const computeNext = (lineupIdx: number, slideIdx: number) => {
+      const itm = stage.lineup[lineupIdx]
+      if (!itm) return null
+      const nextInItem = itm.slides[slideIdx + 1]
+      if (nextInItem) return { nextLines: nextInItem.lines, nextSectionLabel: nextInItem.sectionLabel ?? '' }
+      for (let k = lineupIdx + 1; k < stage.lineup.length; k++) {
+        const ni = stage.lineup[k]
+        if (ni.slides.length > 0) {
+          return { nextLines: ni.slides[0].lines, nextSectionLabel: `${ni.title} — ${ni.slides[0].sectionLabel ?? ''}` }
+        }
+      }
+      return null
+    }
+
+    // Sends slide:show: original payload to projection, next-lines-augmented to confidence.
+    const sendSlideShow = (payload: ReturnType<typeof buildSlidePayload>, augmented: typeof payload & { nextLines?: string[]; nextSectionLabel?: string }) => {
+      if (windows.projection && !windows.projection.isDestroyed())
+        windows.projection.webContents.send('slide:show', payload)
+      if (windows.confidence && !windows.confidence.isDestroyed())
+        windows.confidence.webContents.send('slide:show', augmented)
+    }
+
     switch (cmd.action) {
       case 'blank': {
         const isBlank = Boolean(cmd.value)
@@ -231,14 +254,16 @@ function handleControllerCommand(req: IncomingMessage, res: ServerResponse): voi
 
         const slide = item.slides[slideIdx as number]
         if (!slide) { res.writeHead(404, cors); res.end(JSON.stringify({ error: 'slide not found' })); return }
+        const lineupIdx = stage.lineup.indexOf(item)
+        stage.currentLineupIdx = lineupIdx
         const payload = buildSlidePayload(item, slide)
-        send('slide:show', payload)
+        const next = computeNext(lineupIdx, slideIdx as number)
+        const augmented = next ? { ...payload, ...next } : payload
+        sendSlideShow(payload, augmented)
         stage.slide = payload
         stage.blank = false
         stage.logo = false
-        const lineupIdx = stage.lineup.indexOf(item)
-        stage.currentLineupIdx = lineupIdx
-        broadcastAll({ type: 'slide', payload, lineupIdx, slideIdx })
+        broadcastAll({ type: 'slide', payload: augmented, lineupIdx, slideIdx })
         broadcastStageNext(item, slideIdx as number)
         notifyControl({ type: 'slide', lineupIdx, slideIdx })
         break
@@ -257,12 +282,14 @@ function handleControllerCommand(req: IncomingMessage, res: ServerResponse): voi
           const tSlide = tItem.slides[si]
           if (!tSlide) return
           const payload = buildSlidePayload(tItem, tSlide)
-          send('slide:show', payload)
+          stage.currentLineupIdx = li
+          const next = computeNext(li, si)
+          const augmented = next ? { ...payload, ...next } : payload
+          sendSlideShow(payload, augmented)
           stage.slide = payload
           stage.blank = false
           stage.logo = false
-          stage.currentLineupIdx = li
-          broadcastAll({ type: 'slide', payload, lineupIdx: li, slideIdx: si })
+          broadcastAll({ type: 'slide', payload: augmented, lineupIdx: li, slideIdx: si })
           broadcastStageNext(tItem, si)
           notifyControl({ type: 'slide', lineupIdx: li, slideIdx: si })
         }
@@ -350,10 +377,11 @@ function broadcastStageNext(item: import('../../lib/state').PwaLineupItem, curre
     // Try the first slide of the next lineup item
     const nextItem = stage.lineup[stage.currentLineupIdx + 1]
     const firstSlide = nextItem?.slides[0]
-    if (firstSlide) {
+    if (firstSlide && nextItem) {
+      const nextSectionLabel = `${nextItem.title} — ${firstSlide.sectionLabel}`
       stage.nextLines = firstSlide.lines
-      stage.nextLabel = firstSlide.sectionLabel
-      broadcastAll({ type: 'stageNext', nextLines: firstSlide.lines, nextSectionLabel: firstSlide.sectionLabel })
+      stage.nextLabel = nextSectionLabel
+      broadcastAll({ type: 'stageNext', nextLines: firstSlide.lines, nextSectionLabel })
     } else {
       stage.nextLines = null
       stage.nextLabel = ''

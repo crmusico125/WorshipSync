@@ -11,6 +11,10 @@ contextBridge.exposeInMainWorld('worshipsync', {
     videoSeek: (time: number) => ipcRenderer.send('slide:videoSeek', time),
     videoLoop: (loop: boolean) => ipcRenderer.send('slide:videoLoop', loop),
     stageNext: (data: { nextLines: string[]; nextSectionLabel: string }) => ipcRenderer.send('slide:stageNext', data),
+    onStageNext: (cb: (data: { nextLines: string[]; nextSectionLabel: string }) => void) => {
+      ipcRenderer.on('slide:stageNext', (_e, data) => cb(data))
+      return () => ipcRenderer.removeAllListeners('slide:stageNext')
+    },
 
     onShow: (cb: (payload: SlidePayload) => void) => {
       ipcRenderer.on('slide:show', (_e, payload) => cb(payload))

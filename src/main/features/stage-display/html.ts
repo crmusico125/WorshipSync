@@ -131,7 +131,7 @@ function updateNext(nextLines,nextSectionLabel,showSongTitle){
   if(!nextLines||!nextLines.length){wrap.style.display='none';return;}
   wrap.style.display='flex';
   var rawIsNew=!!(nextSectionLabel&&nextSectionLabel.indexOf('—')!==-1);
-  var isNew=!!showSongTitle&&rawIsNew;
+  var isNew=rawIsNew;
   wrap.classList.toggle('newsong',isNew);
   if(isNew){
     var parts=nextSectionLabel.split('—');

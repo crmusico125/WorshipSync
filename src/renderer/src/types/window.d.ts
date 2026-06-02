@@ -74,6 +74,7 @@ declare global {
         videoSeek: (time: number) => void
         videoLoop: (loop: boolean) => void
         stageNext: (data: { nextLines: string[]; nextSectionLabel: string }) => void
+        onStageNext: (cb: (data: { nextLines: string[]; nextSectionLabel: string }) => void) => () => void
         onShow: (cb: (payload: SlidePayload) => void) => () => void
         onBlank: (cb: (isBlank: boolean) => void) => () => void
         onLogo: (cb: (show: boolean) => void) => () => void

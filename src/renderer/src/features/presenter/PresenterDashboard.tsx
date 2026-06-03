@@ -9,6 +9,7 @@ import {
   MonitorOff,
   ChevronRight,
   ChevronDown,
+  ChevronUp,
   Music,
   Pencil,
   Cast,
@@ -233,6 +234,7 @@ export default function PresenterDashboard({
   >(undefined);
   const [confidenceOpen, setConfidenceOpen] = useState(false);
   const [selectedConfidenceDisplayId, setSelectedConfidenceDisplayId] = useState<number | undefined>(undefined);
+  const [outputBarCollapsed, setOutputBarCollapsed] = useState(false);
   const slideGridRef    = useRef<HTMLDivElement>(null);
   const liveItemIdxRef  = useRef<number>(-1);
   const liveSlideIdxRef = useRef<number>(-1);
@@ -1801,6 +1803,10 @@ export default function PresenterDashboard({
         </div>
       </div>
 
+      {/* ── CENTER + RIGHT + OUTPUT BAR column ── */}
+      <div className="flex-1 flex flex-col overflow-hidden min-h-0">
+      <div className="flex-1 flex overflow-hidden min-h-0">
+
       {/* ═════ CENTER: Main Slide Area ═════ */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-background">
         {currentSong?.itemType === "section" ? (
@@ -2461,7 +2467,7 @@ export default function PresenterDashboard({
                             /* Scripture: verse text centered + reference at bottom */
                             <div className="absolute inset-0 flex flex-col px-2 pt-2 pb-1.5">
                               <div className="flex-1 flex items-center justify-center min-h-0">
-                                <p className="text-center font-bold text-[11px] leading-snug whitespace-pre-wrap relative z-10"
+                                <p className="text-center font-bold text-[10px] leading-snug whitespace-pre-wrap relative z-10"
                                   style={{ color: effectiveTheme.textColor, fontFamily: effectiveTheme.fontFamily }}>
                                   {slide.lines.join("\n")}
                                 </p>
@@ -2474,7 +2480,7 @@ export default function PresenterDashboard({
                           ) : (
                             /* Songs / other: original centered layout */
                             <div className="absolute inset-0 flex items-center justify-center px-2">
-                              <p className="relative z-10 text-center font-bold text-[13px] leading-snug whitespace-pre-wrap"
+                              <p className="relative z-10 text-center font-bold text-[11px] leading-snug whitespace-pre-wrap"
                                 style={{ color: effectiveTheme.textColor, fontFamily: effectiveTheme.fontFamily, textShadow: effectiveTheme.textShadowOpacity > 0 ? `0 1px 3px rgba(0,0,0,${effectiveTheme.textShadowOpacity / 100})` : "none" }}>
                                 {slide.sectionType === "blank" ? "" : slide.lines.join("\n")}
                               </p>
@@ -2779,16 +2785,108 @@ export default function PresenterDashboard({
           </div>
         )}
 
-        {/* Output Routing */}
-        <div className="px-3 py-3 border-b border-border flex-1 overflow-y-auto">
-          <h3 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2.5">Output Routing</h3>
+        <div className="flex-1" />
 
-          <div className="flex items-center gap-2 mb-2 p-2 rounded-md bg-background/40 border border-border">
-            <span className="h-2 w-2 rounded-full bg-green-500 shrink-0" />
-            <div className="flex-1 min-w-0">
-              <p className="text-[10px] font-semibold text-muted-foreground mb-0.5">Main Projection</p>
+        {/* Next Slide button */}
+        <div className="p-3 shrink-0">
+          <button
+            onClick={goNextSlide}
+            className="w-full py-3 bg-foreground text-background rounded-lg text-sm font-bold hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
+          >
+            Next Slide <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      </div>{/* end inner row */}
+
+      {/* ═════ BOTTOM OUTPUT BAR ═════ */}
+      {outputBarCollapsed ? (
+
+        /* ── Collapsed: 32px status strip ── */
+        <div className="shrink-0 border-t border-border bg-card flex items-center px-4 gap-3" style={{ height: 32 }}>
+          <div className="flex items-center gap-1.5 flex-1 min-w-0">
+            <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${!isBlank && !isLogo && activeSlideIdx >= 0 ? "bg-green-500" : "bg-muted-foreground/30"}`} />
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground shrink-0">Main</span>
+            <span className="text-[10px] text-muted-foreground/60 truncate">
+              — {displays.find(d => d.id === selectedDisplayId)?.label ?? "—"}
+            </span>
+          </div>
+          <div className="h-4 w-px bg-border shrink-0" />
+          <div className="flex items-center gap-1.5 flex-1 min-w-0">
+            <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${confidenceOpen ? "bg-amber-400" : "bg-muted-foreground/30"}`} />
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground shrink-0">Confidence</span>
+            <span className={`text-[10px] font-semibold shrink-0 ${confidenceOpen ? "text-amber-400" : "text-muted-foreground/50"}`}>
+              {confidenceOpen ? "ON" : "OFF"}
+            </span>
+            {confidenceOpen && (
+              <span className="text-[10px] text-muted-foreground/60 truncate">
+                — {displays.find(d => d.id === selectedConfidenceDisplayId)?.label ?? "—"}
+              </span>
+            )}
+          </div>
+          <button
+            onClick={() => setOutputBarCollapsed(false)}
+            className="ml-auto shrink-0 flex items-center gap-1.5 h-6 px-2 rounded text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
+            title="Expand output bar"
+          >
+            <Tv className="h-3 w-3" />
+            <span className="text-[9px] font-black uppercase tracking-widest">Outputs</span>
+            <ChevronUp className="h-3 w-3" />
+          </button>
+        </div>
+
+      ) : (
+
+        /* ── Expanded: full 116px bar ── */
+        <div className="shrink-0 border-t border-border bg-card flex" style={{ height: 125 }}>
+
+          {/* ─ Main Projection ─ */}
+          <div className="flex-1 flex items-center gap-3 px-4 border-r border-border min-w-0">
+            <div className="shrink-0 rounded-md overflow-hidden border border-border bg-black relative" style={{ width: 180, height: 101 }}>
+              {/* Background layer */}
+              {!isBlank && !isLogo && effectiveBg && currentSlide?.sectionType !== "blank" && (
+                effectiveBg.startsWith("color:") ? (
+                  <div className="absolute inset-0" style={{ background: effectiveBg.replace("color:", "") }} />
+                ) : /\.(mp4|webm|mov)$/i.test(effectiveBg) ? (
+                  <video src={`file://${encodeURI(effectiveBg)}`} className="absolute inset-0 w-full h-full object-cover" muted preload="metadata" />
+                ) : (
+                  <>
+                    <img src={`file://${effectiveBg}`} className="absolute inset-0 w-full h-full object-cover" alt="" />
+                    <div className="absolute inset-0" style={{ background: `rgba(0,0,0,${effectiveTheme.overlayOpacity / 100})` }} />
+                  </>
+                )
+              )}
+              {/* Content / state overlay */}
+              {isLogo ? (
+                <div className="absolute inset-0 bg-gradient-to-br from-zinc-900 to-black flex flex-col items-center justify-center gap-1">
+                  <Tv className="h-4 w-4 text-muted-foreground/40" />
+                  <span className="text-[8px] font-bold uppercase tracking-widest text-muted-foreground/40">Logo</span>
+                </div>
+              ) : isBlank ? (
+                <div className="absolute inset-0 bg-black flex flex-col items-center justify-center gap-1">
+                  <MonitorOff className="h-4 w-4 text-muted-foreground/25" />
+                  <span className="text-[8px] font-bold uppercase tracking-widest text-muted-foreground/25">Blank</span>
+                </div>
+              ) : currentSlide && currentSlide.sectionType !== "blank" ? (
+                <div className="absolute inset-0 flex items-center justify-center p-2">
+                  <p className="text-[9px] text-white/90 font-medium text-center leading-snug line-clamp-4 whitespace-pre-wrap" style={{ color: effectiveTheme.textColor }}>
+                    {currentSlide.lines.join("\n")}
+                  </p>
+                </div>
+              ) : (
+                <div className="absolute inset-0 bg-zinc-950 flex items-center justify-center">
+                  <span className="text-[9px] text-muted-foreground/30">Nothing live</span>
+                </div>
+              )}
+            </div>
+            <div className="flex-1 min-w-0 flex flex-col justify-center gap-1.5">
+              <div className="flex items-center gap-1.5">
+                <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${!isBlank && !isLogo && activeSlideIdx >= 0 ? "bg-green-500" : "bg-muted-foreground/30"}`} />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Main Projection</span>
+              </div>
               <select
-                className="w-full bg-transparent text-[11px] text-foreground border-none outline-none cursor-pointer"
+                className="w-full bg-input text-[11px] text-foreground border border-border rounded px-2 py-1.5 outline-none cursor-pointer"
                 value={selectedDisplayId ?? ""}
                 onChange={(e) => {
                   const id = Number(e.target.value);
@@ -2805,50 +2903,109 @@ export default function PresenterDashboard({
             </div>
           </div>
 
-          {currentSong && currentSong.itemType === "song" && (
-            <div className={`flex items-center gap-2 p-2 rounded-md border transition-colors ${confidenceOpen ? "bg-amber-500/10 border-amber-500/30" : "bg-background/40 border-border"}`}>
-              <span className={`h-2 w-2 rounded-full shrink-0 ${confidenceOpen ? "bg-amber-400" : "bg-muted-foreground"}`} />
-              <div className="flex-1 min-w-0">
-                <p className="text-[10px] font-semibold text-muted-foreground mb-0.5">Confidence Monitor</p>
-                <select
-                  className="w-full bg-transparent text-[11px] text-foreground border-none outline-none cursor-pointer"
-                  value={selectedConfidenceDisplayId ?? ""}
-                  onChange={(e) => {
-                    const id = Number(e.target.value) || undefined;
-                    setSelectedConfidenceDisplayId(id);
-                    if (confidenceOpen && id !== undefined) window.worshipsync.confidence.move(id);
-                  }}
-                >
-                  {displays.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.label}{d.isPrimary ? " (Primary)" : ""} — {d.width}×{d.height}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <button
-                onClick={() => {
-                  if (confidenceOpen) { window.worshipsync.confidence.close(); setConfidenceOpen(false); }
-                  else { window.worshipsync.confidence.open(selectedConfidenceDisplayId); setConfidenceOpen(true); }
-                }}
-                className={`text-[9px] font-bold shrink-0 px-1.5 py-0.5 rounded transition-colors ${confidenceOpen ? "text-amber-400 hover:text-red-400" : "text-muted-foreground hover:text-foreground"}`}
-              >
-                {confidenceOpen ? "ON" : "OFF"}
-              </button>
+          {/* ─ Confidence Monitor ─ */}
+          <div className="flex-1 flex items-center gap-3 px-4 border-r border-border min-w-0">
+            {/* Miniature confidence monitor — matches the actual window's look */}
+            <div
+              className="shrink-0 rounded-md overflow-hidden border relative"
+              style={{
+                width: 180, height: 101,
+                background: "#080810",
+                borderColor: confidenceOpen ? "rgba(139,92,246,0.35)" : "rgba(255,255,255,0.08)",
+              }}
+            >
+              {!confidenceOpen ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
+                  <MonitorOff className="h-3.5 w-3.5" style={{ color: "rgba(255,255,255,0.15)" }} />
+                  <span className="text-[8px] font-medium" style={{ color: "rgba(255,255,255,0.15)" }}>Off</span>
+                </div>
+              ) : isBlank ? (
+                <div className="absolute inset-0 flex items-center justify-center" style={{ background: "#000" }}>
+                  <span className="text-[7px] font-bold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.12)" }}>Screen Blank</span>
+                </div>
+              ) : currentSlide && currentSlide.sectionType !== "blank" && currentSlide.lines.filter(Boolean).length > 0 ? (
+                <div className="absolute inset-0 flex flex-col">
+                  {/* Current lyrics — centered, like the confidence window */}
+                  <div className="flex-1 flex items-center justify-center px-2 pt-1.5 min-h-0 overflow-hidden">
+                    <p className="text-[8px] font-bold text-center leading-snug line-clamp-3 whitespace-pre-wrap" style={{ color: "#ffffff" }}>
+                      {currentSlide.lines.filter(Boolean).join("\n")}
+                    </p>
+                  </div>
+                  {/* Next panel — docked at bottom, amber if new song */}
+                  {nextUp && nextUp.slide.sectionType !== "blank" && nextUp.slide.lines.filter(Boolean).length > 0 && (
+                    <div
+                      className="shrink-0 px-1.5 pt-0.5 pb-1"
+                      style={{
+                        borderTop: nextUp.songTitle ? "1.5px solid #fbbf24" : "1px solid rgba(255,255,255,0.1)",
+                        background: nextUp.songTitle ? "rgba(251,191,36,0.07)" : "rgba(255,255,255,0.03)",
+                      }}
+                    >
+                      <p className="text-[6px] font-black uppercase tracking-wider leading-none mb-0.5" style={{ color: nextUp.songTitle ? "rgba(251,191,36,0.6)" : "rgba(255,255,255,0.28)" }}>
+                        {nextUp.songTitle ? "Next Song" : "Next"}
+                      </p>
+                      <p className="text-[7px] leading-snug line-clamp-1 text-center" style={{ color: nextUp.songTitle ? "rgba(255,255,255,0.35)" : "rgba(255,255,255,0.45)" }}>
+                        {nextUp.slide.lines.filter(Boolean)[0]}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="text-[7px]" style={{ color: "rgba(255,255,255,0.18)" }}>Waiting for slides…</span>
+                </div>
+              )}
             </div>
-          )}
-        </div>
+            <div className="flex-1 min-w-0 flex flex-col justify-center gap-1.5">
+              <div className="flex items-center gap-1.5">
+                <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${confidenceOpen ? "bg-amber-400" : "bg-muted-foreground/30"}`} />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Confidence</span>
+                <button
+                  onClick={() => {
+                    if (confidenceOpen) { window.worshipsync.confidence.close(); setConfidenceOpen(false); }
+                    else { window.worshipsync.confidence.open(selectedConfidenceDisplayId); setConfidenceOpen(true); }
+                  }}
+                  className={`ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full transition-colors ${
+                    confidenceOpen
+                      ? "bg-amber-500/20 text-amber-400 hover:bg-red-500/15 hover:text-red-400"
+                      : "bg-muted text-muted-foreground hover:bg-primary/20 hover:text-primary"
+                  }`}
+                >
+                  {confidenceOpen ? "ON" : "OFF"}
+                </button>
+              </div>
+              <select
+                className="w-full bg-input text-[11px] text-foreground border border-border rounded px-2 py-1.5 outline-none cursor-pointer"
+                value={selectedConfidenceDisplayId ?? ""}
+                onChange={(e) => {
+                  const id = Number(e.target.value) || undefined;
+                  setSelectedConfidenceDisplayId(id);
+                  if (confidenceOpen && id !== undefined) window.worshipsync.confidence.move(id);
+                }}
+              >
+                {displays.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.label}{d.isPrimary ? " (Primary)" : ""} — {d.width}×{d.height}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
 
-        {/* Next Slide button */}
-        <div className="p-3 shrink-0">
-          <button
-            onClick={goNextSlide}
-            className="w-full py-3 bg-foreground text-background rounded-lg text-sm font-bold hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
+          {/* ─ Outputs label + collapse ─ */}
+          <div
+            className="shrink-0 flex flex-col items-center justify-center self-stretch border-l border-border gap-1.5 px-3 cursor-pointer hover:bg-accent/20 transition-colors group"
+            onClick={() => setOutputBarCollapsed(true)}
+            title="Collapse output bar"
           >
-            Next Slide <ChevronRight className="h-4 w-4" />
-          </button>
+            <Tv className="h-3.5 w-3.5 text-muted-foreground/50 group-hover:text-muted-foreground transition-colors" />
+            <span className="text-[7px] font-black uppercase tracking-[0.15em] text-muted-foreground/40 group-hover:text-muted-foreground/60 transition-colors">Outputs</span>
+            <ChevronDown className="h-3 w-3 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors" />
+          </div>
+
         </div>
-      </div>
+      )}
+
+      </div>{/* end CENTER+RIGHT+OUTPUT column */}
 
       </div>{/* end BODY */}
 

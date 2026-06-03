@@ -6,7 +6,7 @@ contextBridge.exposeInMainWorld('worshipsync', {
     show: (payload: SlidePayload) => ipcRenderer.send('slide:show', payload),
     blank: (isBlank: boolean) => ipcRenderer.send('slide:blank', isBlank),
     logo: (show: boolean) => ipcRenderer.send('slide:logo', show),
-    countdown: (data: { targetTime: string; running: boolean }) => ipcRenderer.send('slide:countdown', data),
+    countdown: (data: { targetTime: string; running: boolean; firstUp?: { title: string; artist?: string; sectionLabel: string } }) => ipcRenderer.send('slide:countdown', data),
     videoControl: (action: 'play' | 'pause' | 'stop') => ipcRenderer.send('slide:videoControl', action),
     videoSeek: (time: number) => ipcRenderer.send('slide:videoSeek', time),
     videoLoop: (loop: boolean) => ipcRenderer.send('slide:videoLoop', loop),
@@ -28,7 +28,7 @@ contextBridge.exposeInMainWorld('worshipsync', {
       ipcRenderer.on('slide:logo', (_e, show) => cb(show))
       return () => ipcRenderer.removeAllListeners('slide:logo')
     },
-    onCountdown: (cb: (data: { targetTime: string; running: boolean }) => void) => {
+    onCountdown: (cb: (data: { targetTime: string; running: boolean; firstUp?: { title: string; artist?: string; sectionLabel: string } }) => void) => {
       ipcRenderer.on('slide:countdown', (_e, data) => cb(data))
       return () => ipcRenderer.removeAllListeners('slide:countdown')
     },

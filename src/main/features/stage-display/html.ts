@@ -93,7 +93,7 @@ body{background:#080810;color:#fff;font-family:-apple-system,BlinkMacSystemFont,
 </div>
 
 <script>
-var cdTimer=null,reconnTimer=null,clockTimer=null;
+var cdTimer=null,reconnTimer=null,clockTimer=null,currentItemType=null;
 function $(id){return document.getElementById(id)}
 
 // ── Clock ──
@@ -157,11 +157,11 @@ function handle(ev){
     if(ev.blank)setBlank(ev.blank);
     if(ev.countdown)doCountdown(ev.countdown);
     // Replay stageNext if blank is active — showSlide alone may not have the latest next lines
-    if(ev.blank&&ev.nextLines&&ev.nextLines.length)updateNext(ev.nextLines,ev.nextSectionLabel,true);
+    if(ev.blank&&ev.nextLines&&ev.nextLines.length&&currentItemType!=='scripture')updateNext(ev.nextLines,ev.nextSectionLabel,true);
   }
   else if(ev.type==='slide'){clearCD();showSlide(ev.payload);setBlank(false)}
   else if(ev.type==='blank'){setBlank(ev.isBlank)}
-  else if(ev.type==='stageNext'){updateNext(ev.nextLines,ev.nextSectionLabel,true)}
+  else if(ev.type==='stageNext'){if(currentItemType!=='scripture')updateNext(ev.nextLines,ev.nextSectionLabel,true)}
   else if(ev.type==='countdown'){doCountdown(ev.data)}
   else if(ev.type==='shutdown'){
     clearTimeout(reconnTimer);
@@ -179,6 +179,7 @@ function handle(ev){
 
 function showSlide(p){
   var lines=p.lines||[];
+  currentItemType=p.itemType||null;
   $('empty').style.display='none';
   $('countdown-wrap').style.display='none';
 
@@ -200,7 +201,8 @@ function showSlide(p){
   $('slide-pos').textContent=(p.slideIndex!=null&&p.totalSlides!=null)?(p.slideIndex+1)+' / '+p.totalSlides:'';
 
   var isLast=p.totalSlides!=null&&p.slideIndex!=null&&p.slideIndex+1===p.totalSlides;
-  updateNext(p.nextLines,p.nextSectionLabel,isLast);
+  if(currentItemType==='scripture'){$('next-wrap').style.display='none';}
+  else{updateNext(p.nextLines,p.nextSectionLabel,isLast);}
 }
 
 function setBlank(b){$('blank-overlay').classList.toggle('on',!!b)}

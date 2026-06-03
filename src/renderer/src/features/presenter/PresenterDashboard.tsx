@@ -632,6 +632,13 @@ export default function PresenterDashboard({
       setIsBlank(false);
       setIsLogo(false);
       setIsTextCleared(false);
+      if (countdownRunningRef.current) {
+        setCountdownRunning(false);
+        if (countdownIntervalRef.current) {
+          clearInterval(countdownIntervalRef.current);
+          countdownIntervalRef.current = null;
+        }
+      }
       // Record what's actually live so Run-of-Show navigation can restore it
       liveItemIdxRef.current  = songIdx;
       liveSlideIdxRef.current = slideIdx;
@@ -1110,6 +1117,13 @@ export default function PresenterDashboard({
         setIsBlank(false)
         setIsLogo(false)
         setIsTextCleared(false)
+        if (countdownRunningRef.current) {
+          setCountdownRunning(false)
+          if (countdownIntervalRef.current) {
+            clearInterval(countdownIntervalRef.current)
+            countdownIntervalRef.current = null
+          }
+        }
         liveItemIdxRef.current  = u.lineupIdx
         liveSlideIdxRef.current = u.slideIdx
       } else if (u.type === 'blank') {
@@ -1358,9 +1372,18 @@ export default function PresenterDashboard({
     setIsBlank(false);
     const targetTime = getTargetTime();
 
+    const firstSong = liveSongs.find((s) => s.itemType === "song");
+    const firstUp = firstSong
+      ? {
+          title: firstSong.title,
+          artist: firstSong.artist || undefined,
+          sectionLabel: firstSong.slides[0]?.sectionLabel ?? "",
+        }
+      : undefined;
+
     // Send initial state to projection
     window.worshipsync.slide.logo(false);
-    window.worshipsync.slide.countdown({ targetTime, running: true });
+    window.worshipsync.slide.countdown({ targetTime, running: true, firstUp });
 
     // Update local display every second
     const update = () => setCountdownDisplay(computeCountdownDisplay());
@@ -1372,7 +1395,7 @@ export default function PresenterDashboard({
         stopCountdown();
       }
     }, 1000);
-  }, [getTargetTime, computeCountdownDisplay]);
+  }, [getTargetTime, computeCountdownDisplay, liveSongs]);
 
   const stopCountdown = useCallback(() => {
     setCountdownRunning(false);
@@ -1464,6 +1487,24 @@ export default function PresenterDashboard({
     ? resolveTheme(currentSong)
     : DEFAULT_THEME;
   const effectiveBg = currentSong ? resolveBg(currentSong) : undefined;
+
+  // Output preview always shows what's actually live, not what's currently selected.
+  const liveSong = liveSongs[liveItemIdxRef.current] ?? null;
+  const liveSlide = liveSong?.slides[liveSlideIdxRef.current] ?? null;
+  const liveTheme = liveSong ? resolveTheme(liveSong) : DEFAULT_THEME;
+  const liveBg = liveSong ? resolveBg(liveSong) : undefined;
+  const liveNextUp = (() => {
+    if (!liveSong || liveSlideIdxRef.current < 0) return null;
+    const isReal = (s: { sectionType: string; lines: string[] }) =>
+      s.sectionType !== "blank" && s.lines.filter(Boolean).length > 0;
+    const nextInSong = liveSong.slides.slice(liveSlideIdxRef.current + 1).find(isReal);
+    if (nextInSong) return { slide: nextInSong, songTitle: null as string | null };
+    for (let k = liveItemIdxRef.current + 1; k < liveSongs.length; k++) {
+      const first = liveSongs[k].slides.find(isReal);
+      if (first) return { slide: first, songTitle: liveSongs[k].title };
+    }
+    return null;
+  })();
 
   const nextUp = useMemo(() => {
     if (!currentSong || activeSlideIdx < 0) return null;
@@ -2845,15 +2886,15 @@ export default function PresenterDashboard({
           <div className="flex-1 flex items-center gap-3 px-4 border-r border-border min-w-0">
             <div className="shrink-0 rounded-md overflow-hidden border border-border bg-black relative" style={{ width: 180, height: 101 }}>
               {/* Background layer */}
-              {!isBlank && !isLogo && effectiveBg && currentSlide?.sectionType !== "blank" && (
-                effectiveBg.startsWith("color:") ? (
-                  <div className="absolute inset-0" style={{ background: effectiveBg.replace("color:", "") }} />
-                ) : /\.(mp4|webm|mov)$/i.test(effectiveBg) ? (
-                  <video src={`file://${encodeURI(effectiveBg)}`} className="absolute inset-0 w-full h-full object-cover" muted preload="metadata" />
+              {!isBlank && !isLogo && liveBg && liveSlide?.sectionType !== "blank" && (
+                liveBg.startsWith("color:") ? (
+                  <div className="absolute inset-0" style={{ background: liveBg.replace("color:", "") }} />
+                ) : /\.(mp4|webm|mov)$/i.test(liveBg) ? (
+                  <video src={`file://${encodeURI(liveBg)}`} className="absolute inset-0 w-full h-full object-cover" muted preload="metadata" />
                 ) : (
                   <>
-                    <img src={`file://${effectiveBg}`} className="absolute inset-0 w-full h-full object-cover" alt="" />
-                    <div className="absolute inset-0" style={{ background: `rgba(0,0,0,${effectiveTheme.overlayOpacity / 100})` }} />
+                    <img src={`file://${liveBg}`} className="absolute inset-0 w-full h-full object-cover" alt="" />
+                    <div className="absolute inset-0" style={{ background: `rgba(0,0,0,${liveTheme.overlayOpacity / 100})` }} />
                   </>
                 )
               )}
@@ -2868,10 +2909,41 @@ export default function PresenterDashboard({
                   <MonitorOff className="h-4 w-4 text-muted-foreground/25" />
                   <span className="text-[8px] font-bold uppercase tracking-widest text-muted-foreground/25">Blank</span>
                 </div>
-              ) : currentSlide && currentSlide.sectionType !== "blank" ? (
+              ) : countdownRunning ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center" style={{ background: "linear-gradient(to bottom, rgba(0,0,0,0.52) 0%, rgba(0,0,0,0.62) 100%), linear-gradient(135deg, #1a1a2e 0%, #16213e 60%, #0f3460 100%)" }}>
+                  <div style={{ fontSize: 7, fontWeight: 800, letterSpacing: "0.3em", textTransform: "uppercase", color: "#fff", marginBottom: 2 }}>Welcome</div>
+                  <div style={{ fontSize: 5, color: "rgba(255,255,255,0.7)", marginBottom: 5 }}>Our Sunday Service will begin in</div>
+                  {(() => {
+                    const hasDays = countdownDisplay.includes("d");
+                    const timePart = hasDays ? (countdownDisplay.split(" ")[1] ?? "00:00:00") : countdownDisplay;
+                    const dayVal = hasDays ? (countdownDisplay.split(" ")[0] ?? "").replace("d", "") : null;
+                    const segs = timePart.split(":");
+                    const showHours = hasDays || Number(segs[0]) > 0;
+                    const segments: { v: string; lbl: string }[] = [];
+                    if (dayVal && Number(dayVal) > 0) segments.push({ v: dayVal, lbl: "Days" });
+                    if (showHours) segments.push({ v: segs[0] ?? "00", lbl: "Hrs" });
+                    segments.push({ v: segs[segs.length - 2] ?? "00", lbl: "Min" });
+                    segments.push({ v: segs[segs.length - 1] ?? "00", lbl: "Sec" });
+                    return (
+                      <div style={{ display: "flex", alignItems: "flex-end", gap: 0 }}>
+                        {segments.map((seg, i) => (
+                          <div key={seg.lbl} style={{ display: "flex", alignItems: "flex-end" }}>
+                            {i > 0 && <span style={{ fontSize: 14, fontWeight: 800, color: "rgba(255,255,255,0.4)", lineHeight: 1, paddingBottom: 6, margin: "0 1px" }}>:</span>}
+                            <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                              <span style={{ fontSize: 20, fontWeight: 800, color: "#fff", lineHeight: 1, fontVariantNumeric: "tabular-nums", letterSpacing: "0.03em" }}>{seg.v}</span>
+                              <span style={{ fontSize: 4, fontWeight: 600, color: "rgba(255,255,255,0.5)", letterSpacing: "0.2em", textTransform: "uppercase", marginTop: 2 }}>{seg.lbl}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                  <div style={{ fontSize: 5, color: "rgba(255,255,255,0.55)", marginTop: 5, textAlign: "center" }}>Please find your seats</div>
+                </div>
+              ) : liveSlide && liveSlide.sectionType !== "blank" ? (
                 <div className="absolute inset-0 flex items-center justify-center p-2">
-                  <p className="text-[9px] text-white/90 font-medium text-center leading-snug line-clamp-4 whitespace-pre-wrap" style={{ color: effectiveTheme.textColor }}>
-                    {currentSlide.lines.join("\n")}
+                  <p className="text-[9px] text-white/90 font-medium text-center leading-snug line-clamp-4 whitespace-pre-wrap" style={{ color: liveTheme.textColor }}>
+                    {liveSlide.lines.join("\n")}
                   </p>
                 </div>
               ) : (
@@ -2882,7 +2954,7 @@ export default function PresenterDashboard({
             </div>
             <div className="flex-1 min-w-0 flex flex-col justify-center gap-1.5">
               <div className="flex items-center gap-1.5">
-                <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${!isBlank && !isLogo && activeSlideIdx >= 0 ? "bg-green-500" : "bg-muted-foreground/30"}`} />
+                <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${!isBlank && !isLogo && (countdownRunning || liveSlideIdxRef.current >= 0) ? "bg-green-500" : "bg-muted-foreground/30"}`} />
                 <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Main Projection</span>
               </div>
               <select
@@ -2923,28 +2995,35 @@ export default function PresenterDashboard({
                 <div className="absolute inset-0 flex items-center justify-center" style={{ background: "#000" }}>
                   <span className="text-[7px] font-bold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.12)" }}>Screen Blank</span>
                 </div>
-              ) : currentSlide && currentSlide.sectionType !== "blank" && currentSlide.lines.filter(Boolean).length > 0 ? (
+              ) : countdownRunning ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
+                  <span className="font-bold tabular-nums" style={{ fontSize: 22, letterSpacing: "-0.03em", fontFamily: "'SF Mono','Fira Code',monospace", color: "#ffffff" }}>
+                    {countdownDisplay}
+                  </span>
+                  <span className="text-[6px] font-semibold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.3)" }}>Until Service Starts</span>
+                </div>
+              ) : liveSlide && liveSlide.sectionType !== "blank" && liveSlide.lines.filter(Boolean).length > 0 ? (
                 <div className="absolute inset-0 flex flex-col">
-                  {/* Current lyrics — centered, like the confidence window */}
+                  {/* Text — left-aligned for scripture, centered for lyrics */}
                   <div className="flex-1 flex items-center justify-center px-2 pt-1.5 min-h-0 overflow-hidden">
-                    <p className="text-[8px] font-bold text-center leading-snug line-clamp-3 whitespace-pre-wrap" style={{ color: "#ffffff" }}>
-                      {currentSlide.lines.filter(Boolean).join("\n")}
+                    <p className={`text-[8px] font-bold leading-snug line-clamp-4 whitespace-pre-wrap w-full ${liveSong?.itemType === "scripture" ? "text-left" : "text-center"}`} style={{ color: "#ffffff" }}>
+                      {liveSlide.lines.filter(Boolean).join("\n")}
                     </p>
                   </div>
-                  {/* Next panel — docked at bottom, amber if new song */}
-                  {nextUp && nextUp.slide.sectionType !== "blank" && nextUp.slide.lines.filter(Boolean).length > 0 && (
+                  {/* Next panel — hidden for scripture, matches actual confidence monitor */}
+                  {liveSong?.itemType !== "scripture" && liveNextUp && liveNextUp.slide.sectionType !== "blank" && liveNextUp.slide.lines.filter(Boolean).length > 0 && (
                     <div
                       className="shrink-0 px-1.5 pt-0.5 pb-1"
                       style={{
-                        borderTop: nextUp.songTitle ? "1.5px solid #fbbf24" : "1px solid rgba(255,255,255,0.1)",
-                        background: nextUp.songTitle ? "rgba(251,191,36,0.07)" : "rgba(255,255,255,0.03)",
+                        borderTop: liveNextUp.songTitle ? "1.5px solid #fbbf24" : "1px solid rgba(255,255,255,0.1)",
+                        background: liveNextUp.songTitle ? "rgba(251,191,36,0.07)" : "rgba(255,255,255,0.03)",
                       }}
                     >
-                      <p className="text-[6px] font-black uppercase tracking-wider leading-none mb-0.5" style={{ color: nextUp.songTitle ? "rgba(251,191,36,0.6)" : "rgba(255,255,255,0.28)" }}>
-                        {nextUp.songTitle ? "Next Song" : "Next"}
+                      <p className="text-[6px] font-black uppercase tracking-wider leading-none mb-0.5" style={{ color: liveNextUp.songTitle ? "rgba(251,191,36,0.6)" : "rgba(255,255,255,0.28)" }}>
+                        {liveNextUp.songTitle ? "Next Song" : "Next"}
                       </p>
-                      <p className="text-[7px] leading-snug line-clamp-1 text-center" style={{ color: nextUp.songTitle ? "rgba(255,255,255,0.35)" : "rgba(255,255,255,0.45)" }}>
-                        {nextUp.slide.lines.filter(Boolean)[0]}
+                      <p className="text-[7px] leading-snug line-clamp-1 text-center" style={{ color: liveNextUp.songTitle ? "rgba(255,255,255,0.35)" : "rgba(255,255,255,0.45)" }}>
+                        {liveNextUp.slide.lines.filter(Boolean)[0]}
                       </p>
                     </div>
                   )}

@@ -92,7 +92,7 @@ export function registerSlideHandlers(): void {
     broadcastAll({ type: 'logo', isLogo: show })
   })
 
-  ipcMain.on('slide:countdown', (_event, data: { targetTime: string; running: boolean }) => {
+  ipcMain.on('slide:countdown', (_event, data: { targetTime: string; running: boolean; firstUp?: { title: string; artist?: string; sectionLabel: string } }) => {
     if (windows.projection && !windows.projection.isDestroyed()) {
       windows.projection.webContents.send('slide:countdown', data)
     }

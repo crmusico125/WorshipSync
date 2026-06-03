@@ -69,7 +69,7 @@ declare global {
         show: (payload: SlidePayload) => void
         blank: (isBlank: boolean) => void
         logo: (show: boolean) => void
-        countdown: (data: { targetTime: string; running: boolean }) => void
+        countdown: (data: { targetTime: string; running: boolean; firstUp?: { title: string; artist?: string; sectionLabel: string } }) => void
         videoControl: (action: 'play' | 'pause' | 'stop') => void
         videoSeek: (time: number) => void
         videoLoop: (loop: boolean) => void
@@ -78,7 +78,7 @@ declare global {
         onShow: (cb: (payload: SlidePayload) => void) => () => void
         onBlank: (cb: (isBlank: boolean) => void) => () => void
         onLogo: (cb: (show: boolean) => void) => () => void
-        onCountdown: (cb: (data: { targetTime: string; running: boolean }) => void) => () => void
+        onCountdown: (cb: (data: { targetTime: string; running: boolean; firstUp?: { title: string; artist?: string; sectionLabel: string } }) => void) => () => void
         onVideoControl: (cb: (action: 'play' | 'pause' | 'stop') => void) => () => void
         onVideoSeek: (cb: (time: number) => void) => () => void
         onVideoLoop: (cb: (loop: boolean) => void) => () => void

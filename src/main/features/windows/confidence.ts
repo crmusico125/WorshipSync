@@ -93,5 +93,12 @@ export function registerConfidenceHandlers(): void {
     } else if (stage.slide) {
       windows.confidence.webContents.send('slide:show', stage.slide)
     }
+    // Restore media playback state so the progress bar shows immediately
+    if (stage.videoState) {
+      windows.confidence.webContents.send('slide:videoState', stage.videoState)
+    }
+    if (stage.audioState) {
+      windows.confidence.webContents.send('slide:audioState', stage.audioState)
+    }
   })
 }

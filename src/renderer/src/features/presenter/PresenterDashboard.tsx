@@ -1216,18 +1216,6 @@ export default function PresenterDashboard({
     requestAnimationFrame(() => triggerVideoPlayRef.current?.())
   }, [selectedSongIdx, liveSongs])
 
-  // Broadcast audio state on play/pause/duration changes
-  useEffect(() => {
-    const song = liveSongs[selectedSongIdxRef.current]
-    if (!song || song.itemType !== 'media') return
-    window.worshipsync.pwa?.broadcastAudioState?.({
-      isPlaying: audioPlaying,
-      currentTime: audioRef.current?.currentTime ?? 0,
-      duration: audioRef.current?.duration || audioDuration,
-      lineupItemId: song.lineupItemId,
-    })
-  }, [audioPlaying, audioDuration, liveSongs])
-
   // Broadcast current time every second while playing so PWA progress bar stays in sync
   useEffect(() => {
     if (!audioPlaying) return
@@ -1244,18 +1232,6 @@ export default function PresenterDashboard({
     }, 1000)
     return () => clearInterval(interval)
   }, [audioPlaying, liveSongs])
-
-  // Broadcast video state on play/pause/duration changes
-  useEffect(() => {
-    const song = liveSongs[selectedSongIdxRef.current]
-    if (!song || song.itemType !== 'media') return
-    window.worshipsync.pwa?.broadcastVideoState?.({
-      isPlaying: videoPlaying,
-      currentTime: videoPreviewRef.current?.currentTime ?? 0,
-      duration: videoPreviewRef.current?.duration || videoDuration,
-      lineupItemId: song.lineupItemId,
-    })
-  }, [videoPlaying, videoDuration, liveSongs])
 
   // Broadcast video progress every second while playing
   useEffect(() => {
@@ -1929,6 +1905,16 @@ export default function PresenterDashboard({
               setVideoPlaying(false); setVideoCurrentTime(0); setIsBlank(true);
               if (videoTimerRef.current) { clearInterval(videoTimerRef.current); videoTimerRef.current = null; }
             };
+            const broadcastVideoNow = (seekTime?: number) => {
+              const song = liveSongs[selectedSongIdxRef.current];
+              if (!song) return;
+              window.worshipsync.pwa?.broadcastVideoState?.({
+                isPlaying: videoPlaying,
+                currentTime: seekTime ?? videoPreviewRef.current?.currentTime ?? 0,
+                duration: videoPreviewRef.current?.duration || videoDuration,
+                lineupItemId: song.lineupItemId,
+              });
+            };
             const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
               if (!videoDuration) return;
               const rect = e.currentTarget.getBoundingClientRect();
@@ -1936,12 +1922,14 @@ export default function PresenterDashboard({
               if (videoPreviewRef.current) videoPreviewRef.current.currentTime = seekTo;
               setVideoCurrentTime(seekTo);
               window.worshipsync.slide.videoSeek(seekTo);
+              broadcastVideoNow(seekTo);
             };
             const handleSkipVideo = (delta: number) => {
               const newTime = Math.max(0, Math.min(videoDuration, (videoPreviewRef.current?.currentTime ?? 0) + delta));
               if (videoPreviewRef.current) videoPreviewRef.current.currentTime = newTime;
               setVideoCurrentTime(newTime);
               window.worshipsync.slide.videoSeek(newTime);
+              broadcastVideoNow(newTime);
             };
             const handlePlay = () => {
               const preview = videoPreviewRef.current;
@@ -1956,6 +1944,7 @@ export default function PresenterDashboard({
                 itemType: "media",
                 slideIndex: 0,
                 totalSlides: 1,
+                lineupItemId: currentSong.lineupItemId,
                 backgroundPath: bg,
                 theme: {
                   fontFamily: DEFAULT_THEME.fontFamily,
@@ -1976,19 +1965,28 @@ export default function PresenterDashboard({
               setVideoPlaying(true);
               if (videoTimerRef.current) clearInterval(videoTimerRef.current);
               videoTimerRef.current = setInterval(() => { setVideoCurrentTime(videoPreviewRef.current?.currentTime ?? 0); }, 100);
+              window.worshipsync.pwa?.broadcastVideoState?.({ isPlaying: true, currentTime: 0, duration: dur, lineupItemId: currentSong.lineupItemId });
             };
             const handlePause = () => {
               window.worshipsync.slide.videoControl("pause");
               videoPreviewRef.current?.pause();
               setVideoPlaying(false);
               if (videoTimerRef.current) { clearInterval(videoTimerRef.current); videoTimerRef.current = null; }
+              window.worshipsync.pwa?.broadcastVideoState?.({ isPlaying: false, currentTime: videoPreviewRef.current?.currentTime ?? 0, duration: videoPreviewRef.current?.duration || videoDuration, lineupItemId: currentSong.lineupItemId });
             };
             const handleResume = () => {
+              const syncTime = videoPreviewRef.current?.currentTime ?? 0;
+              // Ensure the slide is visible and projection is pre-positioned before playing.
+              // This fixes blank→resume de-sync (projection remounts from 0 without a seek).
+              window.worshipsync.slide.blank(false);
+              setIsBlank(false);
+              window.worshipsync.slide.videoSeek(syncTime);
               window.worshipsync.slide.videoControl("play");
               videoPreviewRef.current?.play().catch(() => {});
               setVideoPlaying(true);
               if (videoTimerRef.current) clearInterval(videoTimerRef.current);
               videoTimerRef.current = setInterval(() => setVideoCurrentTime(videoPreviewRef.current?.currentTime ?? 0), 100);
+              window.worshipsync.pwa?.broadcastVideoState?.({ isPlaying: true, currentTime: syncTime, duration: videoPreviewRef.current?.duration || videoDuration, lineupItemId: currentSong.lineupItemId });
             };
             // Expose to PWA command handler
             triggerVideoPlayRef.current   = handlePlay;
@@ -2078,7 +2076,7 @@ export default function PresenterDashboard({
                         −10s
                       </button>
                       <button
-                        onClick={videoPlaying ? handlePause : handlePlay}
+                        onClick={videoPlaying ? handlePause : videoCurrentTime > 0.1 ? handleResume : handlePlay}
                         className="w-14 h-14 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all shadow-lg"
                       >
                         {videoPlaying ? <Pause className="h-6 w-6 fill-current" /> : <Play className="h-6 w-6 fill-current ml-0.5" />}
@@ -2147,6 +2145,16 @@ export default function PresenterDashboard({
             const handlePlay = () => {
               window.worshipsync.slide.blank(true);
               setIsBlank(true);
+              // Tell the confidence monitor what's playing without affecting projection
+              window.worshipsync.slide.confidenceHint({
+                lines: [],
+                songTitle: currentSong.title,
+                sectionLabel: "",
+                itemType: "media",
+                slideIndex: 0,
+                totalSlides: 1,
+                lineupItemId: currentSong.lineupItemId,
+              });
               const audio = ensureAudio();
               audioContextRef.current?.resume();
               audio.play();
@@ -2154,13 +2162,33 @@ export default function PresenterDashboard({
               if (audioTimerRef.current) clearInterval(audioTimerRef.current);
               audioTimerRef.current = setInterval(() => setAudioCurrentTime(audioRef.current?.currentTime ?? 0), 100);
               startViz();
+              window.worshipsync.pwa?.broadcastAudioState?.({ isPlaying: true, currentTime: audioRef.current?.currentTime ?? 0, duration: audioRef.current?.duration || audioDuration, lineupItemId: currentSong.lineupItemId });
             };
-            const handlePause = () => { audioRef.current?.pause(); setAudioPlaying(false); if (audioTimerRef.current) { clearInterval(audioTimerRef.current); audioTimerRef.current = null; } stopViz(); };
+            const handlePause = () => {
+              audioRef.current?.pause();
+              setAudioPlaying(false);
+              if (audioTimerRef.current) { clearInterval(audioTimerRef.current); audioTimerRef.current = null; }
+              stopViz();
+              window.worshipsync.pwa?.broadcastAudioState?.({ isPlaying: false, currentTime: audioRef.current?.currentTime ?? 0, duration: audioRef.current?.duration || audioDuration, lineupItemId: currentSong.lineupItemId });
+            };
             // Expose to PWA command handler
             triggerAudioPlayRef.current  = handlePlay;
             triggerAudioPauseRef.current = handlePause;
-            const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => { if (!audioDuration || !audioRef.current) return; const rect = e.currentTarget.getBoundingClientRect(); audioRef.current.currentTime = Math.max(0, Math.min(audioDuration, ((e.clientX - rect.left) / rect.width) * audioDuration)); setAudioCurrentTime(audioRef.current.currentTime); };
-            const handleSkip = (delta: number) => { if (!audioRef.current) return; audioRef.current.currentTime = Math.max(0, Math.min(audioDuration, audioRef.current.currentTime + delta)); setAudioCurrentTime(audioRef.current.currentTime); };
+            const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
+              if (!audioDuration || !audioRef.current) return;
+              const rect = e.currentTarget.getBoundingClientRect();
+              const seekTo = Math.max(0, Math.min(audioDuration, ((e.clientX - rect.left) / rect.width) * audioDuration));
+              audioRef.current.currentTime = seekTo;
+              setAudioCurrentTime(seekTo);
+              window.worshipsync.pwa?.broadcastAudioState?.({ isPlaying: audioPlaying, currentTime: seekTo, duration: audioRef.current.duration || audioDuration, lineupItemId: currentSong.lineupItemId });
+            };
+            const handleSkip = (delta: number) => {
+              if (!audioRef.current) return;
+              const newTime = Math.max(0, Math.min(audioDuration, audioRef.current.currentTime + delta));
+              audioRef.current.currentTime = newTime;
+              setAudioCurrentTime(newTime);
+              window.worshipsync.pwa?.broadcastAudioState?.({ isPlaying: audioPlaying, currentTime: newTime, duration: audioRef.current.duration || audioDuration, lineupItemId: currentSong.lineupItemId });
+            };
             const handleToggleLoop = () => { const next = !audioLoop; setAudioLoop(next); if (audioRef.current) audioRef.current.loop = next; };
             return (
               <>
@@ -2712,6 +2740,7 @@ export default function PresenterDashboard({
               itemType: "media",
               slideIndex: 0,
               totalSlides: 1,
+              lineupItemId: currentSong.lineupItemId,
               backgroundPath: imgPath,
               theme: {
                 fontFamily: DEFAULT_THEME.fontFamily,

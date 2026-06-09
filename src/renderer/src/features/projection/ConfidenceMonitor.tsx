@@ -13,9 +13,20 @@ export default function ConfidenceMonitor() {
   const [nextLines, setNextLines] = useState<string[]>([]);
   const [nextSectionLabel, setNextSectionLabel] = useState("");
 
+  type MediaState = { isPlaying: boolean; currentTime: number; duration: number; lineupItemId: number };
+  const [audioState, setAudioState] = useState<MediaState | null>(null);
+  const [videoState, setVideoState] = useState<MediaState | null>(null);
+  // Local interpolated time so progress bar moves smoothly between 1-second IPC ticks
+  const [localMediaTime, setLocalMediaTime] = useState(0);
+  const mediaBaseRef = useRef<{ wallMs: number; mediaTime: number } | null>(null);
+  const mediaTickRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const contentAreaRef = useRef<HTMLDivElement>(null);
   const scriptureTextRef = useRef<HTMLDivElement>(null);
+  const lyricsTextRef = useRef<HTMLDivElement>(null);
+
+  const hasNext = nextLines.length > 0;
 
   // Clock
   useEffect(() => {
@@ -50,6 +61,23 @@ export default function ConfidenceMonitor() {
     text.style.fontSize = `${best}px`;
   }, [slide]);
 
+  // For song lyrics: same binary-search approach so text always fits regardless of monitor size/resolution.
+  useLayoutEffect(() => {
+    const wrapper = contentAreaRef.current;
+    const text = lyricsTextRef.current;
+    if (!wrapper || !text || !slide || slide.itemType === "scripture" || slide.itemType === "media") return;
+
+    const availableH = wrapper.clientHeight - 60; // 32px top + 28px bottom padding
+    let lo = 20, hi = 160, best = 20;
+    while (lo <= hi) {
+      const mid = Math.floor((lo + hi) / 2);
+      text.style.fontSize = `${mid}px`;
+      if (text.scrollHeight <= availableH) { best = mid; lo = mid + 1; }
+      else hi = mid - 1;
+    }
+    text.style.fontSize = `${best}px`;
+  }, [slide, hasNext]);
+
   useEffect(() => {
     window.worshipsync.confidence.ready();
   }, []);
@@ -79,6 +107,14 @@ export default function ConfidenceMonitor() {
       setIsBlank(b);
       // nextLines intentionally not cleared — stays from last slide so "Next" remains accurate
     });
+
+    const cleanAudioState = window.worshipsync.slide.onAudioState?.((state) => {
+      setAudioState(state);
+    }) ?? (() => {});
+
+    const cleanVideoState = window.worshipsync.slide.onVideoState?.((state) => {
+      setVideoState(state);
+    }) ?? (() => {});
 
     const cleanCountdown = window.worshipsync.slide.onCountdown((data) => {
       if (!data.running) {
@@ -121,12 +157,52 @@ export default function ConfidenceMonitor() {
       cleanStageNext();
       cleanBlank();
       cleanCountdown();
+      cleanAudioState();
+      cleanVideoState();
       if (countdownRef.current) clearInterval(countdownRef.current);
     };
   }, []);
 
+  const activeMediaState =
+    (videoState?.lineupItemId === slide?.lineupItemId ? videoState : null) ??
+    (audioState?.lineupItemId === slide?.lineupItemId ? audioState : null);
+
+  // Smooth local time interpolation.
+  // On each IPC heartbeat (every ~1s) we only snap if the received time differs from our
+  // locally-interpolated time by more than 1.5s (a real seek). Otherwise we keep the
+  // existing base so the display never jumps backward.
+  useEffect(() => {
+    if (mediaTickRef.current) { clearInterval(mediaTickRef.current); mediaTickRef.current = null; }
+    if (!activeMediaState) { mediaBaseRef.current = null; return; }
+
+    const received = activeMediaState.currentTime;
+
+    if (activeMediaState.isPlaying) {
+      if (mediaBaseRef.current !== null) {
+        const interpolated = mediaBaseRef.current.mediaTime + (Date.now() - mediaBaseRef.current.wallMs) / 1000;
+        // Only snap on big discrepancy (seek); ignore normal heartbeat drift
+        if (Math.abs(received - interpolated) > 1.5) {
+          mediaBaseRef.current = { wallMs: Date.now(), mediaTime: received };
+          setLocalMediaTime(received);
+        }
+        // else: keep existing base — timer below continues smoothly
+      } else {
+        mediaBaseRef.current = { wallMs: Date.now(), mediaTime: received };
+        setLocalMediaTime(received);
+      }
+      mediaTickRef.current = setInterval(() => {
+        if (!mediaBaseRef.current) return;
+        setLocalMediaTime(mediaBaseRef.current.mediaTime + (Date.now() - mediaBaseRef.current.wallMs) / 1000);
+      }, 250);
+      return () => { if (mediaTickRef.current) { clearInterval(mediaTickRef.current); mediaTickRef.current = null; } };
+    } else {
+      // Paused / stopped — always show the exact received time
+      mediaBaseRef.current = { wallMs: Date.now(), mediaTime: received };
+      setLocalMediaTime(received);
+    }
+  }, [audioState, videoState, slide?.lineupItemId]);
+
   const hasLyrics = slide && slide.lines.filter(Boolean).length > 0;
-  const hasNext = nextLines.length > 0;
 
   // "Song Title — Section" means next is a new song
   const isNextNewSong   = nextSectionLabel.includes("—");
@@ -318,13 +394,60 @@ export default function ConfidenceMonitor() {
               </div>
             )}
           </div>
+        ) : slide?.itemType === "media" ? (
+          (() => {
+            const matchedAudio = audioState?.lineupItemId === slide.lineupItemId ? audioState : null;
+            const matchedVideo = videoState?.lineupItemId === slide.lineupItemId ? videoState : null;
+            const mediaState = matchedAudio ?? matchedVideo;
+            const isAudio = !!matchedAudio;
+            const isVideo = !!matchedVideo;
+            const icon = isAudio ? "♪" : isVideo ? "▶" : "🖼";
+            const isPlaying = mediaState?.isPlaying ?? false;
+            const currentTime = localMediaTime;
+            const duration = Math.floor(mediaState?.duration ?? 0);
+            const pct = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
+            const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+            const remaining = duration > 0 ? duration - currentTime : 0;
+            return (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "clamp(16px,3vh,40px)", width: "100%", maxWidth: 960 }}>
+                {/* Icon */}
+                <div style={{ fontSize: "clamp(56px,10vw,100px)", opacity: 0.5, lineHeight: 1 }}>{icon}</div>
+                {/* Title */}
+                <div style={{ fontSize: "clamp(28px,4.5vw,64px)", fontWeight: 700, textAlign: "center", letterSpacing: "-0.02em", lineHeight: 1.2, color: "#ffffff" }}>
+                  {slide.songTitle}
+                </div>
+                {/* Progress — audio and video only */}
+                {(isAudio || isVideo) && (
+                  <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 14 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "clamp(20px,2.8vw,40px)", fontVariantNumeric: "tabular-nums", fontWeight: 600, color: "rgba(255,255,255,0.5)" }}>
+                      <span>{fmt(currentTime)}</span>
+                      <span style={{ color: remaining < 30 ? "#f87171" : "rgba(255,255,255,0.5)" }}>
+                        -{fmt(remaining)}
+                      </span>
+                    </div>
+                    <div style={{ width: "100%", height: 14, background: "rgba(255,255,255,0.1)", borderRadius: 7, overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: `${pct}%`, background: isPlaying ? "#7c3aed" : "rgba(255,255,255,0.25)", borderRadius: 7, transition: "width 0.8s linear" }} />
+                    </div>
+                    {duration > 0 && (
+                      <div style={{ textAlign: "right", fontSize: "clamp(14px,1.6vw,22px)", color: "rgba(255,255,255,0.25)", fontVariantNumeric: "tabular-nums" }}>
+                        {fmt(duration)}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {/* Status */}
+                <div style={{ fontSize: "clamp(18px,2.2vw,30px)", fontWeight: 800, letterSpacing: "0.2em", textTransform: "uppercase", color: isPlaying ? "#a78bfa" : "rgba(255,255,255,0.22)" }}>
+                  {isAudio || isVideo ? (isPlaying ? "▶  Playing" : "⏸  Paused") : "On Screen"}
+                </div>
+              </div>
+            );
+          })()
         ) : (
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", width: "100%", maxWidth: 1200 }}>
             {/* Current slide lines — visible when not blank */}
             {hasLyrics ? (
               (() => {
                 const lines = slide!.lines.filter(Boolean);
-                const lineCount = lines.length;
                 const isScripture = slide!.itemType === "scripture";
 
                 if (isScripture) {
@@ -350,10 +473,10 @@ export default function ConfidenceMonitor() {
                   );
                 }
 
-                // Song lyrics: center-aligned, sized by line count only.
-                const fontVh = Math.floor((hasNext ? 65 : 80) / lineCount / 1.3);
+                // Song lyrics: font size is set by the useLayoutEffect binary search above.
+                // We render at 40px initially; the layout effect corrects it before paint.
                 return (
-                  <div style={{ fontSize: `max(20px, min(7vw, ${fontVh}vh))`, fontWeight: 700, lineHeight: 1.3, textAlign: "center", color: "#ffffff", letterSpacing: "-0.015em", wordBreak: "break-word", overflowWrap: "break-word" }}>
+                  <div ref={lyricsTextRef} style={{ fontSize: 40, fontWeight: 700, lineHeight: 1.3, textAlign: "center", color: "#ffffff", letterSpacing: "-0.015em", wordBreak: "break-word", overflowWrap: "break-word", width: "100%" }}>
                     {slide!.lines.map((line, i) => <div key={i}>{line || " "}</div>)}
                   </div>
                 );

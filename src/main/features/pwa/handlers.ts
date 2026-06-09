@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron'
-import { stage, type PwaLineupItem } from '../../lib/state'
+import { windows, stage, type PwaLineupItem } from '../../lib/state'
 import { broadcastPwa } from '../../lib/broadcast'
 
 export function registerPwaHandlers(): void {
@@ -14,10 +14,16 @@ export function registerPwaHandlers(): void {
   ipcMain.on('pwa:broadcastAudioState', (_event, state: typeof stage.audioState) => {
     stage.audioState = state
     if (state) broadcastPwa({ type: 'audioState', ...state })
+    if (windows.confidence && !windows.confidence.isDestroyed()) {
+      windows.confidence.webContents.send('slide:audioState', state)
+    }
   })
 
   ipcMain.on('pwa:broadcastVideoState', (_event, state: typeof stage.videoState) => {
     stage.videoState = state
     if (state) broadcastPwa({ type: 'videoState', ...state })
+    if (windows.confidence && !windows.confidence.isDestroyed()) {
+      windows.confidence.webContents.send('slide:videoState', state)
+    }
   })
 }

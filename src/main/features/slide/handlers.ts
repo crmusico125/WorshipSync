@@ -86,6 +86,14 @@ export function registerSlideHandlers(): void {
     }
   })
 
+  // Sends a slide payload only to the confidence window — does not touch projection.
+  // Used for audio items where the projection stays blank but the monitor needs context.
+  ipcMain.on('slide:confidenceHint', (_event, payload) => {
+    if (windows.confidence && !windows.confidence.isDestroyed()) {
+      windows.confidence.webContents.send('slide:show', payload)
+    }
+  })
+
   ipcMain.on('slide:logo', (_event, show: boolean) => {
     windows.projection?.webContents.send('slide:logo', show)
     stage.logo = show

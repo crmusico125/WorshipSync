@@ -74,6 +74,7 @@ declare global {
         videoSeek: (time: number) => void
         videoLoop: (loop: boolean) => void
         stageNext: (data: { nextLines: string[]; nextSectionLabel: string }) => void
+        confidenceHint: (payload: import('../../../../../shared/types').SlidePayload) => void
         onStageNext: (cb: (data: { nextLines: string[]; nextSectionLabel: string }) => void) => () => void
         onShow: (cb: (payload: SlidePayload) => void) => () => void
         onBlank: (cb: (isBlank: boolean) => void) => () => void
@@ -82,6 +83,8 @@ declare global {
         onVideoControl: (cb: (action: 'play' | 'pause' | 'stop') => void) => () => void
         onVideoSeek: (cb: (time: number) => void) => () => void
         onVideoLoop: (cb: (loop: boolean) => void) => () => void
+        onAudioState: (cb: (state: { isPlaying: boolean; currentTime: number; duration: number; lineupItemId: number } | null) => void) => () => void
+        onVideoState: (cb: (state: { isPlaying: boolean; currentTime: number; duration: number; lineupItemId: number } | null) => void) => () => void
       }
       window: {
         getDisplayCount: () => Promise<number>

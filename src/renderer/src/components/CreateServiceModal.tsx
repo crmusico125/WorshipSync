@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react"
 import {
   Music2, Timer, BookOpen, Megaphone, Film, Check,
-  X, Clock, CalendarClock, ChevronRight, Sparkles,
+  X, Clock, CalendarClock, ChevronRight, Sparkles, Layers,
 } from "lucide-react"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -9,25 +9,11 @@ import { Input } from "@/components/ui/input"
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-interface BuiltinTemplateItem {
-  itemType: "countdown" | "song" | "scripture" | "announcement"
-  title: string
-  estimatedMin: number
-}
-
-interface BuiltinTemplate {
-  id: string
-  name: string
-  description: string
-  gradient: string
-  items: BuiltinTemplateItem[]
-}
-
 interface UserTemplate {
   id: string
   name: string
   createdAt: string
-  items: { itemType: string; songId?: number; songTitle?: string; title?: string }[]
+  items: { itemType: string; songId?: number; songTitle?: string; title?: string; scriptureRef?: string; mediaPath?: string }[]
 }
 
 interface ServiceSchedule {
@@ -37,75 +23,6 @@ interface ServiceSchedule {
   timezone?: string
   label: string
 }
-
-// ── Built-in templates ─────────────────────────────────────────────────────────
-
-const BUILTIN: BuiltinTemplate[] = [
-  {
-    id: "sunday",
-    name: "Sunday Service",
-    description: "Standard weekly worship",
-    gradient: "from-blue-900 via-blue-800 to-indigo-900",
-    items: [
-      { itemType: "countdown",     title: "Countdown",        estimatedMin: 10 },
-      { itemType: "song",          title: "Opening Worship",  estimatedMin: 4  },
-      { itemType: "song",          title: "Worship",          estimatedMin: 4  },
-      { itemType: "song",          title: "Worship",          estimatedMin: 4  },
-      { itemType: "scripture",     title: "Scripture Reading",estimatedMin: 2  },
-      { itemType: "song",          title: "Response Song",    estimatedMin: 4  },
-      { itemType: "announcement",  title: "Announcements",    estimatedMin: 2  },
-    ],
-  },
-  {
-    id: "youth",
-    name: "Youth Service",
-    description: "High-energy worship",
-    gradient: "from-purple-900 via-purple-800 to-pink-900",
-    items: [
-      { itemType: "countdown",    title: "Countdown",    estimatedMin: 10 },
-      { itemType: "song",         title: "Worship",      estimatedMin: 4  },
-      { itemType: "song",         title: "Worship",      estimatedMin: 4  },
-      { itemType: "song",         title: "Worship",      estimatedMin: 4  },
-      { itemType: "announcement", title: "Announcements",estimatedMin: 2  },
-    ],
-  },
-  {
-    id: "prayer",
-    name: "Prayer Night",
-    description: "Worship & intercession",
-    gradient: "from-amber-900 via-orange-800 to-red-900",
-    items: [
-      { itemType: "countdown",    title: "Countdown",    estimatedMin: 10 },
-      { itemType: "song",         title: "Worship",      estimatedMin: 4  },
-      { itemType: "song",         title: "Worship",      estimatedMin: 4  },
-      { itemType: "song",         title: "Worship",      estimatedMin: 4  },
-      { itemType: "scripture",    title: "Scripture",    estimatedMin: 2  },
-      { itemType: "announcement", title: "Prayer Focus", estimatedMin: 5  },
-    ],
-  },
-  {
-    id: "special",
-    name: "Special Event",
-    description: "Baptism, Easter, Christmas",
-    gradient: "from-emerald-900 via-teal-800 to-cyan-900",
-    items: [
-      { itemType: "countdown",    title: "Countdown",        estimatedMin: 10 },
-      { itemType: "announcement", title: "Welcome",          estimatedMin: 2  },
-      { itemType: "song",         title: "Worship",          estimatedMin: 4  },
-      { itemType: "song",         title: "Worship",          estimatedMin: 4  },
-      { itemType: "scripture",    title: "Scripture Reading",estimatedMin: 2  },
-      { itemType: "song",         title: "Response Song",    estimatedMin: 4  },
-      { itemType: "announcement", title: "Announcements",    estimatedMin: 2  },
-    ],
-  },
-  {
-    id: "blank",
-    name: "Blank",
-    description: "Start from scratch",
-    gradient: "from-slate-800 via-slate-700 to-zinc-800",
-    items: [],
-  },
-]
 
 const SERVICE_TYPES = [
   "Regular Service",
@@ -139,6 +56,7 @@ const ITEM_META: Record<string, { icon: React.ElementType; color: string; bg: st
   scripture:    { icon: BookOpen, color: "text-amber-400",  bg: "bg-amber-500/15"  },
   announcement: { icon: Megaphone,color: "text-green-400",  bg: "bg-green-500/15"  },
   media:        { icon: Film,     color: "text-sky-400",    bg: "bg-sky-500/15"    },
+  section:      { icon: Layers,   color: "text-orange-400", bg: "bg-orange-500/15" },
 }
 
 function fmtMin(min: number): string {
@@ -214,8 +132,6 @@ export default function CreateServiceModal({ onClose, onCreated }: Props) {
   useEffect(() => {
     if (nameEdited) return
     if (selectedTemplateId) {
-      const builtin = BUILTIN.find(t => t.id === selectedTemplateId)
-      if (builtin && builtin.id !== "blank") { setServiceName(builtin.name); return }
       const user = userTemplates.find(t => t.id === selectedTemplateId)
       if (user) { setServiceName(user.name); return }
     }
@@ -225,14 +141,16 @@ export default function CreateServiceModal({ onClose, onCreated }: Props) {
   // Resolve active template items for preview
   const previewItems = useMemo((): { itemType: string; title: string; estimatedMin: number }[] => {
     if (!selectedTemplateId) return []
-    const builtin = BUILTIN.find(t => t.id === selectedTemplateId)
-    if (builtin) return builtin.items
     const user = userTemplates.find(t => t.id === selectedTemplateId)
     if (!user) return []
     return user.items.map(i => ({
       itemType: i.itemType,
       title: i.songTitle ?? i.title ?? i.itemType,
-      estimatedMin: i.itemType === "countdown" ? 10 : i.itemType === "song" ? 4 : i.itemType === "scripture" ? 2 : 2,
+      estimatedMin: i.itemType === "countdown" ? 10
+        : i.itemType === "song" ? 4
+        : i.itemType === "scripture" ? 2
+        : i.itemType === "section" ? 0
+        : 2,
     }))
   }, [selectedTemplateId, userTemplates])
 
@@ -248,31 +166,21 @@ export default function CreateServiceModal({ onClose, onCreated }: Props) {
   // ── Apply template items to a newly created service ────────────────────────
 
   async function applyTemplateItems(serviceId: number) {
-    const builtin = BUILTIN.find(t => t.id === selectedTemplateId)
-    if (builtin) {
-      for (const item of builtin.items) {
-        if (item.itemType === "countdown") {
-          await window.worshipsync.lineup.addCountdown(serviceId)
-        } else if (item.itemType === "announcement") {
-          await window.worshipsync.lineup.addAnnouncement(serviceId, { title: item.title, content: "" })
-        } else if (item.itemType === "scripture") {
-          await window.worshipsync.lineup.addScripture(serviceId, { title: item.title, scriptureRef: "{}" })
-        }
-        // songs without IDs are skipped — operator adds them in builder
-      }
-      return
-    }
     const user = userTemplates.find(t => t.id === selectedTemplateId)
     if (!user) return
     for (const item of user.items) {
       if (item.itemType === "countdown") {
         await window.worshipsync.lineup.addCountdown(serviceId)
+      } else if (item.itemType === "section") {
+        await window.worshipsync.lineup.addSection(serviceId, { title: item.title ?? "Section" })
       } else if (item.itemType === "song" && item.songId) {
         await window.worshipsync.lineup.addSong(serviceId, item.songId).catch(() => {})
       } else if (item.itemType === "announcement") {
-        await window.worshipsync.lineup.addAnnouncement(serviceId, { title: item.title ?? "Announcement", content: "" })
+        await window.worshipsync.lineup.addAnnouncement(serviceId, { title: item.title ?? "Announcement", content: item.scriptureRef ?? "" })
       } else if (item.itemType === "scripture") {
-        await window.worshipsync.lineup.addScripture(serviceId, { title: item.title ?? "Scripture", scriptureRef: "{}" })
+        await window.worshipsync.lineup.addScripture(serviceId, { title: item.title ?? "Scripture", scriptureRef: item.scriptureRef ?? "{}" })
+      } else if (item.itemType === "media" && item.mediaPath) {
+        await window.worshipsync.lineup.addMedia(serviceId, { title: item.title ?? "Media", mediaPath: item.mediaPath })
       }
     }
   }
@@ -346,65 +254,41 @@ export default function CreateServiceModal({ onClose, onCreated }: Props) {
                     <p className="text-sm font-semibold">Choose a Template <span className="text-muted-foreground font-normal">(Optional)</span></p>
                   </div>
 
-                  {/* Built-in cards */}
-                  <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1">
-                    {BUILTIN.map(tpl => {
-                      const isSel = selectedTemplateId === tpl.id
-                      return (
-                        <button
-                          key={tpl.id}
-                          onClick={() => setSelectedTemplateId(isSel ? null : tpl.id)}
-                          className={`relative flex-shrink-0 rounded-xl overflow-hidden border-2 transition-all group ${
-                            isSel ? "border-primary ring-2 ring-primary/25" : "border-border hover:border-muted-foreground/40"
-                          }`}
-                          style={{ width: 160, aspectRatio: "16/9" }}
-                        >
-                          <div className={`absolute inset-0 bg-gradient-to-br ${tpl.gradient}`} />
-                          <div className="absolute inset-0 bg-black/20" />
-                          <div className="absolute inset-0 flex flex-col justify-end p-2.5">
-                            <p className="text-[12px] font-bold text-white leading-tight">{tpl.name}</p>
-                            <p className="text-[10px] text-white/60 mt-0.5">
-                              {tpl.items.length === 0 ? "Empty lineup" : `${tpl.items.length} items`}
-                            </p>
-                          </div>
-                          {isSel && (
-                            <div className="absolute top-2 right-2 h-5 w-5 rounded-full bg-primary flex items-center justify-center">
-                              <Check className="h-3 w-3 text-primary-foreground" />
+                  {userTemplates.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      No saved templates yet. Save your current lineup as a template from the Builder's Setlist Templates manager to reuse it here.
+                    </p>
+                  ) : (
+                    <div className="flex gap-3 overflow-x-auto pb-2 -mx-1 px-1">
+                      {userTemplates.map(tpl => {
+                        const isSel = selectedTemplateId === tpl.id
+                        return (
+                          <button
+                            key={tpl.id}
+                            onClick={() => setSelectedTemplateId(isSel ? null : tpl.id)}
+                            className={`relative flex-shrink-0 rounded-xl overflow-hidden border-2 transition-all ${
+                              isSel ? "border-primary ring-2 ring-primary/25" : "border-border hover:border-muted-foreground/40"
+                            }`}
+                            style={{ width: 160, aspectRatio: "16/9" }}
+                          >
+                            <div className="absolute inset-0 bg-gradient-to-br from-slate-700 to-slate-900" />
+                            <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
+                              <Sparkles className="h-5 w-5 text-white/50" />
                             </div>
-                          )}
-                        </button>
-                      )
-                    })}
-
-                    {/* User saved templates */}
-                    {userTemplates.map(tpl => {
-                      const isSel = selectedTemplateId === tpl.id
-                      return (
-                        <button
-                          key={tpl.id}
-                          onClick={() => setSelectedTemplateId(isSel ? null : tpl.id)}
-                          className={`relative flex-shrink-0 rounded-xl overflow-hidden border-2 transition-all ${
-                            isSel ? "border-primary ring-2 ring-primary/25" : "border-border hover:border-muted-foreground/40"
-                          }`}
-                          style={{ width: 160, aspectRatio: "16/9" }}
-                        >
-                          <div className="absolute inset-0 bg-gradient-to-br from-slate-700 to-slate-900" />
-                          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
-                            <Sparkles className="h-5 w-5 text-white/50" />
-                          </div>
-                          <div className="absolute inset-0 flex flex-col justify-end p-2.5">
-                            <p className="text-[12px] font-bold text-white leading-tight truncate">{tpl.name}</p>
-                            <p className="text-[10px] text-white/60 mt-0.5">{tpl.items.length} items · Saved</p>
-                          </div>
-                          {isSel && (
-                            <div className="absolute top-2 right-2 h-5 w-5 rounded-full bg-primary flex items-center justify-center">
-                              <Check className="h-3 w-3 text-primary-foreground" />
+                            <div className="absolute inset-0 flex flex-col justify-end p-2.5">
+                              <p className="text-[12px] font-bold text-white leading-tight truncate">{tpl.name}</p>
+                              <p className="text-[10px] text-white/60 mt-0.5">{tpl.items.length} items · Saved</p>
                             </div>
-                          )}
-                        </button>
-                      )
-                    })}
-                  </div>
+                            {isSel && (
+                              <div className="absolute top-2 right-2 h-5 w-5 rounded-full bg-primary flex items-center justify-center">
+                                <Check className="h-3 w-3 text-primary-foreground" />
+                              </div>
+                            )}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
                 </div>
 
                 {/* Step 2 — Details */}
@@ -524,7 +408,7 @@ export default function CreateServiceModal({ onClose, onCreated }: Props) {
                       <Sparkles className="h-5 w-5 text-muted-foreground/50" />
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      {selectedTemplateId === "blank"
+                      {selectedTemplateId
                         ? "Empty lineup — add items in the builder"
                         : "Select a template to preview the lineup"}
                     </p>
@@ -563,7 +447,7 @@ export default function CreateServiceModal({ onClose, onCreated }: Props) {
           {/* ── Footer ──────────────────────────────────────────────────── */}
           <div className="flex items-center justify-between px-6 py-4 border-t border-border bg-card shrink-0">
             <p className="text-xs text-muted-foreground">
-              {selectedTemplateId && selectedTemplateId !== "blank"
+              {selectedTemplateId
                 ? "Template structure will be applied. Songs can be added in the builder."
                 : "You can add songs and media after creating the service."}
             </p>

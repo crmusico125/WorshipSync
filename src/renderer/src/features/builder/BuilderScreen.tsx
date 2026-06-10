@@ -3,7 +3,7 @@ import {
   Plus, BookOpen, Trash2, Pencil,
   Radio, Eye, Music2, Calendar, Image as ImageIcon,
   Monitor, Timer, GripVertical, X, Megaphone,
-  Play, Pause, SkipBack, SkipForward, Repeat, ListTodo, Layers, Check,
+  Play, Pause, SkipBack, SkipForward, Repeat, ListTodo, Layers, Check, Copy,
 } from "lucide-react"
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors,
@@ -152,14 +152,43 @@ interface SetlistTemplateItem {
   songId?: number
   songTitle?: string
   title?: string
+  scriptureRef?: string
+  mediaPath?: string
 }
 
 interface SetlistTemplate {
   id: string
   name: string
   createdAt: string
+  updatedAt?: string
   items: SetlistTemplateItem[]
 }
+
+function templateItemDuration(item: SetlistTemplateItem): number {
+  if (item.itemType === 'countdown') return 300
+  if (item.itemType === 'scripture') {
+    try { return (JSON.parse(item.scriptureRef ?? '{}').verses ?? []).length * 12 } catch { return 0 }
+  }
+  return 0
+}
+
+function templateItemIcon(itemType: string) {
+  switch (itemType) {
+    case 'scripture': return BookOpen
+    case 'announcement': return Megaphone
+    case 'countdown': return Timer
+    case 'media': return ImageIcon
+    case 'song': default: return Music2
+  }
+}
+
+const ADD_TEMPLATE_ITEM_OPTIONS: { type: string; label: string; icon: typeof Music2 }[] = [
+  { type: 'section', label: 'Section', icon: Layers },
+  { type: 'song', label: 'Song', icon: Music2 },
+  { type: 'scripture', label: 'Scripture', icon: BookOpen },
+  { type: 'announcement', label: 'Announcement', icon: Megaphone },
+  { type: 'countdown', label: 'Countdown', icon: Timer },
+]
 
 // ── Duration helpers ─────────────────────────────────────────────────────────
 
@@ -214,8 +243,6 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
   const [showAddSong, setShowAddSong] = useState(false)
   const [showTemplates, setShowTemplates] = useState(false)
   const [templates, setTemplates] = useState<SetlistTemplate[]>([])
-  const [savingTemplate, setSavingTemplate] = useState(false)
-  const [newTemplateName, setNewTemplateName] = useState("")
   const [applyingTemplate, setApplyingTemplate] = useState(false)
   const [editingItemId, setEditingItemId] = useState<number | null>(null)
   const [editingSectionId, setEditingSectionId] = useState<number | null>(null)
@@ -659,35 +686,48 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
 
   // ── Setlist template handlers ────────────────────────────────────────────
 
-  const handleSaveTemplate = async () => {
-    if (!newTemplateName.trim()) return
-    setSavingTemplate(true)
+  const persistTemplates = async (updated: SetlistTemplate[]) => {
+    setTemplates(updated)
+    await window.worshipsync.appState.set({ setlistTemplates: updated })
+  }
+
+  const handleNewTemplateFromLineup = async (): Promise<string | undefined> => {
+    if (lineup.length === 0) return undefined
     const items: SetlistTemplateItem[] = lineup.map(item => ({
       itemType: item.itemType,
       songId: item.songId ?? undefined,
       songTitle: item.song?.title ?? item.title ?? undefined,
       title: item.title ?? undefined,
+      scriptureRef: item.scriptureRef ?? undefined,
+      mediaPath: item.mediaPath ?? undefined,
     }))
     const tpl: SetlistTemplate = {
       id: Date.now().toString(),
-      name: newTemplateName.trim(),
+      name: "Untitled Template",
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
       items,
     }
-    const updated = [...templates, tpl]
-    setTemplates(updated)
-    await window.worshipsync.appState.set({ setlistTemplates: updated })
-    setNewTemplateName("")
-    setSavingTemplate(false)
+    await persistTemplates([...templates, tpl])
+    return tpl.id
   }
 
   const handleApplyTemplate = async (tpl: SetlistTemplate) => {
+    if (lineup.length > 0 && !confirm(`Add ${tpl.items.length} item(s) from "${tpl.name}" to the end of the current lineup?`)) return
     setApplyingTemplate(true)
     for (const item of tpl.items) {
       if (item.itemType === 'song' && item.songId) {
         await addSongToLineup(item.songId).catch(() => {})
       } else if (item.itemType === 'countdown') {
         await addCountdownToLineup().catch(() => {})
+      } else if (item.itemType === 'section') {
+        await addSectionToLineup(item.title ?? 'Section').catch(() => {})
+      } else if (item.itemType === 'scripture') {
+        await addScriptureToLineup({ title: item.title ?? 'Scripture', scriptureRef: item.scriptureRef ?? '{}' }).catch(() => {})
+      } else if (item.itemType === 'announcement') {
+        await addAnnouncementToLineup({ title: item.title ?? 'Announcement', content: item.scriptureRef ?? '' }).catch(() => {})
+      } else if (item.itemType === 'media' && item.mediaPath) {
+        await addMediaToLineup({ title: item.title ?? 'Media', mediaPath: item.mediaPath }).catch(() => {})
       }
     }
     setApplyingTemplate(false)
@@ -695,9 +735,52 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
   }
 
   const handleDeleteTemplate = async (id: string) => {
-    const updated = templates.filter(t => t.id !== id)
-    setTemplates(updated)
-    await window.worshipsync.appState.set({ setlistTemplates: updated })
+    await persistTemplates(templates.filter(t => t.id !== id))
+  }
+
+  const handleDuplicateTemplate = async (tpl: SetlistTemplate): Promise<string> => {
+    const copy: SetlistTemplate = {
+      ...tpl,
+      id: Date.now().toString(),
+      name: `${tpl.name} copy`,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      items: tpl.items.map(i => ({ ...i })),
+    }
+    await persistTemplates([...templates, copy])
+    return copy.id
+  }
+
+  const handleRenameTemplate = async (id: string, name: string) => {
+    const trimmed = name.trim()
+    if (!trimmed) return
+    await persistTemplates(templates.map(t =>
+      t.id === id ? { ...t, name: trimmed, updatedAt: new Date().toISOString() } : t
+    ))
+  }
+
+  const handleReorderTemplateItems = async (id: string, oldIndex: number, newIndex: number) => {
+    await persistTemplates(templates.map(t =>
+      t.id === id ? { ...t, items: arrayMove(t.items, oldIndex, newIndex), updatedAt: new Date().toISOString() } : t
+    ))
+  }
+
+  const handleRemoveTemplateItem = async (id: string, index: number) => {
+    await persistTemplates(templates.map(t =>
+      t.id === id ? { ...t, items: t.items.filter((_, i) => i !== index), updatedAt: new Date().toISOString() } : t
+    ))
+  }
+
+  const handleAddTemplateItem = async (id: string, item: SetlistTemplateItem) => {
+    await persistTemplates(templates.map(t =>
+      t.id === id ? { ...t, items: [...t.items, item], updatedAt: new Date().toISOString() } : t
+    ))
+  }
+
+  const handleUpdateTemplateItem = async (id: string, index: number, patch: Partial<SetlistTemplateItem>) => {
+    await persistTemplates(templates.map(t =>
+      t.id === id ? { ...t, items: t.items.map((it, i) => i === index ? { ...it, ...patch } : it), updatedAt: new Date().toISOString() } : t
+    ))
   }
 
   // ── Empty state ──────────────────────────────────────────────────────────
@@ -1619,81 +1702,21 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
         />
       )}
       {showTemplates && (
-        <Dialog open onOpenChange={(open) => !open && setShowTemplates(false)}>
-          <DialogContent
-            className="p-0 gap-0 overflow-hidden rounded-xl border border-border shadow-2xl"
-            style={{ width: 480, maxWidth: "95vw" }}
-          >
-            <div className="flex flex-col bg-background text-foreground max-h-[80vh]">
-              {/* Header */}
-              <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-border shrink-0">
-                <DialogTitle className="text-base font-semibold">Setlist Templates</DialogTitle>
-              </div>
-
-              <div className="overflow-y-auto flex-1">
-                {/* Save current lineup */}
-                <div className="px-5 py-4 border-b border-border">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Save current lineup as template</p>
-                  {lineup.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">Lineup is empty — add items before saving as template.</p>
-                  ) : (
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={newTemplateName}
-                        onChange={(e) => setNewTemplateName(e.target.value)}
-                        placeholder="e.g. Sunday Morning Flow"
-                        onKeyDown={(e) => e.key === 'Enter' && !savingTemplate && newTemplateName.trim() && handleSaveTemplate()}
-                        className="flex-1 h-9 px-3 text-sm bg-background border border-border rounded-md outline-none focus:border-primary/50 transition-colors placeholder:text-muted-foreground/40"
-                      />
-                      <Button
-                        size="sm"
-                        disabled={!newTemplateName.trim() || savingTemplate}
-                        onClick={handleSaveTemplate}
-                      >
-                        Save
-                      </Button>
-                    </div>
-                  )}
-                </div>
-
-                {/* Saved templates */}
-                <div className="px-5 py-4">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Saved templates</p>
-                  {templates.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">No templates saved yet.</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {templates.map((tpl) => (
-                        <div key={tpl.id} className="flex items-center gap-3 p-3 rounded-lg border border-border bg-card">
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">{tpl.name}</p>
-                            <p className="text-xs text-muted-foreground mt-0.5">
-                              {tpl.items.length} items · {new Date(tpl.createdAt).toLocaleDateString()}
-                            </p>
-                          </div>
-                          <Button
-                            size="sm" variant="outline"
-                            disabled={applyingTemplate}
-                            onClick={() => handleApplyTemplate(tpl)}
-                          >
-                            Apply
-                          </Button>
-                          <button
-                            onClick={() => handleDeleteTemplate(tpl.id)}
-                            className="h-7 w-7 rounded flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors shrink-0"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
+        <TemplateManagerModal
+          templates={templates}
+          lineupCount={lineup.length}
+          applyingTemplate={applyingTemplate}
+          onClose={() => setShowTemplates(false)}
+          onNewFromLineup={handleNewTemplateFromLineup}
+          onApply={handleApplyTemplate}
+          onDelete={handleDeleteTemplate}
+          onDuplicate={handleDuplicateTemplate}
+          onRename={handleRenameTemplate}
+          onReorderItems={handleReorderTemplateItems}
+          onRemoveItem={handleRemoveTemplateItem}
+          onAddItem={handleAddTemplateItem}
+          onUpdateItem={handleUpdateTemplateItem}
+        />
       )}
     </div>
   )
@@ -2244,6 +2267,503 @@ function SortableLineupItem({
       </div>
 
     </div>
+  )
+}
+
+// ── SortableTemplateItem ──────────────────────────────────────────────────────
+
+function SortableTemplateItem({
+  id, item, colorIdx, isEditing, editValue,
+  onEditStart, onEditChange, onEditCommit, onEditCancel, onRemove,
+}: {
+  id: number
+  item: SetlistTemplateItem
+  colorIdx: number
+  isEditing: boolean
+  editValue: string
+  onEditStart: () => void
+  onEditChange: (v: string) => void
+  onEditCommit: () => void
+  onEditCancel: () => void
+  onRemove: () => void
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
+  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.4 : 1, zIndex: isDragging ? 10 : undefined }
+  const color = colorIdx >= 0 ? getSectionColor(colorIdx) : null
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => { if (isEditing) inputRef.current?.focus() }, [isEditing])
+
+  if (item.itemType === 'section') {
+    return (
+      <div ref={setNodeRef} style={style} className={`flex items-center gap-1.5 px-1 py-1.5 mt-2 first:mt-0 border-l-2 ${color?.border ?? 'border-l-transparent'}`}>
+        <button {...attributes} {...listeners} className="shrink-0 cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground touch-none" tabIndex={-1}>
+          <GripVertical className="h-3.5 w-3.5" />
+        </button>
+        <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${color?.dot ?? 'bg-muted-foreground'}`} />
+        {isEditing ? (
+          <input
+            ref={inputRef}
+            value={editValue}
+            onChange={e => onEditChange(e.target.value)}
+            onBlur={onEditCommit}
+            onKeyDown={e => {
+              if (e.key === 'Enter') onEditCommit()
+              if (e.key === 'Escape') onEditCancel()
+            }}
+            className="flex-1 bg-transparent text-[10px] font-bold uppercase tracking-wider outline-none min-w-0"
+          />
+        ) : (
+          <button onClick={onEditStart} className={`flex-1 text-left text-[10px] font-bold uppercase tracking-wider truncate ${color?.text ?? 'text-muted-foreground'}`}>
+            {item.title || 'Section'}
+          </button>
+        )}
+        <button onClick={onRemove} className="shrink-0 text-muted-foreground/50 hover:text-destructive transition-colors">
+          <X className="h-3 w-3" />
+        </button>
+      </div>
+    )
+  }
+
+  const Icon = templateItemIcon(item.itemType)
+  const dur = fmtDur(templateItemDuration(item))
+  const editable = item.itemType !== 'song' && item.itemType !== 'countdown'
+  const title = item.itemType === 'song'
+    ? (item.songTitle ?? 'Song')
+    : item.itemType === 'countdown'
+    ? 'Countdown Timer'
+    : (item.title || (item.itemType === 'scripture' ? 'Scripture' : item.itemType === 'announcement' ? 'Announcement' : 'Media'))
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="group flex items-center gap-2 px-2 py-1.5 rounded-md mb-1 border border-border bg-card"
+    >
+      <button {...attributes} {...listeners} className="shrink-0 cursor-grab active:cursor-grabbing text-muted-foreground/40 hover:text-muted-foreground touch-none" tabIndex={-1}>
+        <GripVertical className="h-3.5 w-3.5" />
+      </button>
+      <Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+      {isEditing ? (
+        <input
+          ref={inputRef}
+          value={editValue}
+          onChange={e => onEditChange(e.target.value)}
+          onBlur={onEditCommit}
+          onKeyDown={e => {
+            if (e.key === 'Enter') onEditCommit()
+            if (e.key === 'Escape') onEditCancel()
+          }}
+          className="flex-1 bg-transparent text-xs outline-none min-w-0 border-b border-primary/40"
+        />
+      ) : (
+        <span
+          className={`text-xs font-medium truncate flex-1 min-w-0 ${editable ? 'cursor-text' : ''}`}
+          onClick={editable ? onEditStart : undefined}
+        >
+          {title}
+        </span>
+      )}
+      {dur && <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">{dur}</span>}
+      <button onClick={onRemove} className="shrink-0 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-opacity">
+        <X className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  )
+}
+
+// ── TemplateManagerModal ──────────────────────────────────────────────────────
+
+interface TemplateManagerModalProps {
+  templates: SetlistTemplate[]
+  lineupCount: number
+  applyingTemplate: boolean
+  onClose: () => void
+  onNewFromLineup: () => Promise<string | undefined>
+  onApply: (tpl: SetlistTemplate) => Promise<void>
+  onDelete: (id: string) => Promise<void>
+  onDuplicate: (tpl: SetlistTemplate) => Promise<string>
+  onRename: (id: string, name: string) => Promise<void>
+  onReorderItems: (id: string, oldIndex: number, newIndex: number) => Promise<void>
+  onRemoveItem: (id: string, index: number) => Promise<void>
+  onAddItem: (id: string, item: SetlistTemplateItem) => Promise<void>
+  onUpdateItem: (id: string, index: number, patch: Partial<SetlistTemplateItem>) => Promise<void>
+}
+
+function TemplateManagerModal({
+  templates, lineupCount, applyingTemplate, onClose,
+  onNewFromLineup, onApply, onDelete, onDuplicate, onRename,
+  onReorderItems, onRemoveItem, onAddItem, onUpdateItem,
+}: TemplateManagerModalProps) {
+  const [selectedId, setSelectedId] = useState<string | null>(templates[0]?.id ?? null)
+  const [editingName, setEditingName] = useState(false)
+  const [nameDraft, setNameDraft] = useState("")
+  const [showAddMenu, setShowAddMenu] = useState(false)
+  const [showSongPicker, setShowSongPicker] = useState(false)
+  const [songQuery, setSongQuery] = useState("")
+  const [songResults, setSongResults] = useState<{ id: number; title: string; artist: string }[]>([])
+  const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null)
+  const [editingItemValue, setEditingItemValue] = useState("")
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
+
+  // Keep selection valid as templates are added/removed
+  useEffect(() => {
+    if (selectedId === null && templates.length > 0) { setSelectedId(templates[0].id); return }
+    if (selectedId !== null && !templates.some(t => t.id === selectedId)) {
+      setSelectedId(templates[0]?.id ?? null)
+    }
+  }, [templates, selectedId])
+
+  useEffect(() => {
+    if (!showSongPicker) return
+    const t = setTimeout(async () => {
+      const results = songQuery.trim()
+        ? await window.worshipsync.songs.search(songQuery)
+        : await window.worshipsync.songs.getAll()
+      setSongResults(results.slice(0, 30))
+    }, 200)
+    return () => clearTimeout(t)
+  }, [songQuery, showSongPicker])
+
+  const selectedTemplate = templates.find(t => t.id === selectedId) ?? null
+
+  // Cluster items under their section header so they render visually nested,
+  // mirroring the grouping in the main lineup view.
+  const itemGroups = useMemo(() => {
+    const items = selectedTemplate?.items ?? []
+    const groups: { sectionIdx: number | null; colorIdx: number; childIdxs: number[] }[] = []
+    let current: { sectionIdx: number | null; colorIdx: number; childIdxs: number[] } | null = null
+    let colorIdx = -1
+    items.forEach((item, i) => {
+      if (item.itemType === 'section') {
+        colorIdx++
+        current = { sectionIdx: i, colorIdx, childIdxs: [] }
+        groups.push(current)
+      } else {
+        if (!current) {
+          current = { sectionIdx: null, colorIdx: -1, childIdxs: [] }
+          groups.push(current)
+        }
+        current.childIdxs.push(i)
+      }
+    })
+    return groups
+  }, [selectedTemplate])
+
+  const selectTemplate = (id: string) => {
+    setSelectedId(id)
+    setEditingName(false)
+    setEditingItemIndex(null)
+    setShowAddMenu(false)
+    setShowSongPicker(false)
+  }
+
+  const handleNew = async () => {
+    const id = await onNewFromLineup()
+    if (id) {
+      setSelectedId(id)
+      setEditingName(true)
+      setNameDraft("Untitled Template")
+    }
+  }
+
+  const commitRename = () => {
+    setEditingName(false)
+    if (selectedTemplate && nameDraft.trim() && nameDraft.trim() !== selectedTemplate.name) {
+      onRename(selectedTemplate.id, nameDraft.trim())
+    }
+  }
+
+  const handleDuplicate = async () => {
+    if (!selectedTemplate) return
+    const id = await onDuplicate(selectedTemplate)
+    setSelectedId(id)
+  }
+
+  const handleDelete = () => {
+    if (!selectedTemplate) return
+    if (confirm(`Delete template "${selectedTemplate.name}"? This cannot be undone.`)) {
+      onDelete(selectedTemplate.id)
+    }
+  }
+
+  const handleItemDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id || !selectedTemplate) return
+    onReorderItems(selectedTemplate.id, Number(active.id), Number(over.id))
+  }
+
+  const handleAddOption = (type: string) => {
+    setShowAddMenu(false)
+    if (!selectedTemplate) return
+    if (type === 'song') {
+      setSongQuery("")
+      setSongResults([])
+      setShowSongPicker(true)
+      return
+    }
+    const defaults: Record<string, SetlistTemplateItem> = {
+      section: { itemType: 'section', title: 'New Section' },
+      scripture: { itemType: 'scripture', title: 'Scripture Reading', scriptureRef: JSON.stringify({ verses: [] }) },
+      announcement: { itemType: 'announcement', title: 'Announcement', scriptureRef: '' },
+      countdown: { itemType: 'countdown' },
+    }
+    const item = defaults[type]
+    if (item) onAddItem(selectedTemplate.id, item)
+  }
+
+  const addSongItem = (song: { id: number; title: string; artist: string }) => {
+    if (!selectedTemplate) return
+    onAddItem(selectedTemplate.id, { itemType: 'song', songId: song.id, songTitle: song.title })
+    setShowSongPicker(false)
+  }
+
+  const commitItemEdit = () => {
+    if (editingItemIndex === null || !selectedTemplate) { setEditingItemIndex(null); return }
+    const idx = editingItemIndex
+    const trimmed = editingItemValue.trim()
+    setEditingItemIndex(null)
+    if (trimmed) onUpdateItem(selectedTemplate.id, idx, { title: trimmed })
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent
+        className="p-0 gap-0 overflow-hidden rounded-xl border border-border shadow-2xl"
+        style={{ width: 720, maxWidth: "95vw" }}
+      >
+        <div className="flex flex-col bg-background text-foreground h-[32rem] max-h-[80vh]">
+          <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-border shrink-0">
+            <DialogTitle className="text-base font-semibold">Setlist Templates</DialogTitle>
+          </div>
+
+          <div className="flex flex-1 min-h-0">
+            {/* ── Left: template list ── */}
+            <div className="w-56 border-r border-border flex flex-col shrink-0">
+              <div className="p-3 border-b border-border">
+                <Button
+                  variant="outline" size="sm" className="w-full gap-1.5 h-8 text-xs"
+                  disabled={lineupCount === 0}
+                  onClick={handleNew}
+                  title={lineupCount === 0 ? "Add items to the lineup first" : undefined}
+                >
+                  <Plus className="h-3.5 w-3.5" /> New from current lineup
+                </Button>
+              </div>
+              <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                {templates.length === 0 ? (
+                  <p className="text-xs text-muted-foreground px-2 py-4 text-center">No templates yet</p>
+                ) : (
+                  templates.map(tpl => (
+                    <button
+                      key={tpl.id}
+                      onClick={() => selectTemplate(tpl.id)}
+                      className={`w-full text-left px-2.5 py-2 rounded-md transition-colors ${
+                        selectedId === tpl.id ? 'bg-primary/10 border border-primary/30' : 'border border-transparent hover:bg-accent/50'
+                      }`}
+                    >
+                      <p className={`text-xs font-medium truncate ${selectedId === tpl.id ? 'text-primary' : 'text-foreground'}`}>{tpl.name}</p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5">{tpl.items.length} item{tpl.items.length === 1 ? '' : 's'}</p>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* ── Right: editor ── */}
+            <div className="flex-1 flex flex-col min-w-0">
+              {!selectedTemplate ? (
+                <div className="flex-1 flex flex-col items-center justify-center text-center p-6 gap-1">
+                  <p className="text-sm font-medium text-foreground">No template selected</p>
+                  <p className="text-xs text-muted-foreground">
+                    {lineupCount === 0
+                      ? "Add items to your lineup, then save it as a template."
+                      : 'Create one from your current lineup with "New from current lineup".'}
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {/* Header */}
+                  <div className="flex items-center gap-2 px-4 py-3 border-b border-border shrink-0">
+                    {editingName ? (
+                      <input
+                        autoFocus
+                        value={nameDraft}
+                        onChange={e => setNameDraft(e.target.value)}
+                        onBlur={commitRename}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') commitRename()
+                          if (e.key === 'Escape') setEditingName(false)
+                        }}
+                        className="flex-1 h-8 px-2 text-sm font-semibold bg-background border border-border rounded-md outline-none focus:border-primary/50"
+                      />
+                    ) : (
+                      <>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-semibold truncate">{selectedTemplate.name}</p>
+                          {selectedTemplate.updatedAt && (
+                            <p className="text-[10px] text-muted-foreground mt-0.5">
+                              Updated {new Date(selectedTemplate.updatedAt).toLocaleDateString()}
+                            </p>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => { setEditingName(true); setNameDraft(selectedTemplate.name) }}
+                          title="Rename"
+                          className="shrink-0 h-7 w-7 rounded flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Items */}
+                  <div className="flex-1 overflow-y-auto px-4 py-3">
+                    {selectedTemplate.items.length === 0 ? (
+                      <p className="text-xs text-muted-foreground text-center py-6">No items yet — add one below.</p>
+                    ) : (
+                      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleItemDragEnd}>
+                        <SortableContext items={selectedTemplate.items.map((_, i) => i)} strategy={verticalListSortingStrategy}>
+                          {itemGroups.map((group, gi) => {
+                            const sectionIdx = group.sectionIdx
+                            return (
+                              <div key={gi}>
+                                {sectionIdx !== null && (
+                                  <SortableTemplateItem
+                                    key={sectionIdx}
+                                    id={sectionIdx}
+                                    item={selectedTemplate.items[sectionIdx]}
+                                    colorIdx={group.colorIdx}
+                                    isEditing={editingItemIndex === sectionIdx}
+                                    editValue={editingItemValue}
+                                    onEditStart={() => { setEditingItemIndex(sectionIdx); setEditingItemValue(selectedTemplate.items[sectionIdx].title ?? '') }}
+                                    onEditChange={setEditingItemValue}
+                                    onEditCommit={commitItemEdit}
+                                    onEditCancel={() => setEditingItemIndex(null)}
+                                    onRemove={() => onRemoveItem(selectedTemplate.id, sectionIdx)}
+                                  />
+                                )}
+                                {group.childIdxs.length > 0 && (
+                                  <div className={sectionIdx !== null
+                                    ? `ml-4 pl-2 mb-1 border-l-2 ${getSectionColor(group.colorIdx).border} space-y-1`
+                                    : "space-y-1"
+                                  }>
+                                    {group.childIdxs.map(i => (
+                                      <SortableTemplateItem
+                                        key={i}
+                                        id={i}
+                                        item={selectedTemplate.items[i]}
+                                        colorIdx={-1}
+                                        isEditing={editingItemIndex === i}
+                                        editValue={editingItemValue}
+                                        onEditStart={() => { setEditingItemIndex(i); setEditingItemValue(selectedTemplate.items[i].title ?? '') }}
+                                        onEditChange={setEditingItemValue}
+                                        onEditCommit={commitItemEdit}
+                                        onEditCancel={() => setEditingItemIndex(null)}
+                                        onRemove={() => onRemoveItem(selectedTemplate.id, i)}
+                                      />
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </SortableContext>
+                      </DndContext>
+                    )}
+
+                    {/* Add item */}
+                    <div className="relative mt-2">
+                      <Button
+                        variant="outline" size="sm" className="gap-1.5 h-7 text-xs"
+                        onClick={() => setShowAddMenu(v => !v)}
+                      >
+                        <Plus className="h-3 w-3" /> Add item
+                      </Button>
+                      {showAddMenu && (
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={() => setShowAddMenu(false)} />
+                          <div className="absolute left-0 top-full mt-1 z-50 w-44 rounded-md border border-border bg-popover shadow-lg py-1">
+                            {ADD_TEMPLATE_ITEM_OPTIONS.map(opt => (
+                              <button
+                                key={opt.type}
+                                onClick={() => handleAddOption(opt.type)}
+                                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-accent transition-colors text-left"
+                              >
+                                <opt.icon className="h-3.5 w-3.5 text-muted-foreground" /> {opt.label}
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Song picker */}
+                    {showSongPicker && (
+                      <div className="mt-2 border border-border rounded-md p-2">
+                        <input
+                          autoFocus
+                          value={songQuery}
+                          onChange={e => setSongQuery(e.target.value)}
+                          placeholder="Search songs…"
+                          className="w-full h-8 px-2 text-xs bg-background border border-border rounded-md outline-none focus:border-primary/50 transition-colors placeholder:text-muted-foreground/40"
+                        />
+                        <div className="mt-1 max-h-36 overflow-y-auto">
+                          {songResults.length === 0 ? (
+                            <p className="text-[10px] text-muted-foreground px-2 py-1.5">No songs found</p>
+                          ) : (
+                            songResults.map(s => (
+                              <button
+                                key={s.id}
+                                onClick={() => addSongItem(s)}
+                                className="w-full flex items-center justify-between gap-2 px-2 py-1 text-xs hover:bg-accent rounded transition-colors text-left"
+                              >
+                                <span className="truncate">{s.title}</span>
+                                <span className="text-muted-foreground text-[10px] shrink-0">{s.artist}</span>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                        <button
+                          onClick={() => setShowSongPicker(false)}
+                          className="text-[10px] text-muted-foreground hover:text-foreground mt-1 transition-colors"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Footer */}
+                  <div className="flex items-center justify-between px-4 py-3 border-t border-border shrink-0">
+                    <p className="text-xs text-muted-foreground">
+                      {selectedTemplate.items.length} item{selectedTemplate.items.length === 1 ? '' : 's'}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" onClick={handleDuplicate}>
+                        <Copy className="h-3.5 w-3.5" /> Duplicate
+                      </Button>
+                      <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5 text-destructive hover:text-destructive" onClick={handleDelete}>
+                        <Trash2 className="h-3.5 w-3.5" /> Delete
+                      </Button>
+                      <Button
+                        size="sm" className="h-7 text-xs gap-1.5"
+                        disabled={applyingTemplate || selectedTemplate.items.length === 0}
+                        onClick={() => onApply(selectedTemplate)}
+                      >
+                        <ListTodo className="h-3.5 w-3.5" /> Apply to lineup
+                      </Button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 

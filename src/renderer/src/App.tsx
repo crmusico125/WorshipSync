@@ -89,11 +89,14 @@ export default function App() {
     // BuilderScreen always renders with the correct selectedService already set.
     const { loadServices, selectService, services } = useServiceStore.getState()
     let list = services
-    if (list.length === 0) {
+    let svc = list.find((s) => s.id === serviceId)
+    if (!svc) {
+      // The store's cached service list may be stale (e.g. a service was just
+      // created via direct IPC call) — refresh before giving up.
       await loadServices()
       list = useServiceStore.getState().services
+      svc = list.find((s) => s.id === serviceId)
     }
-    const svc = list.find((s) => s.id === serviceId)
     if (svc) await selectService(svc)
     setActiveServiceId(serviceId)
     setCurrentScreen("service")
@@ -106,11 +109,12 @@ export default function App() {
     // Pre-select the service so PresenterDashboard never sees a null selectedService
     const { loadServices, selectService, services } = useServiceStore.getState()
     let list = services
-    if (list.length === 0) {
+    let svc = list.find((s) => s.id === serviceId)
+    if (!svc) {
       await loadServices()
       list = useServiceStore.getState().services
+      svc = list.find((s) => s.id === serviceId)
     }
-    const svc = list.find((s) => s.id === serviceId)
     if (svc) await selectService(svc)
     window.worshipsync.window.openProjection()
     setProjectionOpen(true)

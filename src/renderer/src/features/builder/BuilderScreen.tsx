@@ -1838,7 +1838,7 @@ function ItemSettingsPanel({
                   </div>
                 )
               })() : slide ? (
-                slide.sectionType === "verse" ? (
+                currentItem?.itemType === "scripture" ? (
                   /* Scripture layout */
                   <div className="absolute inset-0 flex flex-col p-3">
                     <div className="flex-1 flex items-center justify-center min-h-0">

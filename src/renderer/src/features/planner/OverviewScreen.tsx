@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react"
 import CreateServiceModal from "../../components/CreateServiceModal"
+import { TemplateManagerModal } from "../../components/TemplateManagerModal"
+import { useSetlistTemplates } from "../../hooks/useSetlistTemplates"
 import {
   CalendarClock,
   Clock,
@@ -13,6 +15,7 @@ import {
   Projector,
   Monitor,
   ListOrdered,
+  Layers,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { AppScreen } from "../../../../../shared/types"
@@ -118,6 +121,12 @@ export default function OverviewScreen({ onGoLive, onOpenBuilder, onNavigate, pr
   const [now, setNow] = useState(new Date())
   const [services, setServices] = useState<ServiceWithCount[]>([])
   const [showNewServiceModal, setShowNewServiceModal] = useState(false)
+  const [showTemplates, setShowTemplates] = useState(false)
+  const {
+    templates, handleNewBlankTemplate, handleDeleteTemplate, handleDuplicateTemplate,
+    handleRenameTemplate, handleReorderTemplateItems, handleRemoveTemplateItem,
+    handleAddTemplateItem, handleUpdateTemplateItem,
+  } = useSetlistTemplates()
   const [songCount, setSongCount] = useState(0)
   const [mediaCount, setMediaCount] = useState(0)
   const [displays, setDisplays] = useState<Display[]>([])
@@ -382,6 +391,7 @@ export default function OverviewScreen({ onGoLive, onOpenBuilder, onNavigate, pr
                 { icon: CalendarPlus, label: "New Service",  action: () => setShowNewServiceModal(true) },
                 { icon: Music,        label: "Add Song",     action: () => onNavigate("library")  },
                 { icon: ImagePlus,    label: "Upload Media", action: () => onNavigate("media")    },
+                { icon: Layers,       label: "Templates",    action: () => setShowTemplates(true) },
                 { icon: Settings2,    label: "Settings",     action: () => onNavigate("settings") },
               ].map(({ icon: Icon, label, action }) => (
                 <button
@@ -436,6 +446,21 @@ export default function OverviewScreen({ onGoLive, onOpenBuilder, onNavigate, pr
             setShowNewServiceModal(false)
             onOpenBuilder(serviceId)
           }}
+        />
+      )}
+
+      {showTemplates && (
+        <TemplateManagerModal
+          templates={templates}
+          onClose={() => setShowTemplates(false)}
+          onNewBlank={handleNewBlankTemplate}
+          onDelete={handleDeleteTemplate}
+          onDuplicate={handleDuplicateTemplate}
+          onRename={handleRenameTemplate}
+          onReorderItems={handleReorderTemplateItems}
+          onRemoveItem={handleRemoveTemplateItem}
+          onAddItem={handleAddTemplateItem}
+          onUpdateItem={handleUpdateTemplateItem}
         />
       )}
     </div>

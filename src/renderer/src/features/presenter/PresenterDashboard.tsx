@@ -1482,6 +1482,41 @@ export default function PresenterDashboard({
     return null;
   })();
 
+  // Shown in the mini confidence-monitor preview on the last lyrics slide of an item —
+  // mirrors the actual confidence monitor, which only shows this strip when the next
+  // slide is a later section of the SAME song. When the next item is a different song,
+  // the actual confidence monitor hides this strip (the trailing blank slide's enlarged
+  // "Next Song" preview covers that transition instead), so this stays hidden too.
+  const showLiveNextPanel = liveSong?.itemType !== "scripture" && !!liveNextUp && !liveNextUp.songTitle
+    && liveNextUp.slide.sectionType !== "blank" && liveNextUp.slide.lines.filter(Boolean).length > 0;
+  const liveNextPanel = liveNextUp && (
+    <div className="shrink-0 px-1.5 pt-0.5 pb-1" style={{ borderTop: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.03)" }}>
+      <p className="text-[6px] font-black uppercase tracking-wider leading-none mb-0.5" style={{ color: "rgba(255,255,255,0.28)" }}>
+        Next
+      </p>
+      <p className="text-[7px] leading-snug line-clamp-1 text-center" style={{ color: "rgba(255,255,255,0.45)" }}>
+        {liveNextUp.slide.lines.filter(Boolean)[0]}
+      </p>
+    </div>
+  );
+
+  // Enlarged "Next Song" treatment for the trailing blank slide — mirrors the centered
+  // preview shown on the actual confidence monitor (song title + first 2 lines).
+  const liveEnlargedNext = liveNextUp?.songTitle && (
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5 px-2 text-center" style={{ background: "#000" }}>
+      <span className="text-[6px] font-extrabold uppercase tracking-widest" style={{ color: "rgba(251,191,36,0.6)" }}>Next Song</span>
+      <span className="text-[11px] font-extrabold leading-tight line-clamp-1" style={{ color: "#fbbf24" }}>{liveNextUp.songTitle}</span>
+      {liveNextUp.slide.sectionLabel && (
+        <span className="text-[5px] font-bold uppercase tracking-wider rounded px-1 py-px" style={{ color: "rgba(251,191,36,0.5)", border: "1px solid rgba(251,191,36,0.3)", background: "rgba(251,191,36,0.08)" }}>
+          {liveNextUp.slide.sectionLabel}
+        </span>
+      )}
+      <div className="text-[7px] leading-snug line-clamp-2" style={{ color: "rgba(255,255,255,0.45)" }}>
+        {liveNextUp.slide.lines.filter(Boolean).slice(0, 2).map((line, i) => <div key={i}>{line}</div>)}
+      </div>
+    </div>
+  );
+
   const nextUp = useMemo(() => {
     if (!currentSong || activeSlideIdx < 0) return null;
     const nextIdx = activeSlideIdx + 1;
@@ -3021,9 +3056,11 @@ export default function PresenterDashboard({
                   <span className="text-[8px] font-medium" style={{ color: "rgba(255,255,255,0.15)" }}>Off</span>
                 </div>
               ) : isBlank ? (
-                <div className="absolute inset-0 flex items-center justify-center" style={{ background: "#000" }}>
-                  <span className="text-[7px] font-bold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.12)" }}>Screen Blank</span>
-                </div>
+                liveEnlargedNext ? liveEnlargedNext : (
+                  <div className="absolute inset-0 flex items-center justify-center" style={{ background: "#000" }}>
+                    <span className="text-[7px] font-bold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.12)" }}>Screen Blank</span>
+                  </div>
+                )
               ) : countdownRunning ? (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
                   <span className="font-bold tabular-nums" style={{ fontSize: 22, letterSpacing: "-0.03em", fontFamily: "'SF Mono','Fira Code',monospace", color: "#ffffff" }}>
@@ -3039,23 +3076,8 @@ export default function PresenterDashboard({
                       {liveSlide.lines.filter(Boolean).join("\n")}
                     </p>
                   </div>
-                  {/* Next panel — hidden for scripture, matches actual confidence monitor */}
-                  {liveSong?.itemType !== "scripture" && liveNextUp && liveNextUp.slide.sectionType !== "blank" && liveNextUp.slide.lines.filter(Boolean).length > 0 && (
-                    <div
-                      className="shrink-0 px-1.5 pt-0.5 pb-1"
-                      style={{
-                        borderTop: liveNextUp.songTitle ? "1.5px solid #fbbf24" : "1px solid rgba(255,255,255,0.1)",
-                        background: liveNextUp.songTitle ? "rgba(251,191,36,0.07)" : "rgba(255,255,255,0.03)",
-                      }}
-                    >
-                      <p className="text-[6px] font-black uppercase tracking-wider leading-none mb-0.5" style={{ color: liveNextUp.songTitle ? "rgba(251,191,36,0.6)" : "rgba(255,255,255,0.28)" }}>
-                        {liveNextUp.songTitle ? "Next Song" : "Next"}
-                      </p>
-                      <p className="text-[7px] leading-snug line-clamp-1 text-center" style={{ color: liveNextUp.songTitle ? "rgba(255,255,255,0.35)" : "rgba(255,255,255,0.45)" }}>
-                        {liveNextUp.slide.lines.filter(Boolean)[0]}
-                      </p>
-                    </div>
-                  )}
+                  {/* Next panel — hidden for scripture, matches the trailing blank-slide preview */}
+                  {showLiveNextPanel && liveNextPanel}
                 </div>
               ) : (
                 <div className="absolute inset-0 flex items-center justify-center">

@@ -514,35 +514,26 @@ export default function ConfidenceMonitor() {
         )}
       </div>
 
-      {/* Next lines — hidden for scripture since it's single continuous content, and when the
-          enlarged preview above already shows this same info on the blank slide */}
-      {hasNext && !showCountdown && !showEnlargedNext && slide?.itemType !== "scripture" && (
+      {/* Next lines — hidden for scripture (single continuous content) and whenever the next
+          item is a different song, since the enlarged center preview covers that case once
+          the blank slide is reached */}
+      {hasNext && !showCountdown && !isNextNewSong && slide?.itemType !== "scripture" && (
         <div style={{
           flexShrink: 0, position: "relative", zIndex: 30,
-          borderTop: isNextNewSong ? "3px solid #fbbf24" : "2px solid rgba(255,255,255,0.08)",
-          borderLeft: isNextNewSong ? "5px solid #fbbf24" : undefined,
-          background: isNextNewSong ? "rgba(251,191,36,0.06)" : "rgba(255,255,255,0.025)",
+          borderTop: "2px solid rgba(255,255,255,0.08)",
+          background: "rgba(255,255,255,0.025)",
         }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 28px 4px", flexWrap: "wrap" }}>
-            <span style={{ fontSize: "clamp(13px,1.4vw,18px)", fontWeight: 800, letterSpacing: "0.16em", textTransform: "uppercase", color: isNextNewSong ? "rgba(251,191,36,0.6)" : "rgba(255,255,255,0.28)" }}>
-              {isNextNewSong ? "Next Song" : "Next"}
+            <span style={{ fontSize: "clamp(13px,1.4vw,18px)", fontWeight: 800, letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(255,255,255,0.28)" }}>
+              Next
             </span>
-            {isNextNewSong && nextSongTitle && (
-              <>
-                <span style={{ fontSize: "clamp(13px,1.4vw,18px)", fontWeight: 700, color: "rgba(251,191,36,0.3)" }}>·</span>
-                <span style={{ fontSize: "clamp(15px,1.6vw,22px)", fontWeight: 700, letterSpacing: "0.04em", color: "#fbbf24" }}>{nextSongTitle}</span>
-              </>
-            )}
             {nextSongSection && (
-              <>
-                {isNextNewSong && <span style={{ fontSize: "clamp(13px,1.4vw,18px)", color: "rgba(251,191,36,0.3)" }}>·</span>}
-                <span style={{ fontSize: "clamp(13px,1.4vw,18px)", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: isNextNewSong ? "rgba(251,191,36,0.5)" : "rgba(139,92,246,0.7)" }}>
-                  {nextSongSection}
-                </span>
-              </>
+              <span style={{ fontSize: "clamp(13px,1.4vw,18px)", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(139,92,246,0.7)" }}>
+                {nextSongSection}
+              </span>
             )}
           </div>
-          <div style={{ padding: "0 28px 18px", fontSize: "clamp(22px,3.5vw,48px)", fontWeight: 500, lineHeight: 1.4, textAlign: "center", color: isNextNewSong ? "rgba(255,255,255,0.35)" : "rgba(255,255,255,0.45)" }}>
+          <div style={{ padding: "0 28px 18px", fontSize: "clamp(22px,3.5vw,48px)", fontWeight: 500, lineHeight: 1.4, textAlign: "center", color: "rgba(255,255,255,0.45)" }}>
             {nextLines.slice(0, 2).map((line, i) => <div key={i}>{line || " "}</div>)}
           </div>
         </div>

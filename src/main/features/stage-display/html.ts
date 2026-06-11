@@ -26,21 +26,12 @@ body{background:#080810;color:#fff;font-family:-apple-system,BlinkMacSystemFont,
 #countdown-label{font-size:12px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.3);margin-top:10px}
 
 /* ── Next slide ── */
-#next-wrap{flex-shrink:0;border-top:2px solid rgba(255,255,255,.08);background:rgba(255,255,255,.025);display:none;flex-direction:column;transition:border-color .25s,background .25s,border-left-width .25s}
+#next-wrap{flex-shrink:0;border-top:2px solid rgba(255,255,255,.08);background:rgba(255,255,255,.025);display:none;flex-direction:column}
 #next-header{display:flex;align-items:center;gap:6px;padding:8px 20px 2px;flex-wrap:wrap}
-#next-label{font-size:9px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:rgba(255,255,255,.28);transition:color .2s}
-#next-sep{font-size:9px;font-weight:700;color:rgba(255,255,255,.15);display:none}
-#next-song-name{display:none;font-size:11px;font-weight:700;letter-spacing:.04em;color:#fbbf24}
+#next-label{font-size:9px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:rgba(255,255,255,.28)}
 #next-section{font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:rgba(139,92,246,.7)}
-#next-lyrics{padding:0 20px 14px;font-size:clamp(14px,2.2vw,28px);font-weight:500;line-height:1.45;text-align:center;color:rgba(255,255,255,.45);max-height:26vh;overflow:hidden;transition:color .2s}
+#next-lyrics{padding:0 20px 14px;font-size:clamp(14px,2.2vw,28px);font-weight:500;line-height:1.45;text-align:center;color:rgba(255,255,255,.45);max-height:26vh;overflow:hidden}
 #next-lyrics div{padding-bottom:.08em}
-/* ── New song state ── */
-#next-wrap.newsong{border-top:3px solid #fbbf24;border-left:4px solid #fbbf24;background:rgba(251,191,36,.08)}
-#next-wrap.newsong #next-label{color:rgba(251,191,36,.6)}
-#next-wrap.newsong #next-sep{display:inline;color:rgba(251,191,36,.3)}
-#next-wrap.newsong #next-song-name{display:inline}
-#next-wrap.newsong #next-section{color:rgba(251,191,36,.5)}
-#next-wrap.newsong #next-lyrics{color:rgba(255,255,255,.35);font-size:clamp(12px,1.8vw,22px)}
 
 /* ── Bottom bar ── */
 #bottom{display:flex;align-items:center;justify-content:space-between;padding:8px 20px;border-top:1px solid rgba(255,255,255,.06);min-height:38px;flex-shrink:0}
@@ -96,8 +87,6 @@ body{background:#080810;color:#fff;font-family:-apple-system,BlinkMacSystemFont,
 <div id="next-wrap">
   <div id="next-header">
     <span id="next-label">Next</span>
-    <span id="next-sep">·</span>
-    <span id="next-song-name"></span>
     <span id="next-section"></span>
   </div>
   <div id="next-lyrics"></div>
@@ -140,34 +129,17 @@ document.addEventListener('visibilitychange',function(){
   if(!document.hidden&&(!es||es.readyState===2)){clearTimeout(reconnTimer);connect();}
 });
 
-// Update the "Next" panel.
-// showSongTitle=true only when on the last slide — reveals the incoming song name.
-// On earlier slides a new-song next is shown as plain "Next · Section" without spoiling.
+// Update the "Next" panel content. The panel itself is hidden by refreshBlankNext()
+// whenever the next item is a different song — the enlarged center preview covers
+// that case once the blank slide is reached.
 function updateNext(nextLines,nextSectionLabel,showSongTitle){
   lastNextLines=nextLines||[];
   lastNextSectionLabel=nextSectionLabel||'';
-  var wrap=$('next-wrap'),lyricsEl=$('next-lyrics'),nameEl=$('next-song-name'),secEl=$('next-section');
+  var wrap=$('next-wrap'),lyricsEl=$('next-lyrics'),secEl=$('next-section');
   if(!wrap||!lyricsEl) return;
-  if(!lastNextLines.length){wrap.style.display='none';refreshBlankNext();return;}
-  wrap.style.display='flex';
-  var rawIsNew=!!(lastNextSectionLabel&&lastNextSectionLabel.indexOf('—')!==-1);
-  var isNew=rawIsNew;
-  wrap.classList.toggle('newsong',isNew);
-  if(isNew){
-    var parts=lastNextSectionLabel.split('—');
-    if(nameEl) nameEl.textContent=(parts[0]||'').trim();
-    if(secEl)  secEl.textContent=(parts[1]||'').trim();
-  } else {
-    if(nameEl) nameEl.textContent='';
-    var label=lastNextSectionLabel;
-    if(label.indexOf('—')!==-1){label=(label.split('—')[1]||'').trim();}
-    if(secEl) secEl.textContent=label;
-  }
-  // Hide lyrics preview when next is a different song but the blank slide isn't shown yet —
-  // singers could mistake the incoming lyrics for the current song.
-  if(rawIsNew&&!isNew){lyricsEl.innerHTML='';} else {
-    lyricsEl.innerHTML=lastNextLines.map(function(l){return'<div>'+(l?esc(l):'&nbsp;')+'</div>'}).join('');
-  }
+  if(!lastNextLines.length){refreshBlankNext();return;}
+  if(secEl) secEl.textContent=lastNextSectionLabel.indexOf('—')!==-1?'':lastNextSectionLabel;
+  lyricsEl.innerHTML=lastNextLines.map(function(l){return'<div>'+(l?esc(l):'&nbsp;')+'</div>'}).join('');
   refreshBlankNext();
 }
 
@@ -186,17 +158,18 @@ function renderEnlargedNext(){
 }
 
 // Decide whether the blank overlay should show the enlarged "next song" preview
-// instead of the plain "Screen Blank" label, and keep #next-wrap in sync.
+// instead of the plain "Screen Blank" label, and whether the bottom #next-wrap
+// strip should be visible. The strip is hidden whenever the next item is a
+// different song, regardless of blank state — the enlarged preview covers that
+// case once the blank slide is reached, so showing both would spoil it early.
 function refreshBlankNext(){
-  var enlarge=isBlankState&&currentItemType!=='scripture'&&nextIsNewSong();
-  $('blank-overlay').classList.toggle('shownext',enlarge);
   var wrap=$('next-wrap');
-  if(enlarge){
-    renderEnlargedNext();
-    wrap.style.display='none';
-  } else if(wrap.style.display==='none'&&lastNextLines.length&&currentItemType!=='scripture'){
-    wrap.style.display='flex';
-  }
+  var hasNext=lastNextLines.length>0&&currentItemType!=='scripture';
+  var isNewSong=nextIsNewSong();
+  var enlarge=isBlankState&&hasNext&&isNewSong;
+  $('blank-overlay').classList.toggle('shownext',enlarge);
+  if(enlarge) renderEnlargedNext();
+  wrap.style.display=(hasNext&&!isNewSong)?'flex':'none';
 }
 
 function handle(ev){

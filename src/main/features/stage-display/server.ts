@@ -367,7 +367,7 @@ function projectSlide(lineupIdx: number, slideIdx: number): void {
     sendToOutputs('slide:blank', true)
     broadcastAll({ type: 'blank', isBlank: true, lineupIdx, slideIdx })
     broadcastStageNext(lineupIdx, slideIdx)
-    notifyControl({ type: 'blank', isBlank: true })
+    notifyControl({ type: 'blank', isBlank: true, lineupIdx, slideIdx })
     return
   }
 

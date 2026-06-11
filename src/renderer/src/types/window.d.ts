@@ -67,7 +67,7 @@ declare global {
     worshipsync: {
       slide: {
         show: (payload: SlidePayload) => void
-        blank: (isBlank: boolean) => void
+        blank: (isBlank: boolean, position?: { lineupItemId: number; slideIndex: number }) => void
         logo: (show: boolean) => void
         countdown: (data: { targetTime: string; running: boolean; firstUp?: { title: string; artist?: string; sectionLabel: string } }) => void
         videoControl: (action: 'play' | 'pause' | 'stop') => void

@@ -61,7 +61,7 @@ export function registerSlideHandlers(): void {
     broadcastAll({ type: 'slide', payload, lineupIdx: stage.currentLineupIdx, slideIdx: slideIndex ?? -1 })
   })
 
-  ipcMain.on('slide:blank', (_event, isBlank: boolean) => {
+  ipcMain.on('slide:blank', (_event, isBlank: boolean, position?: { lineupItemId: number; slideIndex: number }) => {
     if (windows.projection && !windows.projection.isDestroyed()) {
       windows.projection.webContents.send('slide:blank', isBlank)
     }
@@ -72,7 +72,20 @@ export function registerSlideHandlers(): void {
     // blank=true → broadcast immediately.
     // blank=false → the subsequent slide:show already implies unblank on the client;
     // no separate broadcast needed (avoids a double repaint on slow devices).
-    if (isBlank) broadcastAll({ type: 'blank', isBlank: true })
+    if (isBlank) {
+      // Include the blank slide's position so the PWA controller's slide grid
+      // highlight and lineup selection move onto it too, matching the desktop
+      // presenter (otherwise the PWA stays highlighted on the prior slide).
+      const lineupIdx = position
+        ? stage.lineup.findIndex(i => i.id === position.lineupItemId)
+        : -1
+      if (lineupIdx !== -1 && position) {
+        stage.currentLineupIdx = lineupIdx
+        broadcastAll({ type: 'blank', isBlank: true, lineupIdx, slideIdx: position.slideIndex })
+      } else {
+        broadcastAll({ type: 'blank', isBlank: true })
+      }
+    }
   })
 
   // Updates the stage display and confidence monitor "next" section.

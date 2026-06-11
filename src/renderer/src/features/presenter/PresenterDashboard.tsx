@@ -667,7 +667,7 @@ export default function PresenterDashboard({
       }
 
       if (slide.sectionType === "blank") {
-        window.worshipsync.slide.blank(true);
+        window.worshipsync.slide.blank(true, { lineupItemId: song.lineupItemId, slideIndex: slide.globalIndex });
         // Keep the stage display "next" section current even while the screen is blank
         if (nextLines?.length) {
           window.worshipsync.slide.stageNext({
@@ -1129,6 +1129,23 @@ export default function PresenterDashboard({
       } else if (u.type === 'blank') {
         setIsBlank(Boolean(u.isBlank))
         if (u.isBlank) setIsLogo(false)
+        // Navigating onto the synthetic terminal "blank" slide carries its position —
+        // keep the slide grid's "LIVE" highlight in sync so it doesn't stay stuck on
+        // the previous (last lyrics) slide.
+        if (u.lineupIdx !== undefined && u.slideIdx !== undefined) {
+          setSelectedSongIdx(u.lineupIdx)
+          setActiveSlideIdx(u.slideIdx)
+          setIsTextCleared(false)
+          if (countdownRunningRef.current) {
+            setCountdownRunning(false)
+            if (countdownIntervalRef.current) {
+              clearInterval(countdownIntervalRef.current)
+              countdownIntervalRef.current = null
+            }
+          }
+          liveItemIdxRef.current  = u.lineupIdx
+          liveSlideIdxRef.current = u.slideIdx
+        }
       } else if (u.type === 'logo') {
         setIsLogo(Boolean(u.isLogo))
         if (u.isLogo) setIsBlank(false)

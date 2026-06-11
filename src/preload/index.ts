@@ -4,7 +4,8 @@ contextBridge.exposeInMainWorld('worshipsync', {
 
   slide: {
     show: (payload: SlidePayload) => ipcRenderer.send('slide:show', payload),
-    blank: (isBlank: boolean) => ipcRenderer.send('slide:blank', isBlank),
+    blank: (isBlank: boolean, position?: { lineupItemId: number; slideIndex: number }) =>
+      ipcRenderer.send('slide:blank', isBlank, position),
     logo: (show: boolean) => ipcRenderer.send('slide:logo', show),
     countdown: (data: { targetTime: string; running: boolean; firstUp?: { title: string; artist?: string; sectionLabel: string } }) => ipcRenderer.send('slide:countdown', data),
     videoControl: (action: 'play' | 'pause' | 'stop') => ipcRenderer.send('slide:videoControl', action),

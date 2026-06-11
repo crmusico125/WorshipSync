@@ -129,7 +129,7 @@ export function startStageServer(port = 4040, pin?: string | null): Promise<bool
         res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' })
         res.end(JSON.stringify({ clients: clientData }))
       } else {
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' })
         res.end(STAGE_DISPLAY_HTML)
       }
     })

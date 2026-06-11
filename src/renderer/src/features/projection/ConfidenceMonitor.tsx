@@ -25,6 +25,7 @@ export default function ConfidenceMonitor() {
   const contentAreaRef = useRef<HTMLDivElement>(null);
   const scriptureTextRef = useRef<HTMLDivElement>(null);
   const lyricsTextRef = useRef<HTMLDivElement>(null);
+  const nextPreviewRef = useRef<HTMLDivElement>(null);
 
   const hasNext = nextLines.length > 0;
 
@@ -213,6 +214,34 @@ export default function ConfidenceMonitor() {
   // center area for an enlarged "Next" preview instead of the small bottom strip.
   const showEnlargedNext = isBlank && hasNext && isNextNewSong && slide?.itemType !== "scripture";
 
+  // Binary-search the largest font size for the enlarged "Next Song" preview where it
+  // still fits the content area — keeps it readable from across the room on small
+  // monitors and lets it fill large ones, without ever clipping. Re-runs on resize so
+  // it adapts if the confidence monitor window is moved or resized.
+  useLayoutEffect(() => {
+    const wrapper = contentAreaRef.current;
+    const text = nextPreviewRef.current;
+    if (!wrapper || !text || !showEnlargedNext) return;
+
+    const fit = () => {
+      const availableH = wrapper.clientHeight - 80;
+      const availableW = wrapper.clientWidth - 120;
+      let lo = 16, hi = 300, best = 16;
+      while (lo <= hi) {
+        const mid = Math.floor((lo + hi) / 2);
+        text.style.fontSize = `${mid}px`;
+        if (text.scrollHeight <= availableH && text.scrollWidth <= availableW) { best = mid; lo = mid + 1; }
+        else hi = mid - 1;
+      }
+      text.style.fontSize = `${best}px`;
+    };
+
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(wrapper);
+    return () => observer.disconnect();
+  }, [showEnlargedNext, nextSongTitle, nextSongSection, nextLines]);
+
   return (
     <div
       style={{
@@ -320,19 +349,19 @@ export default function ConfidenceMonitor() {
             }}
           >
             {showEnlargedNext ? (
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "clamp(10px,2vh,24px)", textAlign: "center", maxWidth: 1100, padding: "0 48px" }}>
-                <span style={{ fontSize: "clamp(16px,1.8vw,24px)", fontWeight: 800, letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(251,191,36,0.6)" }}>
+              <div ref={nextPreviewRef} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "0.3em", textAlign: "center", maxWidth: "100%", padding: "0 48px", overflowWrap: "break-word", wordBreak: "break-word" }}>
+                <span style={{ fontSize: "0.3em", fontWeight: 800, letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(251,191,36,0.6)" }}>
                   Next Song
                 </span>
-                <span style={{ fontSize: "clamp(32px,5.5vw,80px)", fontWeight: 800, letterSpacing: "-0.02em", color: "#fbbf24" }}>
+                <span style={{ fontSize: "1em", fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.15, color: "#fbbf24" }}>
                   {nextSongTitle}
                 </span>
                 {nextSongSection && (
-                  <span style={{ fontSize: "clamp(13px,1.4vw,18px)", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(251,191,36,0.5)", border: "1px solid rgba(251,191,36,0.3)", background: "rgba(251,191,36,0.08)", borderRadius: 6, padding: "5px 14px" }}>
+                  <span style={{ fontSize: "0.225em", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(251,191,36,0.5)", border: "1px solid rgba(251,191,36,0.3)", background: "rgba(251,191,36,0.08)", borderRadius: "0.3em", padding: "0.3em 0.8em" }}>
                     {nextSongSection}
                   </span>
                 )}
-                <div style={{ fontSize: "clamp(20px,3vw,40px)", fontWeight: 500, lineHeight: 1.4, color: "rgba(255,255,255,0.45)" }}>
+                <div style={{ fontSize: "0.5em", fontWeight: 500, lineHeight: 1.4, color: "rgba(255,255,255,0.45)" }}>
                   {nextLines.slice(0, 2).map((line, i) => <div key={i}>{line || " "}</div>)}
                 </div>
               </div>

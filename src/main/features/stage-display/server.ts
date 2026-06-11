@@ -169,40 +169,10 @@ function handleControllerCommand(req: IncomingMessage, res: ServerResponse): voi
       res.writeHead(401, cors); res.end(JSON.stringify({ error: 'unauthorized' })); return
     }
 
-    const send = (channel: string, ...args: unknown[]) => {
-      if (windows.projection && !windows.projection.isDestroyed())
-        windows.projection.webContents.send(channel, ...args)
-      if (windows.confidence && !windows.confidence.isDestroyed())
-        windows.confidence.webContents.send(channel, ...args)
-    }
-
-    // Compute next lines for a given lineup position — used for both SSE and confidence IPC.
-    const computeNext = (lineupIdx: number, slideIdx: number) => {
-      const itm = stage.lineup[lineupIdx]
-      if (!itm) return null
-      const nextInItem = itm.slides[slideIdx + 1]
-      if (nextInItem) return { nextLines: nextInItem.lines, nextSectionLabel: nextInItem.sectionLabel ?? '' }
-      for (let k = lineupIdx + 1; k < stage.lineup.length; k++) {
-        const ni = stage.lineup[k]
-        if (ni.slides.length > 0) {
-          return { nextLines: ni.slides[0].lines, nextSectionLabel: `${ni.title} — ${ni.slides[0].sectionLabel ?? ''}` }
-        }
-      }
-      return null
-    }
-
-    // Sends slide:show: original payload to projection, next-lines-augmented to confidence.
-    const sendSlideShow = (payload: ReturnType<typeof buildSlidePayload>, augmented: typeof payload & { nextLines?: string[]; nextSectionLabel?: string }) => {
-      if (windows.projection && !windows.projection.isDestroyed())
-        windows.projection.webContents.send('slide:show', payload)
-      if (windows.confidence && !windows.confidence.isDestroyed())
-        windows.confidence.webContents.send('slide:show', augmented)
-    }
-
     switch (cmd.action) {
       case 'blank': {
         const isBlank = Boolean(cmd.value)
-        send('slide:blank', isBlank)
+        sendToOutputs('slide:blank', isBlank)
         stage.blank = isBlank
         if (isBlank) {
           stage.logo = false
@@ -241,7 +211,7 @@ function handleControllerCommand(req: IncomingMessage, res: ServerResponse): voi
               ? { ...item.theme, overlayOpacity: 0, textShadowOpacity: 0, backgroundScaleMode: item.imageScaleMode ?? 'contain' }
               : { overlayOpacity: 0, textShadowOpacity: 0, backgroundScaleMode: item.imageScaleMode ?? 'contain' },
           }
-          send('slide:show', payload)
+          sendToOutputs('slide:show', payload)
           stage.slide = payload
           stage.blank = false
           stage.logo = false
@@ -254,18 +224,7 @@ function handleControllerCommand(req: IncomingMessage, res: ServerResponse): voi
 
         const slide = item.slides[slideIdx as number]
         if (!slide) { res.writeHead(404, cors); res.end(JSON.stringify({ error: 'slide not found' })); return }
-        const lineupIdx = stage.lineup.indexOf(item)
-        stage.currentLineupIdx = lineupIdx
-        const payload = buildSlidePayload(item, slide)
-        const next = computeNext(lineupIdx, slideIdx as number)
-        const augmented = next ? { ...payload, ...next } : payload
-        sendSlideShow(payload, augmented)
-        stage.slide = payload
-        stage.blank = false
-        stage.logo = false
-        broadcastAll({ type: 'slide', payload: augmented, lineupIdx, slideIdx })
-        broadcastStageNext(item, slideIdx as number)
-        notifyControl({ type: 'slide', lineupIdx, slideIdx })
+        projectSlide(stage.lineup.indexOf(item), slideIdx as number)
         break
       }
       case 'next-slide':
@@ -275,24 +234,6 @@ function handleControllerCommand(req: IncomingMessage, res: ServerResponse): voi
         const item = stage.lineup[stage.currentLineupIdx]
         const cur = (stage.slide as any)?.slideIndex ?? 0
         const targetSlideIdx = cur + delta
-
-        const projectSlide = (li: number, si: number) => {
-          const tItem = stage.lineup[li]
-          if (!tItem) return
-          const tSlide = tItem.slides[si]
-          if (!tSlide) return
-          const payload = buildSlidePayload(tItem, tSlide)
-          stage.currentLineupIdx = li
-          const next = computeNext(li, si)
-          const augmented = next ? { ...payload, ...next } : payload
-          sendSlideShow(payload, augmented)
-          stage.slide = payload
-          stage.blank = false
-          stage.logo = false
-          broadcastAll({ type: 'slide', payload: augmented, lineupIdx: li, slideIdx: si })
-          broadcastStageNext(tItem, si)
-          notifyControl({ type: 'slide', lineupIdx: li, slideIdx: si })
-        }
 
         if (item?.slides.length) {
           if (targetSlideIdx >= 0 && targetSlideIdx < item.slides.length) {
@@ -315,7 +256,7 @@ function handleControllerCommand(req: IncomingMessage, res: ServerResponse): voi
       }
       case 'countdown': {
         const data = { targetTime: String(cmd.targetTime), running: Boolean(cmd.running) }
-        send('slide:countdown', data)
+        sendToOutputs('slide:countdown', data)
         stage.countdown = data
         broadcastAll({ type: 'countdown', data })
         break
@@ -367,26 +308,89 @@ function buildSlidePayload(item: import('../../lib/state').PwaLineupItem, slide:
   }
 }
 
-function broadcastStageNext(item: import('../../lib/state').PwaLineupItem, currentSlideIdx: number): void {
-  const nextSlide = item.slides[currentSlideIdx + 1]
-  if (nextSlide) {
-    stage.nextLines = nextSlide.lines
-    stage.nextLabel = nextSlide.sectionLabel
-    broadcastAll({ type: 'stageNext', nextLines: nextSlide.lines, nextSectionLabel: nextSlide.sectionLabel })
-  } else {
-    // Try the first slide of the next lineup item
-    const nextItem = stage.lineup[stage.currentLineupIdx + 1]
-    const firstSlide = nextItem?.slides[0]
-    if (firstSlide && nextItem) {
-      const nextSectionLabel = `${nextItem.title} — ${firstSlide.sectionLabel}`
-      stage.nextLines = firstSlide.lines
-      stage.nextLabel = nextSectionLabel
-      broadcastAll({ type: 'stageNext', nextLines: firstSlide.lines, nextSectionLabel })
-    } else {
-      stage.nextLines = null
-      stage.nextLabel = ''
-    }
+// A slide counts as "real" content for the next-up preview if it isn't the synthetic
+// terminal "blank" slide and has at least one non-empty line.
+function isRealSlide(s: import('../../lib/state').PwaSlide): boolean {
+  return s.sectionType !== 'blank' && s.lines.some(Boolean)
+}
+
+// Find the next slide with real content, searching forward within the current item
+// then into subsequent lineup items — mirrors the desktop presenter's lookahead so
+// the "next" preview never points at the synthetic blank slide or empty lines.
+function findNextReal(lineupIdx: number, slideIdx: number): { nextLines: string[]; nextSectionLabel: string } | null {
+  const item = stage.lineup[lineupIdx]
+  if (item) {
+    const real = item.slides.slice(slideIdx + 1).find(isRealSlide)
+    if (real) return { nextLines: real.lines, nextSectionLabel: real.sectionLabel ?? '' }
   }
+  for (let k = lineupIdx + 1; k < stage.lineup.length; k++) {
+    const ni = stage.lineup[k]
+    const real = ni.slides.find(isRealSlide)
+    if (real) return { nextLines: real.lines, nextSectionLabel: `${ni.title} — ${real.sectionLabel ?? ''}` }
+  }
+  return null
+}
+
+function sendToOutputs(channel: string, ...args: unknown[]): void {
+  if (windows.projection && !windows.projection.isDestroyed())
+    windows.projection.webContents.send(channel, ...args)
+  if (windows.confidence && !windows.confidence.isDestroyed())
+    windows.confidence.webContents.send(channel, ...args)
+}
+
+// Sends slide:show — original payload to projection, next-lines-augmented to confidence.
+function sendSlideShow(payload: ReturnType<typeof buildSlidePayload>, augmented: typeof payload & { nextLines?: string[]; nextSectionLabel?: string }): void {
+  if (windows.projection && !windows.projection.isDestroyed())
+    windows.projection.webContents.send('slide:show', payload)
+  if (windows.confidence && !windows.confidence.isDestroyed())
+    windows.confidence.webContents.send('slide:show', augmented)
+}
+
+// Project a slide to projection/confidence/stage-display. The synthetic terminal
+// "blank" slide is treated like the desktop presenter's blank toggle — it blacks out
+// the screen instead of projecting an empty slide — so the enlarged "next song"
+// preview on stage display / confidence monitor can take over the empty center area.
+function projectSlide(lineupIdx: number, slideIdx: number): void {
+  const item = stage.lineup[lineupIdx]
+  if (!item) return
+  const slide = item.slides[slideIdx]
+  if (!slide) return
+
+  stage.currentLineupIdx = lineupIdx
+
+  if (slide.sectionType === 'blank') {
+    // Bump the tracked slide index so subsequent next/prev presses advance past
+    // the blank slide, without touching the previously-projected slide content.
+    stage.slide = { ...(stage.slide as Record<string, unknown> ?? {}), slideIndex: slideIdx }
+    stage.blank = true
+    stage.logo = false
+    sendToOutputs('slide:blank', true)
+    broadcastAll({ type: 'blank', isBlank: true, lineupIdx, slideIdx })
+    broadcastStageNext(lineupIdx, slideIdx)
+    notifyControl({ type: 'blank', isBlank: true })
+    return
+  }
+
+  const payload = buildSlidePayload(item, slide)
+  const next = findNextReal(lineupIdx, slideIdx)
+  const augmented = next ? { ...payload, ...next } : payload
+  sendSlideShow(payload, augmented)
+  stage.slide = payload
+  stage.blank = false
+  stage.logo = false
+  broadcastAll({ type: 'slide', payload: augmented, lineupIdx, slideIdx })
+  broadcastStageNext(lineupIdx, slideIdx)
+  notifyControl({ type: 'slide', lineupIdx, slideIdx })
+}
+
+function broadcastStageNext(lineupIdx: number, slideIdx: number): void {
+  const next = findNextReal(lineupIdx, slideIdx)
+  const data = { nextLines: next?.nextLines ?? [], nextSectionLabel: next?.nextSectionLabel ?? '' }
+  stage.nextLines = next ? data.nextLines : null
+  stage.nextLabel = data.nextSectionLabel
+  broadcastAll({ type: 'stageNext', ...data })
+  if (windows.confidence && !windows.confidence.isDestroyed())
+    windows.confidence.webContents.send('slide:stageNext', data)
 }
 
 function notifyControl(update: Record<string, unknown>): void {

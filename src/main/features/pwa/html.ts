@@ -373,6 +373,15 @@ function handleEvent(ev) {
     case 'blank':
       S.blank = ev.isBlank
       if (ev.isBlank) S.logo = false
+      // Navigating onto the synthetic terminal "blank" slide carries its position —
+      // keep the slide grid / lineup highlight in sync so it doesn't look stuck.
+      if (ev.lineupIdx !== undefined && ev.slideIdx !== undefined) {
+        S.currentLineupIdx = ev.lineupIdx
+        S.activeLineupIdx = ev.lineupIdx
+        S.activeSlideIdx = ev.slideIdx
+        renderLineupList()
+        renderSlides()
+      }
       renderBanner()
       renderTransport()
       break

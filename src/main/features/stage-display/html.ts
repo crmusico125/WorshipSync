@@ -53,6 +53,15 @@ body{background:#080810;color:#fff;font-family:-apple-system,BlinkMacSystemFont,
 #blank-overlay{position:absolute;inset:0;background:#000;opacity:0;pointer-events:none;z-index:20;display:flex;align-items:center;justify-content:center}
 #blank-overlay.on{opacity:1}
 #blank-text{font-size:11px;font-weight:800;letter-spacing:.2em;text-transform:uppercase;color:rgba(255,255,255,.12)}
+/* ── Blank overlay: enlarged "next song" preview — shown only when the next item is a different song ── */
+#blank-next{display:none;flex-direction:column;align-items:center;gap:clamp(10px,2vh,24px);text-align:center;max-width:900px;padding:0 32px}
+#blank-overlay.shownext #blank-text{display:none}
+#blank-overlay.shownext #blank-next{display:flex}
+#blank-next-label{font-size:11px;font-weight:800;letter-spacing:.2em;text-transform:uppercase;color:rgba(251,191,36,.6)}
+#blank-next-title{font-size:clamp(28px,5vw,64px);font-weight:800;letter-spacing:-.02em;color:#fbbf24}
+#blank-next-section{display:none;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:rgba(251,191,36,.5);border:1px solid rgba(251,191,36,.3);background:rgba(251,191,36,.08);border-radius:6px;padding:5px 14px}
+#blank-next-lyrics{font-size:clamp(18px,3vw,40px);font-weight:500;line-height:1.4;color:rgba(255,255,255,.45)}
+#blank-next-lyrics div{padding-bottom:.08em}
 
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
 </style>
@@ -73,7 +82,15 @@ body{background:#080810;color:#fff;font-family:-apple-system,BlinkMacSystemFont,
     <div id="countdown-label">Until Service Starts</div>
   </div>
   <!-- Blank overlay lives inside current-wrap so next/top/bottom remain visible -->
-  <div id="blank-overlay"><div id="blank-text">Screen Blank</div></div>
+  <div id="blank-overlay">
+    <div id="blank-text">Screen Blank</div>
+    <div id="blank-next">
+      <div id="blank-next-label">Next Song</div>
+      <div id="blank-next-title"></div>
+      <div id="blank-next-section"></div>
+      <div id="blank-next-lyrics"></div>
+    </div>
+  </div>
 </div>
 
 <div id="next-wrap">
@@ -94,6 +111,7 @@ body{background:#080810;color:#fff;font-family:-apple-system,BlinkMacSystemFont,
 
 <script>
 var cdTimer=null,reconnTimer=null,clockTimer=null,currentItemType=null;
+var lastNextLines=[],lastNextSectionLabel='',isBlankState=false;
 function $(id){return document.getElementById(id)}
 
 // ── Clock ──
@@ -126,27 +144,58 @@ document.addEventListener('visibilitychange',function(){
 // showSongTitle=true only when on the last slide — reveals the incoming song name.
 // On earlier slides a new-song next is shown as plain "Next · Section" without spoiling.
 function updateNext(nextLines,nextSectionLabel,showSongTitle){
+  lastNextLines=nextLines||[];
+  lastNextSectionLabel=nextSectionLabel||'';
   var wrap=$('next-wrap'),lyricsEl=$('next-lyrics'),nameEl=$('next-song-name'),secEl=$('next-section');
   if(!wrap||!lyricsEl) return;
-  if(!nextLines||!nextLines.length){wrap.style.display='none';return;}
+  if(!lastNextLines.length){wrap.style.display='none';refreshBlankNext();return;}
   wrap.style.display='flex';
-  var rawIsNew=!!(nextSectionLabel&&nextSectionLabel.indexOf('—')!==-1);
+  var rawIsNew=!!(lastNextSectionLabel&&lastNextSectionLabel.indexOf('—')!==-1);
   var isNew=rawIsNew;
   wrap.classList.toggle('newsong',isNew);
   if(isNew){
-    var parts=nextSectionLabel.split('—');
+    var parts=lastNextSectionLabel.split('—');
     if(nameEl) nameEl.textContent=(parts[0]||'').trim();
     if(secEl)  secEl.textContent=(parts[1]||'').trim();
   } else {
     if(nameEl) nameEl.textContent='';
-    var label=nextSectionLabel||'';
+    var label=lastNextSectionLabel;
     if(label.indexOf('—')!==-1){label=(label.split('—')[1]||'').trim();}
     if(secEl) secEl.textContent=label;
   }
   // Hide lyrics preview when next is a different song but the blank slide isn't shown yet —
   // singers could mistake the incoming lyrics for the current song.
   if(rawIsNew&&!isNew){lyricsEl.innerHTML='';} else {
-    lyricsEl.innerHTML=nextLines.map(function(l){return'<div>'+(l?esc(l):'&nbsp;')+'</div>'}).join('');
+    lyricsEl.innerHTML=lastNextLines.map(function(l){return'<div>'+(l?esc(l):'&nbsp;')+'</div>'}).join('');
+  }
+  refreshBlankNext();
+}
+
+// Whether the "next" item is a different song (vs. a later section of the current song).
+function nextIsNewSong(){return lastNextLines.length>0&&lastNextSectionLabel.indexOf('—')!==-1}
+
+// Fill in the enlarged "next song" preview shown inside the blank overlay.
+function renderEnlargedNext(){
+  var parts=lastNextSectionLabel.split('—');
+  $('blank-next-title').textContent=(parts[0]||'').trim();
+  var section=(parts[1]||'').trim();
+  var secEl=$('blank-next-section');
+  if(section){secEl.textContent=section;secEl.style.display='inline-block';}
+  else{secEl.style.display='none';}
+  $('blank-next-lyrics').innerHTML=lastNextLines.slice(0,2).map(function(l){return'<div>'+(l?esc(l):'&nbsp;')+'</div>'}).join('');
+}
+
+// Decide whether the blank overlay should show the enlarged "next song" preview
+// instead of the plain "Screen Blank" label, and keep #next-wrap in sync.
+function refreshBlankNext(){
+  var enlarge=isBlankState&&currentItemType!=='scripture'&&nextIsNewSong();
+  $('blank-overlay').classList.toggle('shownext',enlarge);
+  var wrap=$('next-wrap');
+  if(enlarge){
+    renderEnlargedNext();
+    wrap.style.display='none';
+  } else if(wrap.style.display==='none'&&lastNextLines.length&&currentItemType!=='scripture'){
+    wrap.style.display='flex';
   }
 }
 
@@ -205,7 +254,7 @@ function showSlide(p){
   else{updateNext(p.nextLines,p.nextSectionLabel,isLast);}
 }
 
-function setBlank(b){$('blank-overlay').classList.toggle('on',!!b)}
+function setBlank(b){isBlankState=!!b;$('blank-overlay').classList.toggle('on',isBlankState);refreshBlankNext()}
 
 function doCountdown(d){
   clearCD();

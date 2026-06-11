@@ -209,6 +209,10 @@ export default function ConfidenceMonitor() {
   const nextSongTitle   = isNextNewSong ? (nextSectionLabel.split("—")[0] ?? "").trim() : "";
   const nextSongSection = isNextNewSong ? (nextSectionLabel.split("—")[1] ?? "").trim() : nextSectionLabel;
 
+  // On the blank slide, if the next item is a different song, use the otherwise-empty
+  // center area for an enlarged "Next" preview instead of the small bottom strip.
+  const showEnlargedNext = isBlank && hasNext && isNextNewSong && slide?.itemType !== "scripture";
+
   return (
     <div
       style={{
@@ -315,17 +319,36 @@ export default function ConfidenceMonitor() {
               justifyContent: "center",
             }}
           >
-            <div
-              style={{
-                fontSize: "clamp(20px,2.5vw,32px)",
-                fontWeight: 800,
-                letterSpacing: "0.2em",
-                textTransform: "uppercase",
-                color: "rgba(255,255,255,0.15)",
-              }}
-            >
-              Screen Blank
-            </div>
+            {showEnlargedNext ? (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "clamp(10px,2vh,24px)", textAlign: "center", maxWidth: 1100, padding: "0 48px" }}>
+                <span style={{ fontSize: "clamp(16px,1.8vw,24px)", fontWeight: 800, letterSpacing: "0.2em", textTransform: "uppercase", color: "rgba(251,191,36,0.6)" }}>
+                  Next Song
+                </span>
+                <span style={{ fontSize: "clamp(32px,5.5vw,80px)", fontWeight: 800, letterSpacing: "-0.02em", color: "#fbbf24" }}>
+                  {nextSongTitle}
+                </span>
+                {nextSongSection && (
+                  <span style={{ fontSize: "clamp(13px,1.4vw,18px)", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: "rgba(251,191,36,0.5)", border: "1px solid rgba(251,191,36,0.3)", background: "rgba(251,191,36,0.08)", borderRadius: 6, padding: "5px 14px" }}>
+                    {nextSongSection}
+                  </span>
+                )}
+                <div style={{ fontSize: "clamp(20px,3vw,40px)", fontWeight: 500, lineHeight: 1.4, color: "rgba(255,255,255,0.45)" }}>
+                  {nextLines.slice(0, 2).map((line, i) => <div key={i}>{line || " "}</div>)}
+                </div>
+              </div>
+            ) : (
+              <div
+                style={{
+                  fontSize: "clamp(20px,2.5vw,32px)",
+                  fontWeight: 800,
+                  letterSpacing: "0.2em",
+                  textTransform: "uppercase",
+                  color: "rgba(255,255,255,0.15)",
+                }}
+              >
+                Screen Blank
+              </div>
+            )}
           </div>
         )}
 
@@ -491,8 +514,9 @@ export default function ConfidenceMonitor() {
         )}
       </div>
 
-      {/* Next lines — hidden for scripture since it's single continuous content */}
-      {hasNext && !showCountdown && slide?.itemType !== "scripture" && (
+      {/* Next lines — hidden for scripture since it's single continuous content, and when the
+          enlarged preview above already shows this same info on the blank slide */}
+      {hasNext && !showCountdown && !showEnlargedNext && slide?.itemType !== "scripture" && (
         <div style={{
           flexShrink: 0, position: "relative", zIndex: 30,
           borderTop: isNextNewSong ? "3px solid #fbbf24" : "2px solid rgba(255,255,255,0.08)",

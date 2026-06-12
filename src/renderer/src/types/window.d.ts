@@ -83,6 +83,8 @@ declare global {
         onVideoControl: (cb: (action: 'play' | 'pause' | 'stop') => void) => () => void
         onVideoSeek: (cb: (time: number) => void) => () => void
         onVideoLoop: (cb: (loop: boolean) => void) => () => void
+        reportVideoProgress: (data: { currentTime: number; duration: number; isPlaying: boolean; lineupItemId?: number }) => void
+        onVideoProgress: (cb: (data: { currentTime: number; duration: number; isPlaying: boolean; lineupItemId?: number }) => void) => () => void
         onAudioState: (cb: (state: { isPlaying: boolean; currentTime: number; duration: number; lineupItemId: number } | null) => void) => () => void
         onVideoState: (cb: (state: { isPlaying: boolean; currentTime: number; duration: number; lineupItemId: number } | null) => void) => () => void
       }

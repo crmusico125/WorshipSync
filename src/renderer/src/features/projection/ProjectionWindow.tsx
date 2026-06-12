@@ -32,6 +32,7 @@ export default function ProjectionWindow() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const pendingVideoAction = useRef<"play" | "pause" | "stop" | null>(null);
   const pendingSeekTime = useRef<number | null>(null);
+  const lastVideoReportRef = useRef(0);
 
   useEffect(() => {
     window.worshipsync.projection.ready();
@@ -209,6 +210,23 @@ export default function ProjectionWindow() {
     }
   }, [displayState, slide]);
 
+  // Reports this window's actual video playback position so the presenter preview,
+  // confidence monitor, and PWA controller can stay in sync with what's on screen
+  // (the presenter's preview is a separate <video> element that can drift over time).
+  const reportVideoProgress = useCallback((force = false) => {
+    const vid = videoRef.current;
+    if (!vid) return;
+    const now = Date.now();
+    if (!force && now - lastVideoReportRef.current < 900) return;
+    lastVideoReportRef.current = now;
+    window.worshipsync.slide.reportVideoProgress?.({
+      currentTime: vid.currentTime,
+      duration: Number.isFinite(vid.duration) ? vid.duration : 0,
+      isPlaying: !vid.paused,
+      lineupItemId: slide?.lineupItemId,
+    });
+  }, [slide?.lineupItemId]);
+
   const theme = slide?.theme ?? DEFAULT_THEME;
   const overlayAlpha = (theme.overlayOpacity / 100).toFixed(2);
   const shadowOpacity = (theme.textShadowOpacity / 100).toFixed(2);
@@ -291,6 +309,11 @@ export default function ProjectionWindow() {
               background: "#000",
             }}
             src={`file://${encodeURI(backgroundPath)}`}
+            onTimeUpdate={() => reportVideoProgress()}
+            onPlay={() => reportVideoProgress(true)}
+            onPause={() => reportVideoProgress(true)}
+            onSeeked={() => reportVideoProgress(true)}
+            onEnded={() => reportVideoProgress(true)}
           />
         ) : (
           <div

@@ -46,6 +46,12 @@ contextBridge.exposeInMainWorld('worshipsync', {
       ipcRenderer.on('slide:videoLoop', (_e, loop) => cb(loop))
       return () => ipcRenderer.removeAllListeners('slide:videoLoop')
     },
+    reportVideoProgress: (data: { currentTime: number; duration: number; isPlaying: boolean; lineupItemId?: number }) =>
+      ipcRenderer.send('slide:videoProgress', data),
+    onVideoProgress: (cb: (data: { currentTime: number; duration: number; isPlaying: boolean; lineupItemId?: number }) => void) => {
+      ipcRenderer.on('slide:videoProgress', (_e, data) => cb(data))
+      return () => ipcRenderer.removeAllListeners('slide:videoProgress')
+    },
     onAudioState: (cb: (state: { isPlaying: boolean; currentTime: number; duration: number; lineupItemId: number } | null) => void) => {
       ipcRenderer.on('slide:audioState', (_e, state) => cb(state))
       return () => ipcRenderer.removeAllListeners('slide:audioState')

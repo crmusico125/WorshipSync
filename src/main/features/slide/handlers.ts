@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron'
 import { windows, stage } from '../../lib/state'
-import { broadcastAll } from '../../lib/broadcast'
+import { broadcastAll, broadcastPwa } from '../../lib/broadcast'
 
 function nextLinesFromLineup(
   lineupIdx: number,
@@ -141,6 +141,23 @@ export function registerSlideHandlers(): void {
   ipcMain.on('slide:videoLoop', (_event, loop: boolean) => {
     if (windows.projection && !windows.projection.isDestroyed()) {
       windows.projection.webContents.send('slide:videoLoop', loop)
+    }
+  })
+
+  // Reports the projection window's actual video playback position — the source of
+  // truth for progress, since the presenter's preview is a separate <video> element
+  // that can drift from what's actually on screen. Relayed to the presenter (to resync
+  // its preview/progress UI) and broadcast to the confidence monitor / PWA controller.
+  ipcMain.on('slide:videoProgress', (_event, data: { currentTime: number; duration: number; isPlaying: boolean; lineupItemId?: number }) => {
+    if (windows.control && !windows.control.isDestroyed()) {
+      windows.control.webContents.send('slide:videoProgress', data)
+    }
+    if (data.lineupItemId === undefined) return
+    const videoState = { isPlaying: data.isPlaying, currentTime: data.currentTime, duration: data.duration, lineupItemId: data.lineupItemId }
+    stage.videoState = videoState
+    broadcastPwa({ type: 'videoState', ...videoState })
+    if (windows.confidence && !windows.confidence.isDestroyed()) {
+      windows.confidence.webContents.send('slide:videoState', videoState)
     }
   })
 }

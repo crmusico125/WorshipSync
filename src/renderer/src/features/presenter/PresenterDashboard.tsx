@@ -1256,22 +1256,24 @@ export default function PresenterDashboard({
     return () => clearInterval(interval)
   }, [audioPlaying, liveSongs])
 
-  // Broadcast video progress every second while playing
+  // Resync the preview and progress UI from the projection window's actual playback
+  // position. The preview and projection are separate <video> elements that can drift
+  // apart over a long video — the projection's reported position is authoritative and
+  // also drives the videoState broadcast to the confidence monitor / PWA controller
+  // (see slide:videoProgress handler in main).
   useEffect(() => {
-    if (!videoPlaying) return
-    const interval = setInterval(() => {
-      if (!videoPreviewRef.current) return
+    const cleanup = window.worshipsync.slide.onVideoProgress?.((data) => {
       const song = liveSongs[selectedSongIdxRef.current]
-      if (!song) return
-      window.worshipsync.pwa?.broadcastVideoState?.({
-        isPlaying: true,
-        currentTime: videoPreviewRef.current.currentTime,
-        duration: videoPreviewRef.current.duration || 0,
-        lineupItemId: song.lineupItemId,
-      })
-    }, 1000)
-    return () => clearInterval(interval)
-  }, [videoPlaying, liveSongs])
+      if (!song || data.lineupItemId !== song.lineupItemId) return
+      setVideoCurrentTime(data.currentTime)
+      if (data.duration) setVideoDuration(data.duration)
+      const preview = videoPreviewRef.current
+      if (preview && Math.abs(preview.currentTime - data.currentTime) > 0.75) {
+        preview.currentTime = data.currentTime
+      }
+    })
+    return () => cleanup?.()
+  }, [liveSongs])
 
   // When going live, auto-start the network server (stage display + PWA controller)
   // and register the projection:ready listener. Server stops automatically when

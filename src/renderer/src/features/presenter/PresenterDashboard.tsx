@@ -2185,7 +2185,12 @@ export default function PresenterDashboard({
                   audioRef.current = new Audio(`file://${encodeURI(bg)}`);
                   audioRef.current.loop = audioLoop;
                   audioRef.current.onloadedmetadata = () => setAudioDuration(audioRef.current?.duration ?? 0);
-                  audioRef.current.onended = () => { setAudioPlaying(false); setAudioCurrentTime(0); if (audioTimerRef.current) { clearInterval(audioTimerRef.current); audioTimerRef.current = null; } stopViz(); };
+                  audioRef.current.onended = () => {
+                    setAudioPlaying(false); setAudioCurrentTime(0);
+                    if (audioTimerRef.current) { clearInterval(audioTimerRef.current); audioTimerRef.current = null; }
+                    stopViz();
+                    window.worshipsync.pwa?.broadcastAudioState?.({ isPlaying: false, currentTime: 0, duration: audioRef.current?.duration ?? 0, lineupItemId: currentSong.lineupItemId });
+                  };
                   const ctx = new AudioContext();
                   const analyser = ctx.createAnalyser();
                   analyser.fftSize = 256;

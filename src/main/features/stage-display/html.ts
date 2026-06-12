@@ -100,7 +100,7 @@ body{background:#080810;color:#fff;font-family:-apple-system,BlinkMacSystemFont,
 
 <script>
 var cdTimer=null,reconnTimer=null,clockTimer=null,currentItemType=null;
-var lastNextLines=[],lastNextSectionLabel='',isBlankState=false;
+var lastNextLines=[],lastNextSectionLabel='',lastNextItemType=null,isBlankState=false;
 function $(id){return document.getElementById(id)}
 
 // ── Clock ──
@@ -132,9 +132,10 @@ document.addEventListener('visibilitychange',function(){
 // Update the "Next" panel content. The panel itself is hidden by refreshBlankNext()
 // whenever the next item is a different song — the enlarged center preview covers
 // that case once the blank slide is reached.
-function updateNext(nextLines,nextSectionLabel,showSongTitle){
+function updateNext(nextLines,nextSectionLabel,showSongTitle,nextItemType){
   lastNextLines=nextLines||[];
   lastNextSectionLabel=nextSectionLabel||'';
+  lastNextItemType=nextItemType||null;
   var wrap=$('next-wrap'),lyricsEl=$('next-lyrics'),secEl=$('next-section');
   if(!wrap||!lyricsEl) return;
   if(!lastNextLines.length){refreshBlankNext();return;}
@@ -166,7 +167,7 @@ function refreshBlankNext(){
   var wrap=$('next-wrap');
   var hasNext=lastNextLines.length>0&&currentItemType!=='scripture';
   var isNewSong=nextIsNewSong();
-  var enlarge=isBlankState&&hasNext&&isNewSong;
+  var enlarge=isBlankState&&hasNext&&isNewSong&&lastNextItemType==='song';
   $('blank-overlay').classList.toggle('shownext',enlarge);
   if(enlarge) renderEnlargedNext();
   wrap.style.display=(hasNext&&!isNewSong)?'flex':'none';
@@ -179,11 +180,11 @@ function handle(ev){
     if(ev.blank)setBlank(ev.blank);
     if(ev.countdown)doCountdown(ev.countdown);
     // Replay stageNext if blank is active — showSlide alone may not have the latest next lines
-    if(ev.blank&&ev.nextLines&&ev.nextLines.length&&currentItemType!=='scripture')updateNext(ev.nextLines,ev.nextSectionLabel,true);
+    if(ev.blank&&ev.nextLines&&ev.nextLines.length&&currentItemType!=='scripture')updateNext(ev.nextLines,ev.nextSectionLabel,true,ev.nextItemType);
   }
   else if(ev.type==='slide'){clearCD();showSlide(ev.payload);setBlank(false)}
   else if(ev.type==='blank'){setBlank(ev.isBlank)}
-  else if(ev.type==='stageNext'){if(currentItemType!=='scripture')updateNext(ev.nextLines,ev.nextSectionLabel,true)}
+  else if(ev.type==='stageNext'){if(currentItemType!=='scripture')updateNext(ev.nextLines,ev.nextSectionLabel,true,ev.nextItemType)}
   else if(ev.type==='countdown'){doCountdown(ev.data)}
   else if(ev.type==='shutdown'){
     clearTimeout(reconnTimer);
@@ -224,7 +225,7 @@ function showSlide(p){
 
   var isLast=p.totalSlides!=null&&p.slideIndex!=null&&p.slideIndex+1===p.totalSlides;
   if(currentItemType==='scripture'){$('next-wrap').style.display='none';}
-  else{updateNext(p.nextLines,p.nextSectionLabel,isLast);}
+  else{updateNext(p.nextLines,p.nextSectionLabel,isLast,p.nextItemType);}
 }
 
 function setBlank(b){isBlankState=!!b;$('blank-overlay').classList.toggle('on',isBlankState);refreshBlankNext()}

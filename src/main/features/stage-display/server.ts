@@ -89,7 +89,7 @@ export function startStageServer(port = 4040, pin?: string | null): Promise<bool
         } else {
           setSseClients([...getSseClients(), client])
           // Stage display snapshot: slide/blank/countdown only — no lineup or media state
-          client.send({ type: 'init', slide: stage.slide, blank: stage.blank, countdown: stage.countdown, nextLines: stage.nextLines, nextSectionLabel: stage.nextLabel })
+          client.send({ type: 'init', slide: stage.slide, blank: stage.blank, countdown: stage.countdown, nextLines: stage.nextLines, nextSectionLabel: stage.nextLabel, nextItemType: stage.nextItemType })
           req.on('close', () => { setSseClients(getSseClients().filter(c => c !== client)) })
           sock.on('error', () => { setSseClients(getSseClients().filter(c => c !== client)) })
         }
@@ -317,16 +317,16 @@ function isRealSlide(s: import('../../lib/state').PwaSlide): boolean {
 // Find the next slide with real content, searching forward within the current item
 // then into subsequent lineup items — mirrors the desktop presenter's lookahead so
 // the "next" preview never points at the synthetic blank slide or empty lines.
-function findNextReal(lineupIdx: number, slideIdx: number): { nextLines: string[]; nextSectionLabel: string } | null {
+function findNextReal(lineupIdx: number, slideIdx: number): { nextLines: string[]; nextSectionLabel: string; nextItemType: string } | null {
   const item = stage.lineup[lineupIdx]
   if (item) {
     const real = item.slides.slice(slideIdx + 1).find(isRealSlide)
-    if (real) return { nextLines: real.lines, nextSectionLabel: real.sectionLabel ?? '' }
+    if (real) return { nextLines: real.lines, nextSectionLabel: real.sectionLabel ?? '', nextItemType: item.itemType }
   }
   for (let k = lineupIdx + 1; k < stage.lineup.length; k++) {
     const ni = stage.lineup[k]
     const real = ni.slides.find(isRealSlide)
-    if (real) return { nextLines: real.lines, nextSectionLabel: `${ni.title} — ${real.sectionLabel ?? ''}` }
+    if (real) return { nextLines: real.lines, nextSectionLabel: `${ni.title} — ${real.sectionLabel ?? ''}`, nextItemType: ni.itemType }
   }
   return null
 }
@@ -385,9 +385,10 @@ function projectSlide(lineupIdx: number, slideIdx: number): void {
 
 function broadcastStageNext(lineupIdx: number, slideIdx: number): void {
   const next = findNextReal(lineupIdx, slideIdx)
-  const data = { nextLines: next?.nextLines ?? [], nextSectionLabel: next?.nextSectionLabel ?? '' }
+  const data = { nextLines: next?.nextLines ?? [], nextSectionLabel: next?.nextSectionLabel ?? '', nextItemType: next?.nextItemType }
   stage.nextLines = next ? data.nextLines : null
   stage.nextLabel = data.nextSectionLabel
+  stage.nextItemType = next?.nextItemType ?? null
   broadcastAll({ type: 'stageNext', ...data })
   if (windows.confidence && !windows.confidence.isDestroyed())
     windows.confidence.webContents.send('slide:stageNext', data)

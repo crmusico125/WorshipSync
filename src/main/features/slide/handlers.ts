@@ -5,7 +5,7 @@ import { broadcastAll } from '../../lib/broadcast'
 function nextLinesFromLineup(
   lineupIdx: number,
   slideIndex: number | undefined,
-): { nextLines: string[]; nextSectionLabel: string } | null {
+): { nextLines: string[]; nextSectionLabel: string; nextItemType: string } | null {
   const item = stage.lineup[lineupIdx]
   if (!item) return null
 
@@ -15,13 +15,13 @@ function nextLinesFromLineup(
 
   const nextInItem = curPos >= 0 ? item.slides[curPos + 1] : undefined
   if (nextInItem) {
-    return { nextLines: nextInItem.lines, nextSectionLabel: nextInItem.sectionLabel ?? '' }
+    return { nextLines: nextInItem.lines, nextSectionLabel: nextInItem.sectionLabel ?? '', nextItemType: item.itemType }
   }
 
   for (let k = lineupIdx + 1; k < stage.lineup.length; k++) {
     const ni = stage.lineup[k]
     if (ni.slides.length > 0) {
-      return { nextLines: ni.slides[0].lines, nextSectionLabel: `${ni.title} — ${ni.slides[0].sectionLabel ?? ''}` }
+      return { nextLines: ni.slides[0].lines, nextSectionLabel: `${ni.title} — ${ni.slides[0].sectionLabel ?? ''}`, nextItemType: ni.itemType }
     }
   }
   return null
@@ -48,7 +48,7 @@ export function registerSlideHandlers(): void {
     if (windows.confidence && !windows.confidence.isDestroyed()) {
       const next = nextLinesFromLineup(stage.currentLineupIdx, slideIndex)
       const confidencePayload = next
-        ? { ...payload, nextLines: next.nextLines, nextSectionLabel: next.nextSectionLabel }
+        ? { ...payload, nextLines: next.nextLines, nextSectionLabel: next.nextSectionLabel, nextItemType: next.nextItemType }
         : payload
       windows.confidence.webContents.send('slide:show', confidencePayload)
     }
@@ -57,6 +57,7 @@ export function registerSlideHandlers(): void {
     stage.blank = false
     stage.nextLines = null
     stage.nextLabel = ''
+    stage.nextItemType = null
 
     broadcastAll({ type: 'slide', payload, lineupIdx: stage.currentLineupIdx, slideIdx: slideIndex ?? -1 })
   })
@@ -90,10 +91,11 @@ export function registerSlideHandlers(): void {
 
   // Updates the stage display and confidence monitor "next" section.
   // Called when the blank slide is active so both can still show what's coming next.
-  ipcMain.on('slide:stageNext', (_event, data: { nextLines: string[]; nextSectionLabel: string }) => {
+  ipcMain.on('slide:stageNext', (_event, data: { nextLines: string[]; nextSectionLabel: string; nextItemType?: string }) => {
     stage.nextLines = data.nextLines
     stage.nextLabel = data.nextSectionLabel
-    broadcastAll({ type: 'stageNext', nextLines: data.nextLines, nextSectionLabel: data.nextSectionLabel })
+    stage.nextItemType = data.nextItemType ?? null
+    broadcastAll({ type: 'stageNext', nextLines: data.nextLines, nextSectionLabel: data.nextSectionLabel, nextItemType: data.nextItemType })
     if (windows.confidence && !windows.confidence.isDestroyed()) {
       windows.confidence.webContents.send('slide:stageNext', data)
     }

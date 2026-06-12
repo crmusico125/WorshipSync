@@ -66,6 +66,7 @@ export const stage: {
   countdown: unknown
   nextLines: string[] | null
   nextLabel: string
+  nextItemType: string | null
   lineup: PwaLineupItem[]
   currentLineupIdx: number
   serviceDate: string | null
@@ -79,6 +80,7 @@ export const stage: {
   countdown: null,
   nextLines: null,
   nextLabel: '',
+  nextItemType: null,
   lineup: [],
   currentLineupIdx: -1,
   serviceDate: null,

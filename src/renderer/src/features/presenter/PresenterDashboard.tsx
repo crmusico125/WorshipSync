@@ -647,12 +647,14 @@ export default function PresenterDashboard({
       // Skip terminal blank slides so the "next" preview is always real content.
       let nextLines: string[] | undefined;
       let nextSectionLabel: string | undefined;
+      let nextItemType: string | undefined;
       const isRealSlide = (s: { sectionType: string; lines: string[] }) =>
         s.sectionType !== "blank" && s.lines.filter(Boolean).length > 0;
       const nextSlideInSong = song.slides.slice(slideIdx + 1).find(isRealSlide);
       if (nextSlideInSong) {
         nextLines = nextSlideInSong.lines;
         nextSectionLabel = nextSlideInSong.sectionLabel;
+        nextItemType = song.itemType;
       }
       if (!nextLines) {
         // Cross-item: skip items with no real content (e.g. empty notes, section dividers)
@@ -661,6 +663,7 @@ export default function PresenterDashboard({
           if (firstReal) {
             nextLines = firstReal.lines;
             nextSectionLabel = `${liveSongs[k].title} \u2014 ${firstReal.sectionLabel}`;
+            nextItemType = liveSongs[k].itemType;
             break;
           }
         }
@@ -673,6 +676,7 @@ export default function PresenterDashboard({
           window.worshipsync.slide.stageNext({
             nextLines,
             nextSectionLabel: nextSectionLabel ?? "",
+            nextItemType,
           });
         }
         setIsBlank(true);
@@ -692,6 +696,7 @@ export default function PresenterDashboard({
           backgroundPath: bg,
           nextLines,
           nextSectionLabel,
+          nextItemType,
           theme: {
             fontFamily: theme.fontFamily,
             fontSize:
@@ -712,6 +717,7 @@ export default function PresenterDashboard({
         window.worshipsync.slide.stageNext({
           nextLines: nextLines ?? [],
           nextSectionLabel: nextSectionLabel ?? "",
+          nextItemType,
         });
       }
     },
@@ -1491,10 +1497,10 @@ export default function PresenterDashboard({
     const isReal = (s: { sectionType: string; lines: string[] }) =>
       s.sectionType !== "blank" && s.lines.filter(Boolean).length > 0;
     const nextInSong = liveSong.slides.slice(liveSlideIdxRef.current + 1).find(isReal);
-    if (nextInSong) return { slide: nextInSong, songTitle: null as string | null };
+    if (nextInSong) return { slide: nextInSong, songTitle: null as string | null, itemType: liveSong.itemType };
     for (let k = liveItemIdxRef.current + 1; k < liveSongs.length; k++) {
       const first = liveSongs[k].slides.find(isReal);
-      if (first) return { slide: first, songTitle: liveSongs[k].title };
+      if (first) return { slide: first, songTitle: liveSongs[k].title, itemType: liveSongs[k].itemType };
     }
     return null;
   })();
@@ -1519,7 +1525,7 @@ export default function PresenterDashboard({
 
   // Enlarged "Next Song" treatment for the trailing blank slide — mirrors the centered
   // preview shown on the actual confidence monitor (song title + first 2 lines).
-  const liveEnlargedNext = liveNextUp?.songTitle && (
+  const liveEnlargedNext = liveNextUp?.songTitle && liveNextUp.itemType === "song" && (
     <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5 px-2 text-center" style={{ background: "#000" }}>
       <span className="text-[6px] font-extrabold uppercase tracking-widest" style={{ color: "rgba(251,191,36,0.6)" }}>Next Song</span>
       <span className="text-[11px] font-extrabold leading-tight line-clamp-1" style={{ color: "#fbbf24" }}>{liveNextUp.songTitle}</span>

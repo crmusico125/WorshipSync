@@ -73,9 +73,9 @@ declare global {
         videoControl: (action: 'play' | 'pause' | 'stop') => void
         videoSeek: (time: number) => void
         videoLoop: (loop: boolean) => void
-        stageNext: (data: { nextLines: string[]; nextSectionLabel: string }) => void
+        stageNext: (data: { nextLines: string[]; nextSectionLabel: string; nextItemType?: string }) => void
         confidenceHint: (payload: import('../../../../../shared/types').SlidePayload) => void
-        onStageNext: (cb: (data: { nextLines: string[]; nextSectionLabel: string }) => void) => () => void
+        onStageNext: (cb: (data: { nextLines: string[]; nextSectionLabel: string; nextItemType?: string }) => void) => () => void
         onShow: (cb: (payload: SlidePayload) => void) => () => void
         onBlank: (cb: (isBlank: boolean) => void) => () => void
         onLogo: (cb: (show: boolean) => void) => () => void

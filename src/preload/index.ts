@@ -11,9 +11,9 @@ contextBridge.exposeInMainWorld('worshipsync', {
     videoControl: (action: 'play' | 'pause' | 'stop') => ipcRenderer.send('slide:videoControl', action),
     videoSeek: (time: number) => ipcRenderer.send('slide:videoSeek', time),
     videoLoop: (loop: boolean) => ipcRenderer.send('slide:videoLoop', loop),
-    stageNext: (data: { nextLines: string[]; nextSectionLabel: string }) => ipcRenderer.send('slide:stageNext', data),
+    stageNext: (data: { nextLines: string[]; nextSectionLabel: string; nextItemType?: string }) => ipcRenderer.send('slide:stageNext', data),
     confidenceHint: (payload: SlidePayload) => ipcRenderer.send('slide:confidenceHint', payload),
-    onStageNext: (cb: (data: { nextLines: string[]; nextSectionLabel: string }) => void) => {
+    onStageNext: (cb: (data: { nextLines: string[]; nextSectionLabel: string; nextItemType?: string }) => void) => {
       ipcRenderer.on('slide:stageNext', (_e, data) => cb(data))
       return () => ipcRenderer.removeAllListeners('slide:stageNext')
     },
@@ -228,6 +228,7 @@ interface SlidePayload {
   backgroundPath?: string
   nextLines?: string[]
   nextSectionLabel?: string
+  nextItemType?: string
   theme?: {
     fontFamily: string
     fontSize: number

@@ -12,6 +12,7 @@ export default function ConfidenceMonitor() {
   // nextLines tracked separately so they stay correct even when blank fires
   const [nextLines, setNextLines] = useState<string[]>([]);
   const [nextSectionLabel, setNextSectionLabel] = useState("");
+  const [nextItemType, setNextItemType] = useState<string | undefined>(undefined);
 
   type MediaState = { isPlaying: boolean; currentTime: number; duration: number; lineupItemId: number };
   const [audioState, setAudioState] = useState<MediaState | null>(null);
@@ -91,6 +92,7 @@ export default function ConfidenceMonitor() {
       setFirstUp(null);
       setNextLines(payload.nextLines ?? []);
       setNextSectionLabel(payload.nextSectionLabel ?? "");
+      setNextItemType(payload.nextItemType);
       if (countdownRef.current) {
         clearInterval(countdownRef.current);
         countdownRef.current = null;
@@ -102,6 +104,7 @@ export default function ConfidenceMonitor() {
       window.worshipsync.slide.onStageNext?.((data) => {
         setNextLines(data.nextLines ?? []);
         setNextSectionLabel(data.nextSectionLabel ?? "");
+        setNextItemType(data.nextItemType);
       }) ?? (() => {});
 
     const cleanBlank = window.worshipsync.slide.onBlank((b) => {
@@ -212,7 +215,7 @@ export default function ConfidenceMonitor() {
 
   // On the blank slide, if the next item is a different song, use the otherwise-empty
   // center area for an enlarged "Next" preview instead of the small bottom strip.
-  const showEnlargedNext = isBlank && hasNext && isNextNewSong && slide?.itemType !== "scripture";
+  const showEnlargedNext = isBlank && hasNext && isNextNewSong && slide?.itemType !== "scripture" && nextItemType === "song";
 
   // Binary-search the largest font size for the enlarged "Next Song" preview where it
   // still fits the content area — keeps it readable from across the room on small

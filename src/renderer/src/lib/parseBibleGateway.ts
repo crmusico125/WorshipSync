@@ -31,7 +31,8 @@ export function parseBibleGatewayText(raw: string): ParsedScripture | null {
     .replace(/ /g, ' ').replace(/['']/g, "'").replace(/[""]/g, '"')
 
   const allLines = text.split('\n').map(l => l.trim())
-  const refRegex = /^(.+?)\s+(\d+):(\d+)(?:[–\-](\d+))?$/
+  // Verse part is optional so whole-chapter references like "Luke 11" (no ":verse") also match.
+  const refRegex = /^(.+?)\s+(\d+)(?::(\d+)(?:[–\-](\d+))?)?$/
 
   let refLineIdx = -1; let refMatch: RegExpMatchArray | null = null
   for (let i = 0; i < Math.min(allLines.length, 5); i++) {
@@ -45,8 +46,8 @@ export function parseBibleGatewayText(raw: string): ParsedScripture | null {
 
   const book = refMatch[1].trim()
   const chapter = parseInt(refMatch[2])
-  const verseStart = parseInt(refMatch[3])
-  const verseEnd = refMatch[4] ? parseInt(refMatch[4]) : verseStart
+  const isWholeChapter = !refMatch[3]
+  const verseStart = isWholeChapter ? 1 : parseInt(refMatch[3])
 
   let version = ''
   for (let i = refLineIdx + 1; i < Math.min(refLineIdx + 4, allLines.length); i++) {
@@ -68,40 +69,51 @@ export function parseBibleGatewayText(raw: string): ParsedScripture | null {
     const line = allLines[i]
     if (!skippedVersion && line && !/^\d/.test(line)) { skippedVersion = true; continue }
     if (SCRIPTURE_COPYRIGHT_PATTERNS.some(p => p.test(line))) break
+    // Skip section heading lines BibleGateway inserts between passages (e.g. "Jesus'
+    // Teaching on Prayer") — identified by starting with a capital letter, not ending
+    // mid-sentence, and being directly followed by the next verse marker.
+    if (line && /^[A-Z]/.test(line) && !/[.,;:!?'"’”]$/.test(line)) {
+      const next = allLines.slice(i + 1).find(l => l)
+      if (next && /^\d/.test(next)) continue
+    }
     bodyLines.push(line)
   }
 
   const bodyText = bodyLines.join(' ').replace(/\s{2,}/g, ' ').trim()
   if (!bodyText) return null
 
-  let remaining = bodyText.replace(new RegExp(`^${verseStart}\\s+`), '').trim()
+  // A whole-chapter paste has no verse-1 marker — BibleGateway shows the chapter
+  // number as a drop cap in its place, so strip that prefix instead of "1 ".
+  const leadingMarker = isWholeChapter ? chapter : verseStart
+  let remaining = bodyText.replace(new RegExp(`^${leadingMarker}\\s+`), '').trim()
   const verses: { number: number; text: string }[] = []
 
-  if (verseStart === verseEnd) {
-    verses.push({ number: verseStart, text: remaining.trim() })
-  } else {
-    let currentNum = verseStart
-    for (let v = verseStart + 1; v <= verseEnd; v++) {
-      let searchFrom = 0; let found = -1
-      while (searchFrom < remaining.length) {
-        const target = ` ${v} `
-        const idx = remaining.indexOf(target, searchFrom)
-        if (idx === -1) break
-        const before = remaining[idx - 1]; const after = remaining[idx + target.length]
-        if ((before && /\d/.test(before)) || (after && /\d/.test(after))) { searchFrom = idx + 1; continue }
-        found = idx; break
-      }
-      if (found !== -1) {
-        verses.push({ number: currentNum, text: remaining.slice(0, found).trim() })
-        remaining = remaining.slice(found + ` ${v} `.length).trim()
-        currentNum = v
-      }
+  // Walk forward through the expected next verse number (verseStart+1, +2, ...),
+  // splitting off each verse's text as its marker is found. Stops at the first
+  // missing marker, so the detected last verse reflects the actual sequential
+  // numbering in the pasted text rather than any range stated in the reference
+  // line — a stray number elsewhere in the text (e.g. "40 days") can't extend
+  // the range since it won't match the specific number being searched for.
+  let currentNum = verseStart
+  for (let v = verseStart + 1; ; v++) {
+    const target = ` ${v} `
+    let searchFrom = 0; let found = -1
+    while (searchFrom < remaining.length) {
+      const idx = remaining.indexOf(target, searchFrom)
+      if (idx === -1) break
+      const before = remaining[idx - 1]; const after = remaining[idx + target.length]
+      if ((before && /\d/.test(before)) || (after && /\d/.test(after))) { searchFrom = idx + 1; continue }
+      found = idx; break
     }
-    verses.push({ number: currentNum, text: remaining.trim() })
+    if (found === -1) break
+    verses.push({ number: currentNum, text: remaining.slice(0, found).trim() })
+    remaining = remaining.slice(found + target.length).trim()
+    currentNum = v
   }
+  verses.push({ number: currentNum, text: remaining.trim() })
 
   const valid = verses.filter(v => v.text.length > 0)
   if (valid.length === 0) return null
-  const range = verseStart === verseEnd ? `${verseStart}` : `${verseStart}-${verseEnd}`
+  const range = verseStart === currentNum ? `${verseStart}` : `${verseStart}-${currentNum}`
   return { title: `${book} ${chapter}:${range} (${version})`, book, chapter, version, verses: valid }
 }

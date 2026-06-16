@@ -3,7 +3,7 @@ import { QRCodeSVG } from "qrcode.react"
 import {
   Download, Upload, CheckCircle2, AlertCircle, Database, Clock,
   Church, CalendarDays, Plus, Trash2, X, Monitor, Wifi, Copy, Check,
-  Users, Lock,
+  Users, Lock, BookOpen, Eye, EyeOff,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -177,6 +177,11 @@ export default function SettingsScreen() {
   const [churchName, setChurchName]           = useState("")
   const [churchNameSaved, setChurchNameSaved] = useState(false)
 
+  // Bible API key
+  const [bibleApiKey, setBibleApiKey]         = useState("")
+  const [bibleApiKeySaved, setBibleApiKeySaved] = useState(false)
+  const [bibleApiKeyVisible, setBibleApiKeyVisible] = useState(false)
+
   // Service schedules
   const [schedules, setSchedules]             = useState<ServiceSchedule[]>([])
   const [adding, setAdding]                   = useState(false)
@@ -225,6 +230,7 @@ export default function SettingsScreen() {
   useEffect(() => {
     window.worshipsync.appState.get().then((state: Record<string, any>) => {
       if (state.churchName)         setChurchName(state.churchName)
+      if (state.bibleApiKey)        setBibleApiKey(state.bibleApiKey as string)
       if (state.serviceSchedules)   setSchedules(state.serviceSchedules)
       if (state.serviceTime)        setServiceTime(state.serviceTime)
       if (state.serviceTimezone)  { setServiceTimezone(state.serviceTimezone); setNewTimezone(state.serviceTimezone) }
@@ -241,6 +247,12 @@ export default function SettingsScreen() {
     await window.worshipsync.appState.set({ churchName })
     setChurchNameSaved(true)
     setTimeout(() => setChurchNameSaved(false), 2000)
+  }
+
+  const handleSaveBibleApiKey = async () => {
+    await window.worshipsync.appState.set({ bibleApiKey: bibleApiKey.trim() || null })
+    setBibleApiKeySaved(true)
+    setTimeout(() => setBibleApiKeySaved(false), 2000)
   }
 
   const persistSchedules = async (updated: ServiceSchedule[]) => {
@@ -397,6 +409,45 @@ export default function SettingsScreen() {
                     </span>
                   )}
                 </div>
+              </div>
+            </Card>
+
+            {/* Bible API key */}
+            <Card>
+              <CardHeader icon={BookOpen} title="Bible API key"
+                description="Enter your API.Bible key to unlock NIV, NLT, NKJV, ESV, and 50+ modern translations in the scripture search. Free key available at scripture.api.bible — without it, only WEB, KJV, ASV, and a few others are available." />
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <Input
+                      type={bibleApiKeyVisible ? "text" : "password"}
+                      placeholder="Paste your API.Bible key here"
+                      value={bibleApiKey}
+                      onChange={(e) => setBibleApiKey(e.target.value)}
+                      className="pr-9 font-mono text-sm"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setBibleApiKeyVisible(v => !v)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      {bibleApiKeyVisible
+                        ? <EyeOff className="h-4 w-4" />
+                        : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  <Button size="sm" onClick={handleSaveBibleApiKey}>Save</Button>
+                  {bibleApiKeySaved && (
+                    <span className="text-xs text-green-500 flex items-center gap-1">
+                      <CheckCircle2 className="h-3.5 w-3.5" /> Saved
+                    </span>
+                  )}
+                </div>
+                {bibleApiKey.trim() && (
+                  <p className="text-[11px] text-green-500/80">
+                    Key set — NIV, NLT, NKJV, ESV and more will be available in scripture search.
+                  </p>
+                )}
               </div>
             </Card>
 

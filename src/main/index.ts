@@ -1,4 +1,3 @@
-import 'dotenv/config'
 import { app, BrowserWindow } from 'electron'
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import { screen } from 'electron'

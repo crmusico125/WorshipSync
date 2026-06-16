@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { SlidePayload } from "../../../../../shared/types";
+import AnnouncementCardsView from "../../components/AnnouncementCardsView";
 
 type DisplayState = "slide" | "blank" | "logo" | "countdown";
 
@@ -14,6 +15,7 @@ const DEFAULT_THEME = {
   textShadowOpacity: 40,
   maxLinesPerSlide: 2,
   backgroundScaleMode: "cover" as const,
+  accentColor: undefined as string | undefined,
 };
 
 export default function ProjectionWindow() {
@@ -526,7 +528,7 @@ export default function ProjectionWindow() {
         </div>
       )}
 
-      {/* Lyrics \u2014 scripture uses column layout so reference never overlaps verse text */}
+      {/* Slide content \u2014 scripture uses column layout; announcements use event-card layout; everything else is lyrics */}
       {displayState === "slide" && slide && (
         slide.itemType === "scripture" ? (
           <div
@@ -589,6 +591,28 @@ export default function ProjectionWindow() {
                 {slide.sectionLabel}
               </div>
             )}
+          </div>
+        ) : slide.itemType === "announcement" && slide.announcementCards?.length ? (
+          <div
+            key={slideVersion}
+            style={{
+              position: "absolute",
+              inset: 0,
+              zIndex: 3,
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: "center",
+              padding: "5% 8%",
+              animation: slideTransitionMs > 0 ? `wsSlideIn ${slideTransitionMs}ms ease forwards` : "none",
+            }}
+          >
+            <AnnouncementCardsView
+              title={slide.songTitle}
+              cards={slide.announcementCards}
+              textColor={theme.textColor}
+              accentColor={theme.accentColor ?? '#fbbf24'}
+              fontSize={theme.fontSize}
+            />
           </div>
         ) : (
           <div

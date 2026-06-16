@@ -28,11 +28,21 @@ export const windows: {
 
 // ── Stage display state ───────────────────────────────────────────────────────
 
+export interface PwaAnnouncementCard {
+  id: string
+  heading: string
+  day?: string
+  time?: string
+  location?: string
+  description?: string
+}
+
 export interface PwaSlide {
   idx: number
   sectionLabel: string
   sectionType: string
   lines: string[]
+  cards?: PwaAnnouncementCard[]
 }
 
 export interface PwaItemTheme {
@@ -45,6 +55,7 @@ export interface PwaItemTheme {
   overlayOpacity: number
   textShadowOpacity: number
   maxLinesPerSlide: number
+  accentColor?: string
 }
 
 export interface PwaLineupItem {

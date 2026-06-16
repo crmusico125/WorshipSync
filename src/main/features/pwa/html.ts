@@ -564,7 +564,12 @@ function renderSlides() {
     return
   }
 
-  // Song / Scripture / Announcement — slide grid
+  if (item.itemType === 'announcement') {
+    renderAnnouncementPanel(container, item)
+    return
+  }
+
+  // Song / Scripture — slide grid
   if (!item.slides.length) {
     container.innerHTML = '<div id="empty-state"><h2>' + esc(item.title) + '</h2><p>No slides available for this item.</p></div>'
     return
@@ -590,6 +595,41 @@ function renderSlides() {
     const el = document.querySelector('#slide-grid .slide-btn.active')
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   })
+}
+
+function renderAnnouncementPanel(container, item) {
+  const cards = (item.slides[0]?.cards ?? []).filter(c => c.heading)
+  const isLive = S.activeLineupIdx === S.currentLineupIdx && !S.blank
+
+  let cardsHtml = ''
+  if (cards.length) {
+    cardsHtml = cards.map(c => {
+      const hasBadge = c.day || c.time
+      const badgeHtml = hasBadge
+        ? '<div style="flex-shrink:0;min-width:44px;padding:6px 8px;background:#fbbf24;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px">'
+          + (c.day ? '<span style="font-size:10px;font-weight:800;color:#000;letter-spacing:.06em;text-transform:uppercase;line-height:1.1">' + esc(c.day) + '</span>' : '')
+          + (c.time ? '<span style="font-size:10px;font-weight:700;color:#000;line-height:1.1">' + esc(c.time) + '</span>' : '')
+          + '</div>'
+        : ''
+      const detailHtml = '<div style="flex:1;min-width:0">'
+        + '<div style="font-size:14px;font-weight:700;color:var(--text);line-height:1.3">' + esc(c.heading) + '</div>'
+        + (c.location ? '<div style="font-size:12px;color:var(--muted);margin-top:2px">' + esc(c.location) + '</div>' : '')
+        + (c.description ? '<div style="font-size:11px;color:var(--muted);margin-top:1px">' + esc(c.description) + '</div>' : '')
+        + '</div>'
+      return '<div style="display:flex;align-items:flex-start;gap:12px;padding:12px;background:var(--surface2);border-radius:12px;border:1px solid var(--border)">'
+        + badgeHtml + detailHtml + '</div>'
+    }).join('')
+  } else {
+    cardsHtml = '<div style="text-align:center;color:var(--muted);font-size:13px;padding:24px 0">No events yet</div>'
+  }
+
+  container.innerHTML =
+    '<div id="media-panel" style="gap:12px;padding-bottom:max(24px,var(--safe-bot))">'
+    + '<div style="font-size:16px;font-weight:700;text-align:center;color:var(--text)">' + esc(item.title) + '</div>'
+    + '<div style="width:100%;max-width:420px;display:flex;flex-direction:column;gap:8px">' + cardsHtml + '</div>'
+    + '<button class="btn-show" style="max-width:420px" ' + (isLive ? 'disabled' : '') + ' onclick="showSlide(' + S.activeLineupIdx + ',0)">'
+    + (isLive ? 'On Screen' : 'Show on Screen') + '</button>'
+    + '</div>'
 }
 
 function renderMediaPanel(container, item) {

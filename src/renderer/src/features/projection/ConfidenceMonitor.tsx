@@ -1,5 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import type { SlidePayload } from "../../../../../shared/types";
+import AnnouncementCardsView from "../../components/AnnouncementCardsView";
 
 export default function ConfidenceMonitor() {
   const [slide, setSlide] = useState<SlidePayload | null>(null);
@@ -504,6 +505,21 @@ export default function ConfidenceMonitor() {
               (() => {
                 const lines = slide!.lines.filter(Boolean);
                 const isScripture = slide!.itemType === "scripture";
+
+                if (slide!.itemType === "announcement" && slide!.announcementCards?.length) {
+                  return (
+                    <div style={{ width: "100%", padding: "0 8px" }}>
+                      <AnnouncementCardsView
+                        title={slide!.songTitle}
+                        cards={slide!.announcementCards}
+                        textColor="#ffffff"
+                        accentColor={slide!.theme?.accentColor ?? '#fbbf24'}
+                        fontSize={slide!.theme?.fontSize ?? 48}
+                        compact
+                      />
+                    </div>
+                  );
+                }
 
                 if (isScripture) {
                   // Font size is set by the useLayoutEffect binary search above.

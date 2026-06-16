@@ -222,6 +222,15 @@ contextBridge.exposeInMainWorld('worshipsync', {
   },
 })
 
+interface AnnouncementCard {
+  id: string
+  heading: string
+  day?: string
+  time?: string
+  location?: string
+  description?: string
+}
+
 interface SlidePayload {
   lines: string[]
   songTitle: string
@@ -235,6 +244,7 @@ interface SlidePayload {
   nextLines?: string[]
   nextSectionLabel?: string
   nextItemType?: string
+  announcementCards?: AnnouncementCard[]
   theme?: {
     fontFamily: string
     fontSize: number
@@ -245,5 +255,6 @@ interface SlidePayload {
     overlayOpacity: number
     textShadowOpacity: number
     maxLinesPerSlide: number
+    accentColor?: string
   }
 }

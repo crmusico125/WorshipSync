@@ -43,6 +43,7 @@ import { useServiceStore, type ServiceDate } from "../../store/useServiceStore";
 import LibraryModal from "../../components/LibraryModal";
 import BackgroundPickerPanel from "../../components/BackgroundPickerPanel";
 import EditLyricsModal from "../../components/EditLyricsModal";
+import type { AnnouncementCard } from "../../../../../shared/types";
 
 
 // ── Audio singleton — survives PresenterDashboard unmounts ───────────────────
@@ -61,6 +62,7 @@ interface Slide {
   sectionType: string;
   sectionId: number;
   globalIndex: number;
+  cards?: AnnouncementCard[];
 }
 
 interface LiveSong {
@@ -90,6 +92,16 @@ interface ThemeStyle {
   overlayOpacity: number;
   textShadowOpacity: number;
   maxLinesPerSlide: number;
+  accentColor?: string;
+}
+
+function parseAnnouncementCards(raw: string | null | undefined): AnnouncementCard[] {
+  if (!raw) return []
+  try {
+    const p = JSON.parse(raw)
+    if (Array.isArray(p?.cards)) return p.cards
+  } catch {}
+  return raw.split('\n').filter(l => l.trim()).map((l, i) => ({ id: String(i), heading: l.trim() }))
 }
 
 const DEFAULT_THEME: ThemeStyle = {
@@ -437,12 +449,16 @@ export default function PresenterDashboard({
         };
       }
 
-      // Announcement items — single slide from body content
+      // Announcement items — single slide built from structured event cards
       if (item.itemType === "announcement") {
-        const content = item.scriptureRef ?? "";
-        const lines = content.split("\n");
-        const announcementSlides: Slide[] = lines.filter(l => l.trim()).length > 0 ? [{
-          lines,
+        const cards = parseAnnouncementCards(item.scriptureRef)
+        const lines = cards.length
+          ? [item.title ?? '', ...cards.map(c =>
+              [c.heading, [c.day, c.time].filter(Boolean).join(' '), c.location, c.description].filter(Boolean).join(' — ')
+            )]
+          : ['']
+        const announcementSlides: Slide[] = cards.length ? [{
+          lines, cards,
           sectionLabel: "Announcement",
           sectionType: "announcement",
           sectionId: 0,
@@ -611,6 +627,7 @@ export default function PresenterDashboard({
         sectionLabel: sl.sectionLabel,
         sectionType: sl.sectionType,
         lines: sl.lines,
+        ...(sl.cards ? { cards: sl.cards } : {}),
       })),
     }))
     window.worshipsync.pwa?.syncLineup?.(items, selectedSongIdx, selectedService?.date ?? null, serviceTime)
@@ -697,6 +714,7 @@ export default function PresenterDashboard({
           nextLines,
           nextSectionLabel,
           nextItemType,
+          announcementCards: slide.cards,
           theme: {
             fontFamily: theme.fontFamily,
             fontSize:
@@ -710,6 +728,7 @@ export default function PresenterDashboard({
             overlayOpacity: theme.overlayOpacity,
             textShadowOpacity: theme.textShadowOpacity,
             maxLinesPerSlide: theme.maxLinesPerSlide,
+            accentColor: theme.accentColor,
           },
         });
         // Explicitly broadcast next lines so the confidence monitor receives them
@@ -1894,22 +1913,42 @@ export default function PresenterDashboard({
           </div>
         ) : currentSong?.itemType === "announcement" ? (
           /* ── Announcement ── */
-          <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
-            <Megaphone className="h-16 w-16 text-muted-foreground mb-6" />
-            <h2 className="text-lg font-bold mb-1">{currentSong.title}</h2>
-            <p className="text-sm text-muted-foreground mb-6 max-w-md whitespace-pre-wrap">
-              {currentSong.slides[0]?.lines.join("\n") || "No content — edit in the builder."}
-            </p>
-            <Button
-              size="lg" className="gap-2"
-              disabled={!currentSong.slides[0]?.lines.filter(Boolean).length}
-              onClick={() => sendSlide(selectedSongIdx, 0)}
-            >
-              <Cast className="h-5 w-5" /> Show on Screen
-            </Button>
-            <p className="text-[11px] text-muted-foreground mt-6 max-w-sm">
-              The announcement will be shown full-screen on the projection display.
-            </p>
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+            <div className="flex items-center gap-2 px-6 pt-5 pb-3 shrink-0">
+              <Megaphone className="h-4 w-4 text-muted-foreground shrink-0" />
+              <h2 className="text-sm font-bold">{currentSong.title || "Announcement"}</h2>
+            </div>
+            <div className="flex-1 overflow-y-auto px-6 pb-4 space-y-2">
+              {(currentSong.slides[0]?.cards ?? []).filter(c => c.heading).length > 0 ? (
+                (currentSong.slides[0]?.cards ?? []).filter(c => c.heading).map(card => (
+                  <div key={card.id} className="flex gap-3 p-3 bg-card rounded-lg border border-border">
+                    {(card.day || card.time) && (
+                      <div className="shrink-0 rounded px-2 py-1 text-center text-[10px] font-bold leading-tight"
+                        style={{ background: '#fbbf24', color: '#000', minWidth: 40 }}>
+                        {card.day && <div>{card.day}</div>}
+                        {card.time && <div>{card.time}</div>}
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold leading-tight">{card.heading}</p>
+                      {card.location && <p className="text-xs text-muted-foreground mt-0.5">{card.location}</p>}
+                      {card.description && <p className="text-xs text-muted-foreground">{card.description}</p>}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground py-4 text-center">No events yet — add them in the builder.</p>
+              )}
+            </div>
+            <div className="shrink-0 px-6 pb-5 pt-2 border-t border-border">
+              <Button
+                size="lg" className="gap-2 w-full"
+                disabled={!(currentSong.slides[0]?.cards ?? []).filter(c => c.heading).length}
+                onClick={() => sendSlide(selectedSongIdx, 0)}
+              >
+                <Cast className="h-5 w-5" /> Show on Screen
+              </Button>
+            </div>
           </div>
         ) : currentSong?.itemType === "countdown" ? (
           <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
@@ -3097,6 +3136,26 @@ export default function PresenterDashboard({
                     {countdownDisplay}
                   </span>
                   <span className="text-[6px] font-semibold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.3)" }}>Until Service Starts</span>
+                </div>
+              ) : liveSlide && liveSlide.sectionType !== "blank" && liveSong?.itemType === "announcement" && liveSlide.cards?.filter(c => c.heading).length ? (
+                <div className="absolute inset-0 flex flex-col justify-center gap-1 px-2 py-1.5 overflow-hidden">
+                  <span className="text-[7px] font-black uppercase tracking-widest text-center" style={{ color: "#fbbf24", opacity: 0.8 }}>
+                    {liveSong.title}
+                  </span>
+                  {liveSlide.cards.filter(c => c.heading).slice(0, 3).map(card => (
+                    <div key={card.id} className="flex items-center gap-1 min-w-0">
+                      {(card.day || card.time) && (
+                        <span className="shrink-0 rounded px-1 text-[5px] font-black leading-tight text-center" style={{ background: liveTheme.accentColor ?? '#fbbf24', color: '#000', minWidth: 18 }}>
+                          {card.day && <span style={{ display: 'block' }}>{card.day}</span>}
+                          {card.time && <span style={{ display: 'block' }}>{card.time}</span>}
+                        </span>
+                      )}
+                      <span className="text-[7px] font-semibold leading-tight truncate" style={{ color: '#fff' }}>{card.heading}</span>
+                    </div>
+                  ))}
+                  {liveSlide.cards.filter(c => c.heading).length > 3 && (
+                    <span className="text-[6px] text-center" style={{ color: 'rgba(255,255,255,0.3)' }}>+{liveSlide.cards.filter(c => c.heading).length - 3} more</span>
+                  )}
                 </div>
               ) : liveSlide && liveSlide.sectionType !== "blank" && liveSlide.lines.filter(Boolean).length > 0 ? (
                 <div className="absolute inset-0 flex flex-col">

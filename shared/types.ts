@@ -36,6 +36,15 @@ export interface SongWithSections extends Song {
   sections: Section[]
 }
 
+export interface AnnouncementCard {
+  id: string
+  heading: string
+  day?: string
+  time?: string
+  location?: string
+  description?: string
+}
+
 export interface SlidePayload {
   lines: string[]
   songTitle: string
@@ -49,6 +58,7 @@ export interface SlidePayload {
   backgroundPath?: string | null
   nextLines?: string[]
   nextSectionLabel?: string
+  announcementCards?: AnnouncementCard[]
   theme?: {
     fontFamily: string
     fontSize: number
@@ -60,5 +70,6 @@ export interface SlidePayload {
     textShadowOpacity: number
     maxLinesPerSlide: number
     backgroundScaleMode?: 'cover' | 'contain' | 'stretch'
+    accentColor?: string
   }
 }

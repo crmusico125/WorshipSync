@@ -30,6 +30,8 @@ import {
   type SetlistTemplate, type SetlistTemplateItem,
 } from "../../components/TemplateManagerModal"
 import { useSetlistTemplates } from "../../hooks/useSetlistTemplates"
+import AnnouncementCardsView from "../../components/AnnouncementCardsView"
+import type { AnnouncementCard } from "../../../../../shared/types"
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -125,16 +127,16 @@ function sectionsToLyrics(sections: { label: string; lyrics: string }[]): string
 
 interface AnnouncementStyle {
   fontSize: number
-  fontWeight: string
   textColor: string
-  textAlign: 'left' | 'center' | 'right'
+  accentColor: string
+  fontWeight?: string   // kept for backward compat with old stored data
+  textAlign?: string    // same
 }
 
 const DEFAULT_ANNOUNCEMENT_STYLE: AnnouncementStyle = {
   fontSize: 48,
-  fontWeight: '600',
   textColor: '#ffffff',
-  textAlign: 'center',
+  accentColor: '#fbbf24',
 }
 
 const ANNOUNCEMENT_FONT_SIZES = [
@@ -144,11 +146,25 @@ const ANNOUNCEMENT_FONT_SIZES = [
   { label: 'XL', value: 80 },
 ]
 
-const ANNOUNCEMENT_COLORS = ['#ffffff', '#fef08a', '#93c5fd', '#86efac', '#fca5a5', '#e879f9']
+const ANNOUNCEMENT_TEXT_COLORS  = ['#ffffff', '#fef08a', '#93c5fd', '#86efac', '#fca5a5', '#e879f9']
+const ANNOUNCEMENT_ACCENT_COLORS = ['#fbbf24', '#34d399', '#60a5fa', '#f472b6', '#a78bfa', '#fb923c']
+
+function parseAnnouncementCards(raw: string | null | undefined): AnnouncementCard[] {
+  if (!raw) return []
+  try {
+    const p = JSON.parse(raw)
+    if (Array.isArray(p?.cards)) return p.cards
+  } catch {}
+  return raw.split('\n').filter(l => l.trim()).map((l, i) => ({ id: String(i), heading: l.trim() }))
+}
 
 function parseAnnouncementStyle(json: string | null | undefined): AnnouncementStyle {
   if (!json) return DEFAULT_ANNOUNCEMENT_STYLE
   try { return { ...DEFAULT_ANNOUNCEMENT_STYLE, ...JSON.parse(json) } } catch { return DEFAULT_ANNOUNCEMENT_STYLE }
+}
+
+function newCard(): AnnouncementCard {
+  return { id: String(Date.now() + Math.random()), heading: '', day: '', time: '', location: '', description: '' }
 }
 
 // ── Duration helpers ─────────────────────────────────────────────────────────
@@ -240,8 +256,8 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
 
   const [themeOverrides, setThemeOverrides] = useState<Partial<ThemeStyle>>({})
   const [bgOverride, setBgOverride] = useState<string | null | undefined>(undefined)
-  const [annPreviewTitle,   setAnnPreviewTitle]   = useState("")
-  const [annPreviewContent, setAnnPreviewContent] = useState("")
+  const [annPreviewTitle, setAnnPreviewTitle] = useState("")
+  const [annCards, setAnnCards] = useState<AnnouncementCard[]>([])
   const [pendingBgPath, setPendingBgPath] = useState<string | null | undefined>(undefined)
   const [savingBg, setSavingBg] = useState(false)
   const [arrangedSectionIds, setArrangedSectionIds] = useState<number[] | null>(null)
@@ -350,7 +366,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
   useEffect(() => {
     if (currentItem?.itemType === 'announcement') {
       setAnnPreviewTitle(currentItem.title ?? "")
-      setAnnPreviewContent(currentItem.scriptureRef ?? "")
+      setAnnCards(parseAnnouncementCards(currentItem.scriptureRef))
     }
   }, [currentItem?.id])
 
@@ -976,14 +992,14 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
               </div>
               <div className="flex-1 overflow-y-auto p-5 bg-muted/10">
                 <div className="max-w-2xl flex flex-col gap-4">
-                  {/* Title */}
+                  {/* Slide heading */}
                   <div>
-                    <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1.5">Title</label>
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1.5">Slide Heading</label>
                     <input
                       type="text"
                       defaultValue={currentItem.title ?? ''}
                       readOnly={isPast}
-                      placeholder="e.g. This Sunday's Events"
+                      placeholder="e.g. This Week at Grace Church"
                       onChange={(e) => {
                         const val = e.target.value
                         setAnnPreviewTitle(val)
@@ -996,29 +1012,98 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
                       className="w-full h-9 px-3 text-sm bg-background border border-border rounded-md outline-none focus:border-primary/50 transition-colors placeholder:text-muted-foreground/40"
                     />
                   </div>
-                  {/* Content */}
-                  <div>
-                    <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1.5">Content</label>
-                    <textarea
-                      defaultValue={currentItem.scriptureRef ?? ''}
-                      readOnly={isPast}
-                      rows={8}
-                      placeholder={"Sunday 6pm — Youth Night\nMonday 7pm — Prayer Meeting\n\nVisit worshipsync.com for more info"}
-                      onChange={(e) => {
-                        const val = e.target.value
-                        setAnnPreviewContent(val)
-                        clearTimeout(announcementTimers.current.content)
-                        announcementTimers.current.content = setTimeout(() => {
-                          window.worshipsync.lineup.updateAnnouncement(currentItem.id, { content: val })
-                            .then(() => { if (selectedService) loadLineup(selectedService.id) })
-                        }, 600)
-                      }}
-                      className="w-full px-3 py-2.5 text-sm bg-background border border-border rounded-md outline-none focus:border-primary/50 transition-colors resize-none placeholder:text-muted-foreground/40 leading-relaxed"
-                    />
-                    <p className="text-[10px] text-muted-foreground mt-1.5">Each line becomes a line on the projection screen. Use blank lines to add spacing.</p>
-                  </div>
 
-                  {/* Formatting toolbar */}
+                  {/* Event cards */}
+                  {(() => {
+                    const saveCards = (next: AnnouncementCard[]) => {
+                      setAnnCards(next)
+                      window.worshipsync.lineup.updateAnnouncement(currentItem.id, { content: JSON.stringify({ cards: next }) })
+                        .then(() => { if (selectedService) loadLineup(selectedService.id) })
+                    }
+                    const updateCard = (id: string, patch: Partial<AnnouncementCard>) => {
+                      const next = annCards.map(c => c.id === id ? { ...c, ...patch } : c)
+                      setAnnCards(next)
+                      clearTimeout(announcementTimers.current.content)
+                      announcementTimers.current.content = setTimeout(() => {
+                        window.worshipsync.lineup.updateAnnouncement(currentItem.id, { content: JSON.stringify({ cards: next }) })
+                          .then(() => { if (selectedService) loadLineup(selectedService.id) })
+                      }, 500)
+                    }
+                    const moveCard = (idx: number, dir: -1 | 1) => {
+                      const next = [...annCards]
+                      const [item] = next.splice(idx, 1)
+                      next.splice(idx + dir, 0, item)
+                      saveCards(next)
+                    }
+                    return (
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Events</label>
+                          {!isPast && (
+                            <button
+                              onClick={() => saveCards([...annCards, newCard()])}
+                              className="text-[10px] font-semibold text-primary hover:text-primary/80 flex items-center gap-0.5"
+                            >
+                              <Plus className="h-3 w-3" /> Add Event
+                            </button>
+                          )}
+                        </div>
+                        <div className="flex flex-col gap-3">
+                          {annCards.length === 0 && (
+                            <div className="text-[11px] text-muted-foreground text-center py-6 border border-dashed border-border rounded-lg">
+                              No events yet — click "Add Event" to get started.
+                            </div>
+                          )}
+                          {annCards.map((card, idx) => (
+                            <div key={card.id} className="bg-background border border-border rounded-lg p-3 flex flex-col gap-2">
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="text"
+                                  value={card.heading}
+                                  readOnly={isPast}
+                                  placeholder="Event name"
+                                  onChange={e => updateCard(card.id, { heading: e.target.value })}
+                                  className="flex-1 h-8 px-2.5 text-sm font-semibold bg-muted/50 border border-border rounded outline-none focus:border-primary/50 placeholder:text-muted-foreground/40"
+                                />
+                                {!isPast && (
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    <button onClick={() => idx > 0 && moveCard(idx, -1)} disabled={idx === 0}
+                                      className="w-6 h-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-30">
+                                      <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M6 2l4 5H2z"/></svg>
+                                    </button>
+                                    <button onClick={() => idx < annCards.length - 1 && moveCard(idx, 1)} disabled={idx === annCards.length - 1}
+                                      className="w-6 h-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-30">
+                                      <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M6 10L2 5h8z"/></svg>
+                                    </button>
+                                    <button onClick={() => saveCards(annCards.filter(c => c.id !== card.id))}
+                                      className="w-6 h-6 rounded flex items-center justify-center text-muted-foreground hover:text-destructive">
+                                      <X className="h-3.5 w-3.5" />
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                              <div className="grid grid-cols-2 gap-2">
+                                <input type="text" value={card.day ?? ''} readOnly={isPast} placeholder="Day (e.g. SUN)"
+                                  onChange={e => updateCard(card.id, { day: e.target.value })}
+                                  className="h-7 px-2 text-xs bg-muted/50 border border-border rounded outline-none focus:border-primary/50 placeholder:text-muted-foreground/40" />
+                                <input type="text" value={card.time ?? ''} readOnly={isPast} placeholder="Time (e.g. 6:00 PM)"
+                                  onChange={e => updateCard(card.id, { time: e.target.value })}
+                                  className="h-7 px-2 text-xs bg-muted/50 border border-border rounded outline-none focus:border-primary/50 placeholder:text-muted-foreground/40" />
+                              </div>
+                              <input type="text" value={card.location ?? ''} readOnly={isPast} placeholder="Location (optional)"
+                                onChange={e => updateCard(card.id, { location: e.target.value })}
+                                className="h-7 px-2 text-xs bg-muted/50 border border-border rounded outline-none focus:border-primary/50 placeholder:text-muted-foreground/40" />
+                              <input type="text" value={card.description ?? ''} readOnly={isPast} placeholder="Description (optional)"
+                                onChange={e => updateCard(card.id, { description: e.target.value })}
+                                className="h-7 px-2 text-xs bg-muted/50 border border-border rounded outline-none focus:border-primary/50 placeholder:text-muted-foreground/40" />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })()}
+
+                  {/* Formatting */}
                   {(() => {
                     const annStyle = parseAnnouncementStyle(currentItem.itemStyle)
                     const saveStyle = (patch: Partial<AnnouncementStyle>) => {
@@ -1030,48 +1115,28 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
                       <div>
                         <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1.5">Formatting</label>
                         <div className="flex flex-wrap items-center gap-2 p-3 bg-background border border-border rounded-lg">
-                          {/* Bold */}
-                          <button
-                            onClick={() => saveStyle({ fontWeight: annStyle.fontWeight === '700' ? '400' : '700' })}
-                            className={`w-8 h-8 rounded flex items-center justify-center text-sm font-bold transition-colors ${annStyle.fontWeight === '700' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}
-                            title="Bold"
-                          >B</button>
-                          <div className="w-px h-6 bg-border" />
                           {/* Font size */}
                           {ANNOUNCEMENT_FONT_SIZES.map(({ label, value }) => (
-                            <button
-                              key={value}
-                              onClick={() => saveStyle({ fontSize: value })}
+                            <button key={value} onClick={() => saveStyle({ fontSize: value })}
                               className={`px-2.5 h-8 rounded text-xs font-semibold transition-colors ${annStyle.fontSize === value ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}
                             >{label}</button>
                           ))}
                           <div className="w-px h-6 bg-border" />
-                          {/* Alignment */}
-                          {(['left', 'center', 'right'] as const).map(align => (
-                            <button
-                              key={align}
-                              onClick={() => saveStyle({ textAlign: align })}
-                              title={align.charAt(0).toUpperCase() + align.slice(1)}
-                              className={`w-8 h-8 rounded flex items-center justify-center transition-colors ${annStyle.textAlign === align ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:bg-muted/80'}`}
-                            >
-                              {align === 'left' && <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><rect x="0" y="1" width="14" height="2" rx="1"/><rect x="0" y="5" width="10" height="2" rx="1"/><rect x="0" y="9" width="12" height="2" rx="1"/></svg>}
-                              {align === 'center' && <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><rect x="0" y="1" width="14" height="2" rx="1"/><rect x="2" y="5" width="10" height="2" rx="1"/><rect x="1" y="9" width="12" height="2" rx="1"/></svg>}
-                              {align === 'right' && <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor"><rect x="0" y="1" width="14" height="2" rx="1"/><rect x="4" y="5" width="10" height="2" rx="1"/><rect x="2" y="9" width="12" height="2" rx="1"/></svg>}
-                            </button>
+                          {/* Text color */}
+                          <span className="text-[10px] text-muted-foreground">Text</span>
+                          {ANNOUNCEMENT_TEXT_COLORS.map(color => (
+                            <button key={color} onClick={() => saveStyle({ textColor: color })} title={color}
+                              className="w-5 h-5 rounded-full border-2 transition-all"
+                              style={{ background: color, borderColor: annStyle.textColor === color ? 'hsl(var(--primary))' : 'transparent', boxShadow: annStyle.textColor === color ? '0 0 0 2px hsl(var(--background))' : 'none' }}
+                            />
                           ))}
                           <div className="w-px h-6 bg-border" />
-                          {/* Color swatches */}
-                          {ANNOUNCEMENT_COLORS.map(color => (
-                            <button
-                              key={color}
-                              onClick={() => saveStyle({ textColor: color })}
-                              title={color}
-                              className="w-6 h-6 rounded-full border-2 transition-all"
-                              style={{
-                                background: color,
-                                borderColor: annStyle.textColor === color ? 'hsl(var(--primary))' : 'transparent',
-                                boxShadow: annStyle.textColor === color ? '0 0 0 2px hsl(var(--background))' : 'none',
-                              }}
+                          {/* Accent/badge color */}
+                          <span className="text-[10px] text-muted-foreground">Badge</span>
+                          {ANNOUNCEMENT_ACCENT_COLORS.map(color => (
+                            <button key={color} onClick={() => saveStyle({ accentColor: color })} title={color}
+                              className="w-5 h-5 rounded-full border-2 transition-all"
+                              style={{ background: color, borderColor: annStyle.accentColor === color ? 'hsl(var(--primary))' : 'transparent', boxShadow: annStyle.accentColor === color ? '0 0 0 2px hsl(var(--background))' : 'none' }}
                             />
                           ))}
                         </div>
@@ -1508,7 +1573,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
             bg={effectiveBg}
             canCustomize={!!currentSong || currentItem?.itemType === 'scripture' || currentItem?.itemType === 'announcement'}
             annPreviewTitle={annPreviewTitle}
-            annPreviewContent={annPreviewContent}
+            annCards={annCards}
             readOnly={isPast}
             isOverridden={(bgOverride !== undefined && bgOverride !== null) || !!currentItem?.overrideBackgroundPath}
             onThemeChange={handleThemeChange}
@@ -1645,7 +1710,7 @@ function ItemSettingsPanel({
   slide, theme, bg, canCustomize, readOnly, isOverridden,
   pendingBg, savingBg, onSaveBgToSong, onSaveBgToService, onDiscardBg,
   onThemeChange, onBgChange, onScaleModeChange,
-  annPreviewTitle, annPreviewContent,
+  annPreviewTitle, annCards,
 }: {
   currentItem: LineupItemWithSong | null
   notes: string
@@ -1666,7 +1731,7 @@ function ItemSettingsPanel({
   onBgChange: (path: string | null) => void
   onScaleModeChange: (mode: 'cover' | 'contain' | 'stretch') => void
   annPreviewTitle?: string
-  annPreviewContent?: string
+  annCards?: AnnouncementCard[]
 }) {
   const [showBgPicker, setShowBgPicker] = useState(false)
 
@@ -1739,24 +1804,21 @@ function ItemSettingsPanel({
 
               {currentItem?.itemType === 'announcement' ? (() => {
                 const annStyle = parseAnnouncementStyle(currentItem.itemStyle)
-                const text = [annPreviewTitle, annPreviewContent].filter(Boolean).join('\n')
-                return (
-                  <div
-                    className="absolute inset-0 flex items-center px-3"
-                    style={{ justifyContent: annStyle.textAlign === 'left' ? 'flex-start' : annStyle.textAlign === 'right' ? 'flex-end' : 'center' }}
-                  >
-                    <p
-                      className="leading-relaxed whitespace-pre-wrap"
-                      style={{
-                        fontSize: `${(annStyle.fontSize / 80) * 5}cqw`,
-                        fontWeight: annStyle.fontWeight,
-                        color: text ? annStyle.textColor : 'rgba(255,255,255,0.2)',
-                        textAlign: annStyle.textAlign,
-                        fontStyle: text ? 'normal' : 'italic',
-                      }}
-                    >
-                      {text || 'No content yet'}
-                    </p>
+                const cards = annCards ?? []
+                const visibleCards = cards.filter(c => c.heading)
+                return visibleCards.length ? (
+                  <div className="absolute inset-0 flex items-center justify-center p-3">
+                    <AnnouncementCardsView
+                      title={annPreviewTitle ?? ''}
+                      cards={cards}
+                      textColor={annStyle.textColor}
+                      accentColor={annStyle.accentColor ?? '#fbbf24'}
+                      fontSize={annStyle.fontSize}
+                    />
+                  </div>
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <p style={{ color: 'rgba(255,255,255,0.2)', fontStyle: 'italic', fontSize: '1.5cqw', textAlign: 'center' }}>No events yet</p>
                   </div>
                 )
               })() : slide ? (

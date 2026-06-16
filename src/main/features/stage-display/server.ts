@@ -305,6 +305,7 @@ function buildSlidePayload(item: import('../../lib/state').PwaLineupItem, slide:
     slideIndex: slide.idx,
     backgroundPath: item.backgroundPath ?? null,
     theme: item.theme ?? undefined,
+    ...(slide.cards?.length ? { announcementCards: slide.cards } : {}),
   }
 }
 

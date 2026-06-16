@@ -170,6 +170,7 @@ declare global {
         get:             () => Promise<Record<string, any>>
         set:             (data: Record<string, any>) => Promise<boolean>
         getTodayService: () => Promise<TodayServiceResult | null>
+        getBibleApiKey:  () => Promise<string | null>
       }
       stageDisplay: {
         start:     (port?: number) => Promise<{ ok: boolean; url: string; port: number }>

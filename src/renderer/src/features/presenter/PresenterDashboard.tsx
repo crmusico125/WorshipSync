@@ -36,6 +36,7 @@ import {
   Layers,
   CheckCircle2,
   Circle,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -44,6 +45,7 @@ import LibraryModal from "../../components/LibraryModal";
 import BackgroundPickerPanel from "../../components/BackgroundPickerPanel";
 import EditLyricsModal from "../../components/EditLyricsModal";
 import type { AnnouncementCard } from "../../../../../shared/types";
+import { fetchBiblePassage, bibleResultToScriptureRef, FREE_TRANSLATIONS, fetchApiBibleTranslations, type BibleTranslation } from "../../lib/bibleApi";
 
 
 // ── Audio singleton — survives PresenterDashboard unmounts ───────────────────
@@ -267,6 +269,34 @@ export default function PresenterDashboard({
   const [rosResults, setRosResults] = useState<{ id: number; title: string; artist: string }[]>([])
   const rosSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // ── Quick-add scripture ──────────────────────────────────────────────────
+  const [scriptureQuery, setScriptureQuery] = useState("")
+  const [scriptureTranslation, setScriptureTranslation] = useState("web")
+  const [scriptureQueryLoading, setScriptureQueryLoading] = useState(false)
+  const [scriptureQueryError, setScriptureQueryError] = useState<string | null>(null)
+  const [bibleApiKey, setBibleApiKey] = useState<string | null>(null)
+  const [availableTranslations, setAvailableTranslations] = useState<BibleTranslation[]>(FREE_TRANSLATIONS)
+
+  useEffect(() => {
+    window.worshipsync.appState.getBibleApiKey().then(async key => {
+      console.log('[Bible] API key received:', key ? '✓ present' : '✗ missing')
+      setBibleApiKey(key)
+      if (key) {
+        try {
+          const keyed = await fetchApiBibleTranslations(key)
+          console.log('[Bible] Loaded', keyed.length, 'translations:', keyed.slice(0, 8).map(t => t.label).join(', '))
+          const keyedLabels = new Set(keyed.map(t => t.label))
+          const free = FREE_TRANSLATIONS.filter(t => !keyedLabels.has(t.label.toUpperCase()))
+          setAvailableTranslations([...keyed, ...free])
+          const niv = keyed.find(t => t.label === 'NIV')
+          if (niv) setScriptureTranslation(niv.id)
+        } catch (err) {
+          console.error('[Bible] Failed to load API.Bible translations:', err)
+        }
+      }
+    }).catch(err => console.error('[Bible] getBibleApiKey failed:', err))
+  }, [])
+
   const handleRosSearch = useCallback((q: string) => {
     setRosSearch(q)
     if (rosSearchTimer.current) clearTimeout(rosSearchTimer.current)
@@ -276,6 +306,25 @@ export default function PresenterDashboard({
       setRosResults(results as { id: number; title: string; artist: string }[])
     }, 200)
   }, [])
+
+  async function handleScriptureQuickAdd(e: React.FormEvent) {
+    e.preventDefault()
+    if (!scriptureQuery.trim() || scriptureQueryLoading) return
+    setScriptureQueryLoading(true)
+    setScriptureQueryError(null)
+    try {
+      const result = await fetchBiblePassage(scriptureQuery.trim(), scriptureTranslation, bibleApiKey)
+      await refreshDefaultScriptureBg()
+      const prevLen = useServiceStore.getState().lineup.length
+      await addScriptureToLineup({ title: result.reference, scriptureRef: bibleResultToScriptureRef(result) })
+      setScriptureQuery("")
+      setSelectedSongIdx(prevLen)
+    } catch (err) {
+      setScriptureQueryError(err instanceof Error ? err.message : 'Not found')
+    } finally {
+      setScriptureQueryLoading(false)
+    }
+  }
 
   // ── Service switcher ─────────────────────────────────────────────────────
   const [showSwitcher, setShowSwitcher] = useState(false);
@@ -1809,6 +1858,60 @@ export default function PresenterDashboard({
             <p className="text-[10px] text-muted-foreground mt-1.5 px-1">No songs found</p>
           )}
         </div>
+
+        {/* Quick-add scripture */}
+        <form onSubmit={handleScriptureQuickAdd} className="px-2 py-2 border-b border-border shrink-0 flex flex-col gap-1.5">
+          <div className="relative">
+            <BookOpen className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
+            <input
+              value={scriptureQuery}
+              onChange={e => { setScriptureQuery(e.target.value); setScriptureQueryError(null) }}
+              placeholder="Scripture… e.g. John 3:16"
+              disabled={scriptureQueryLoading}
+              className="w-full pl-6 pr-6 py-1.5 text-xs bg-input border border-border rounded focus:outline-none focus:border-primary/50 transition-colors placeholder:text-muted-foreground/50 disabled:opacity-70"
+            />
+            {scriptureQueryLoading
+              ? <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 animate-spin text-muted-foreground" />
+              : scriptureQuery && (
+                <button type="button" onClick={() => { setScriptureQuery(""); setScriptureQueryError(null) }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                  <X className="h-3 w-3" />
+                </button>
+              )
+            }
+          </div>
+          <div className="flex gap-1 overflow-x-auto no-scrollbar pb-0.5">
+            {availableTranslations.slice(0, 10).map(t => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => setScriptureTranslation(t.id)}
+                className={`flex-none px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors ${
+                  scriptureTranslation === t.id
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+            {availableTranslations.length > 10 && (
+              <select
+                value={availableTranslations.slice(10).some(t => t.id === scriptureTranslation) ? scriptureTranslation : ''}
+                onChange={e => { if (e.target.value) setScriptureTranslation(e.target.value) }}
+                className="flex-none px-1 py-0.5 rounded text-[10px] font-bold bg-muted text-muted-foreground border-0 cursor-pointer"
+              >
+                <option value="">More…</option>
+                {availableTranslations.slice(10).map(t => (
+                  <option key={t.id} value={t.id}>{t.label}</option>
+                ))}
+              </select>
+            )}
+          </div>
+          {scriptureQueryError && (
+            <p className="text-[10px] text-red-400 px-1">{scriptureQueryError}</p>
+          )}
+        </form>
 
         <div className="flex-1 overflow-y-auto">
           {liveSongs.map((song, i) => {

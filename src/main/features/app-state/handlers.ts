@@ -30,6 +30,8 @@ export function registerAppStateHandlers(): void {
     return true
   })
 
+  ipcMain.handle('app:getBibleApiKey', () => process.env.BIBLE_API_KEY ?? null)
+
   ipcMain.handle('app:getTodayService', () => {
     const today = new Date().toISOString().split('T')[0]
     const todayService = db.select().from(serviceDates)

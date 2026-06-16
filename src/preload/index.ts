@@ -172,6 +172,7 @@ contextBridge.exposeInMainWorld('worshipsync', {
     get:              ()                          => ipcRenderer.invoke('app:getState'),
     set:              (data: Record<string, any>) => ipcRenderer.invoke('app:setState', data),
     getTodayService:  ()                          => ipcRenderer.invoke('app:getTodayService'),
+    getBibleApiKey:   ()                          => ipcRenderer.invoke('app:getBibleApiKey') as Promise<string | null>,
   },
   data: {
     export: () => ipcRenderer.invoke('data:export'),

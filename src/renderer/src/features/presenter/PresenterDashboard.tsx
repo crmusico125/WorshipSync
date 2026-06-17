@@ -277,6 +277,7 @@ export default function PresenterDashboard({
   const [bibleApiKey, setBibleApiKey] = useState<string | null>(null)
   const [availableTranslations, setAvailableTranslations] = useState<BibleTranslation[]>(FREE_TRANSLATIONS)
   const [recentScriptures, setRecentScriptures] = useState<{ query: string; translationId: string; translationLabel: string; reference: string }[]>([])
+  const autoProjectRef = useRef(false)
 
   useEffect(() => {
     let lastTranslationId: string | null = null
@@ -336,6 +337,7 @@ export default function PresenterDashboard({
       setRecentScriptures(updated)
       window.worshipsync.appState.set({ lastBibleTranslation: scriptureTranslation, recentScriptures: updated }).catch(() => {})
       setScriptureQuery("")
+      autoProjectRef.current = true
       setSelectedSongIdx(prevLen)
     } catch (err) {
       setScriptureQueryError(err instanceof Error ? err.message : 'Not found')
@@ -893,6 +895,16 @@ export default function PresenterDashboard({
     setIsLogo(true);
     setIsTextCleared(false);
   }, []);
+
+  // Auto-project first slide after scripture quick-add
+  useEffect(() => {
+    if (!autoProjectRef.current) return
+    const song = liveSongs[selectedSongIdx]
+    if (song?.itemType === 'scripture' && song.slides?.length > 0) {
+      autoProjectRef.current = false
+      sendSlide(selectedSongIdx, 0)
+    }
+  }, [selectedSongIdx, liveSongs, sendSlide])
 
   const jumpToItem = useCallback((idx: number) => {
     const item = liveSongs[idx];
@@ -1898,34 +1910,16 @@ export default function PresenterDashboard({
               )
             }
           </div>
-          <div className="flex gap-1 overflow-x-auto no-scrollbar pb-0.5">
-            {availableTranslations.slice(0, 10).map(t => (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => setScriptureTranslation(t.id)}
-                className={`flex-none px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors ${
-                  scriptureTranslation === t.id
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                {t.label}
-              </button>
+          <select
+            value={scriptureTranslation}
+            onChange={e => setScriptureTranslation(e.target.value)}
+            disabled={scriptureQueryLoading}
+            className="w-full px-2 py-1 text-xs bg-input border border-border rounded focus:outline-none focus:border-primary/50 cursor-pointer disabled:opacity-70"
+          >
+            {availableTranslations.map(t => (
+              <option key={t.id} value={t.id}>{t.label}</option>
             ))}
-            {availableTranslations.length > 10 && (
-              <select
-                value={availableTranslations.slice(10).some(t => t.id === scriptureTranslation) ? scriptureTranslation : ''}
-                onChange={e => { if (e.target.value) setScriptureTranslation(e.target.value) }}
-                className="flex-none px-1 py-0.5 rounded text-[10px] font-bold bg-muted text-muted-foreground border-0 cursor-pointer"
-              >
-                <option value="">More…</option>
-                {availableTranslations.slice(10).map(t => (
-                  <option key={t.id} value={t.id}>{t.label}</option>
-                ))}
-              </select>
-            )}
-          </div>
+          </select>
           {scriptureQueryError && (
             <p className="text-[10px] text-red-400 px-1">{scriptureQueryError}</p>
           )}

@@ -276,25 +276,38 @@ export default function PresenterDashboard({
   const [scriptureQueryError, setScriptureQueryError] = useState<string | null>(null)
   const [bibleApiKey, setBibleApiKey] = useState<string | null>(null)
   const [availableTranslations, setAvailableTranslations] = useState<BibleTranslation[]>(FREE_TRANSLATIONS)
+  const [recentScriptures, setRecentScriptures] = useState<{ query: string; translationId: string; translationLabel: string; reference: string }[]>([])
 
   useEffect(() => {
+    let lastTranslationId: string | null = null
+    window.worshipsync.appState.get().then((state: Record<string, unknown>) => {
+      if (typeof state.lastBibleTranslation === 'string') lastTranslationId = state.lastBibleTranslation
+      if (Array.isArray(state.recentScriptures)) setRecentScriptures(state.recentScriptures as typeof recentScriptures)
+    }).catch(() => {})
+
     window.worshipsync.appState.getBibleApiKey().then(async key => {
-      console.log('[Bible] API key received:', key ? '✓ present' : '✗ missing')
       setBibleApiKey(key)
       if (key) {
         try {
           const keyed = await fetchApiBibleTranslations(key)
-          console.log('[Bible] Loaded', keyed.length, 'translations:', keyed.slice(0, 8).map(t => t.label).join(', '))
           const keyedLabels = new Set(keyed.map(t => t.label))
           const free = FREE_TRANSLATIONS.filter(t => !keyedLabels.has(t.label.toUpperCase()))
-          setAvailableTranslations([...keyed, ...free])
-          const niv = keyed.find(t => t.label === 'NIV')
-          if (niv) setScriptureTranslation(niv.id)
-        } catch (err) {
-          console.error('[Bible] Failed to load API.Bible translations:', err)
+          const all = [...keyed, ...free]
+          setAvailableTranslations(all)
+          // Restore last used translation, fall back to NIV then web
+          if (lastTranslationId && all.some(t => t.id === lastTranslationId)) {
+            setScriptureTranslation(lastTranslationId)
+          } else {
+            const niv = keyed.find(t => t.label === 'NIV')
+            if (niv) setScriptureTranslation(niv.id)
+          }
+        } catch {
+          // Fall back to free translations
         }
+      } else if (lastTranslationId && FREE_TRANSLATIONS.some(t => t.id === lastTranslationId)) {
+        setScriptureTranslation(lastTranslationId)
       }
-    }).catch(err => console.error('[Bible] getBibleApiKey failed:', err))
+    }).catch(() => {})
   }, [])
 
   const handleRosSearch = useCallback((q: string) => {
@@ -317,6 +330,11 @@ export default function PresenterDashboard({
       await refreshDefaultScriptureBg()
       const prevLen = useServiceStore.getState().lineup.length
       await addScriptureToLineup({ title: result.reference, scriptureRef: bibleResultToScriptureRef(result) })
+      const translationLabel = availableTranslations.find(t => t.id === scriptureTranslation)?.label ?? scriptureTranslation.toUpperCase()
+      const entry = { query: scriptureQuery.trim(), translationId: scriptureTranslation, translationLabel, reference: result.reference }
+      const updated = [entry, ...recentScriptures.filter(r => r.query !== entry.query || r.translationId !== entry.translationId)].slice(0, 5)
+      setRecentScriptures(updated)
+      window.worshipsync.appState.set({ lastBibleTranslation: scriptureTranslation, recentScriptures: updated }).catch(() => {})
       setScriptureQuery("")
       setSelectedSongIdx(prevLen)
     } catch (err) {
@@ -1912,6 +1930,29 @@ export default function PresenterDashboard({
             <p className="text-[10px] text-red-400 px-1">{scriptureQueryError}</p>
           )}
         </form>
+
+        {/* Recently used scriptures */}
+        {recentScriptures.length > 0 && !scriptureQuery && (
+          <div className="px-2 pb-1">
+            <p className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground/60 px-1 mb-1">Recent</p>
+            <div className="flex flex-col gap-0.5">
+              {recentScriptures.map((r, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => {
+                    setScriptureQuery(r.query)
+                    if (availableTranslations.some(t => t.id === r.translationId)) setScriptureTranslation(r.translationId)
+                  }}
+                  className="flex items-center justify-between gap-2 px-2 py-1 rounded hover:bg-muted/50 transition-colors text-left group"
+                >
+                  <span className="text-[11px] text-foreground/80 group-hover:text-foreground truncate">{r.reference}</span>
+                  <span className="text-[10px] font-bold text-muted-foreground shrink-0">{r.translationLabel}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="flex-1 overflow-y-auto">
           {liveSongs.map((song, i) => {

@@ -539,7 +539,7 @@ export default function ProjectionWindow() {
               zIndex: 3,
               display: "flex",
               flexDirection: "column",
-              padding: "6% 10% 0",
+              padding: "6% 10%",
               animation: slideTransitionMs > 0 ? `wsSlideIn ${slideTransitionMs}ms ease forwards` : "none",
             }}
           >
@@ -574,23 +574,58 @@ export default function ProjectionWindow() {
               </div>
             </div>
 
-            {/* Scripture reference \u2014 only shown for real verses, not blank slides */}
-            {slide.sectionType !== "blank" && (
-              <div
-                style={{
-                  textAlign: "center",
-                  padding: "2% 0 4%",
-                  fontSize: Math.max(28, Math.round(scaledFontSize * 0.65)),
-                  fontFamily: theme.fontFamily,
-                  fontWeight: "600",
-                  color: "rgba(255,255,255,0.85)",
-                  letterSpacing: "0.04em",
-                  flexShrink: 0,
-                }}
-              >
-                {slide.sectionLabel}
-              </div>
-            )}
+            {/* Scripture reference badge \u2014 bottom-right, separated from verse content */}
+            {slide.sectionType !== "blank" && (() => {
+              // sectionLabel = "John 3:16 NIV" \u2014 split off the trailing translation token
+              const label = slide.sectionLabel ?? ""
+              const lastSpace = label.lastIndexOf(" ")
+              const hasTranslation = lastSpace > 0 && /^[A-Z0-9]{2,10}$/.test(label.slice(lastSpace + 1))
+              const ref = (hasTranslation ? label.slice(0, lastSpace) : label)
+                .toLowerCase().replace(/\b\w/g, c => c.toUpperCase())
+              const translation = hasTranslation ? label.slice(lastSpace + 1) : null
+              const badgeFontSize = Math.max(32, Math.round(scaledFontSize * 0.58))
+              return (
+                <div style={{
+                  position: "absolute",
+                  bottom: "4%",
+                  right: "6%",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: Math.max(8, Math.round(scaledFontSize * 0.12)),
+                  zIndex: 4,
+                }}>
+                  <span style={{
+                    fontFamily: theme.fontFamily,
+                    fontSize: badgeFontSize,
+                    fontWeight: "600",
+                    color: "rgba(255,255,255,0.9)",
+                    letterSpacing: "0.03em",
+                    textShadow: "0 1px 6px rgba(0,0,0,0.6)",
+                  }}>
+                    {ref}
+                  </span>
+                  {translation && (
+                    <>
+                      <span style={{
+                        fontSize: badgeFontSize * 0.8,
+                        color: "rgba(255,255,255,0.35)",
+                        fontWeight: "300",
+                      }}>{"\u00b7"}</span>
+                      <span style={{
+                        fontFamily: theme.fontFamily,
+                        fontSize: badgeFontSize * 0.82,
+                        fontWeight: "700",
+                        letterSpacing: "0.08em",
+                        color: "rgba(255,255,255,0.55)",
+                        textShadow: "0 1px 4px rgba(0,0,0,0.5)",
+                      }}>
+                        {translation}
+                      </span>
+                    </>
+                  )}
+                </div>
+              )
+            })()}
           </div>
         ) : slide.itemType === "announcement" && slide.announcementCards?.length ? (
           <div

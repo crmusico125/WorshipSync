@@ -4,7 +4,7 @@ import {
   Radio, Eye, Music2, Calendar, Image as ImageIcon,
   Monitor, Timer, GripVertical, X, Megaphone,
   Play, Pause, SkipBack, SkipForward, Repeat, ListTodo, Layers, Check,
-  Search, Loader2,
+  Search, Loader2, ChevronDown,
 } from "lucide-react"
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors,
@@ -232,10 +232,11 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
   const pendingThemeRef = useRef<Partial<ThemeStyle>>({})
   const announcementTimers = useRef<{ title?: ReturnType<typeof setTimeout>; content?: ReturnType<typeof setTimeout> }>({})
   const [scripturePasteText, setScripturePasteText] = useState("")
-  const [scriptureInputMode, setScriptureInputMode] = useState<'search' | 'paste'>('search')
+  const [scripturePasteOpen, setScripturePasteOpen] = useState(false)
   const [bibleQuery, setBibleQuery] = useState("")
   const [bibleTranslation, setBibleTranslation] = useState("web")
   const [bibleResult, setBibleResult] = useState<BibleApiResult | null>(null)
+  const [bibleSelectedVerses, setBibleSelectedVerses] = useState<Set<number>>(new Set())
   const [bibleLoading, setBibleLoading] = useState(false)
   const [bibleError, setBibleError] = useState<string | null>(null)
   const [bibleApiKey, setBibleApiKey] = useState<string | null>(null)
@@ -435,9 +436,11 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
   useEffect(() => {
     if (currentItem?.itemType === 'scripture') {
       setScripturePasteText("")
+      setScripturePasteOpen(false)
       setBibleQuery("")
       setBibleResult(null)
       setBibleError(null)
+      setBibleSelectedVerses(new Set())
     }
   }, [currentItem?.id])
 
@@ -471,9 +474,11 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
     setBibleLoading(true)
     setBibleError(null)
     setBibleResult(null)
+    setBibleSelectedVerses(new Set())
     try {
       const result = await fetchBiblePassage(bibleQuery.trim(), bibleTranslation, bibleApiKey)
       setBibleResult(result)
+      setBibleSelectedVerses(new Set(result.verses.map(v => v.verse)))
     } catch (err) {
       setBibleError(err instanceof Error ? err.message : 'Failed to fetch passage')
     } finally {
@@ -485,13 +490,16 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
     if (!bibleResult || !currentItem || currentItem.itemType !== 'scripture') return
     const itemId = currentItem.id
     const svcId = selectedService?.id
+    const selectedVerses = bibleResult.verses.filter(v => bibleSelectedVerses.has(v.verse))
+    const filteredResult = { ...bibleResult, verses: selectedVerses.length > 0 ? selectedVerses : bibleResult.verses }
     await window.worshipsync.lineup.updateScripture(itemId, {
       title: bibleResult.reference,
-      scriptureRef: bibleResultToScriptureRef(bibleResult),
+      scriptureRef: bibleResultToScriptureRef(filteredResult),
     })
     if (svcId) loadLineup(svcId)
     setBibleResult(null)
     setBibleQuery("")
+    setBibleSelectedVerses(new Set())
   }
 
   const currentSlide: Slide | null = useMemo(() => {
@@ -1393,218 +1401,223 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
                 )}
               </div>
 
-              {/* Mode tabs */}
-              <div className="flex shrink-0 border-b border-border bg-card">
-                {(['search', 'paste'] as const).map(mode => (
-                  <button
-                    key={mode}
-                    onClick={() => setScriptureInputMode(mode)}
-                    className={`flex-1 py-2 text-[11px] font-bold uppercase tracking-wider transition-colors ${
-                      scriptureInputMode === mode
-                        ? 'text-primary border-b-2 border-primary'
-                        : 'text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    {mode === 'search' ? 'Search' : 'Paste'}
-                  </button>
-                ))}
-              </div>
-
               <div className="flex-1 overflow-y-auto p-5 bg-muted/10">
                 <div className="max-w-2xl flex flex-col gap-4">
 
-                  {/* ── Search tab ── */}
-                  {scriptureInputMode === 'search' && (
-                    <>
-                      <form onSubmit={handleBibleSearch} className="flex flex-col gap-2">
-                        <div className="flex gap-2">
-                          <input
-                            value={bibleQuery}
-                            onChange={e => { setBibleQuery(e.target.value); setBibleError(null) }}
-                            placeholder="e.g. John 3:16-17 or Psalm 23"
-                            disabled={isPast || bibleLoading}
-                            className="flex-1 min-w-0 px-3 py-2 text-sm bg-background border border-border rounded-md outline-none focus:border-primary/50 transition-colors placeholder:text-muted-foreground/40 disabled:opacity-50"
-                          />
-                          <select
-                            value={bibleTranslation}
-                            onChange={e => setBibleTranslation(e.target.value)}
-                            disabled={isPast || bibleLoading}
-                            className="px-2 py-2 text-xs bg-background border border-border rounded-md outline-none focus:border-primary/50 cursor-pointer disabled:opacity-50"
-                          >
-                            {availableTranslations.map(t => (
-                              <option key={t.id} value={t.id}>{t.label}</option>
-                            ))}
-                          </select>
-                        </div>
-                        <Button
-                          type="submit"
-                          size="sm"
-                          disabled={isPast || bibleLoading || !bibleQuery.trim()}
-                          className="w-full gap-2"
+                  {/* ── Search form ── */}
+                  <form onSubmit={handleBibleSearch} className="flex flex-col gap-2">
+                    <input
+                      value={bibleQuery}
+                      onChange={e => { setBibleQuery(e.target.value); setBibleError(null) }}
+                      placeholder="e.g. John 3:16–17 or Psalm 23"
+                      disabled={isPast || bibleLoading}
+                      className="w-full px-3 py-2 text-sm bg-background border border-border rounded-md outline-none focus:border-primary/50 transition-colors placeholder:text-muted-foreground/40 disabled:opacity-50"
+                    />
+                    {/* Translation pills */}
+                    <div className="flex gap-1 overflow-x-auto no-scrollbar pb-0.5">
+                      {availableTranslations.slice(0, 10).map(t => (
+                        <button
+                          key={t.id}
+                          type="button"
+                          disabled={isPast}
+                          onClick={() => setBibleTranslation(t.id)}
+                          className={`flex-none px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors disabled:opacity-40 ${
+                            bibleTranslation === t.id
+                              ? 'bg-primary text-primary-foreground'
+                              : 'bg-muted text-muted-foreground hover:text-foreground'
+                          }`}
                         >
-                          {bibleLoading
-                            ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Searching…</>
-                            : <><Search className="h-3.5 w-3.5" /> Search</>
-                          }
-                        </Button>
-                      </form>
-
-                      {/* Error */}
-                      {bibleError && (
-                        <div className="px-3 py-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs">
-                          {bibleError}
-                        </div>
+                          {t.label}
+                        </button>
+                      ))}
+                      {availableTranslations.length > 10 && (
+                        <select
+                          value={availableTranslations.slice(10).some(t => t.id === bibleTranslation) ? bibleTranslation : ''}
+                          onChange={e => { if (e.target.value) setBibleTranslation(e.target.value) }}
+                          disabled={isPast}
+                          className="flex-none px-1 py-0.5 rounded text-[10px] font-bold bg-muted text-muted-foreground border-0 cursor-pointer disabled:opacity-40"
+                        >
+                          <option value="">More…</option>
+                          {availableTranslations.slice(10).map(t => (
+                            <option key={t.id} value={t.id}>{t.label}</option>
+                          ))}
+                        </select>
                       )}
+                    </div>
+                    <Button
+                      type="submit"
+                      size="sm"
+                      disabled={isPast || bibleLoading || !bibleQuery.trim()}
+                      className="w-full gap-2"
+                    >
+                      {bibleLoading
+                        ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Searching…</>
+                        : <><Search className="h-3.5 w-3.5" /> Search</>
+                      }
+                    </Button>
+                  </form>
 
-                      {/* Search results */}
-                      {bibleResult && (
-                        <div className="rounded-lg border border-border bg-card overflow-hidden">
-                          <div className="px-4 py-2.5 border-b border-border flex items-center justify-between gap-3">
-                            <div>
-                              <p className="text-sm font-semibold">{bibleResult.reference}</p>
-                              <p className="text-[11px] text-muted-foreground mt-0.5">
-                                {bibleResult.verses.length} {bibleResult.verses.length === 1 ? 'verse' : 'verses'} · {bibleResult.translation_name}
-                              </p>
-                            </div>
-                            <Button size="sm" onClick={saveBibleResult} className="shrink-0 text-xs h-7 px-3">
-                              Use This
-                            </Button>
-                          </div>
-                          <div className="divide-y divide-border max-h-72 overflow-y-auto">
-                            {bibleResult.verses.map(v => (
-                              <div key={v.verse} className="flex items-start gap-3 px-4 py-2.5">
-                                <span className="text-[11px] font-bold text-violet-400 shrink-0 w-5 pt-0.5">{v.verse}</span>
-                                <p className="text-[12px] text-foreground leading-relaxed">{v.text.trim()}</p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Saved verses (shown when no active search) */}
-                      {!bibleResult && !bibleLoading && scriptureVerses.length > 0 && (
-                        <div>
-                          <div className="flex items-center justify-between mb-2">
-                            <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                              Current · {scriptureVerses.length} {scriptureVerses.length === 1 ? 'slide' : 'slides'}
-                            </label>
-                            <span className="text-[10px] text-muted-foreground">Click to preview</span>
-                          </div>
-                          <div className="grid grid-cols-3 gap-2">
-                            {scriptureVerses.map((v, i) => {
-                              const isPreview = previewSlideIdx === i
-                              return (
-                                <button key={i} onClick={() => setPreviewSlideIdx(i)}
-                                  className={`rounded-lg overflow-hidden border-2 transition-all text-left ${isPreview ? "border-primary ring-2 ring-primary/30" : "border-border hover:border-primary/50"}`}>
-                                  <div className="bg-gray-900 flex flex-col" style={{ aspectRatio: "16/9" }}>
-                                    <div className="flex-1 flex items-center justify-center px-2 py-1.5 min-h-0">
-                                      <p className="text-[8px] text-white text-center leading-relaxed line-clamp-4">{v.text}</p>
-                                    </div>
-                                    <div className="px-2 pb-1.5 text-center">
-                                      <p className="text-[7px] text-white/60 font-semibold truncate tracking-wide">{v.label}</p>
-                                    </div>
-                                  </div>
-                                </button>
-                              )
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {!bibleResult && !bibleLoading && scriptureVerses.length === 0 && (
-                        <div className="flex flex-col items-center justify-center py-8 text-center gap-2">
-                          <BookOpen className="h-8 w-8 text-muted-foreground/30" />
-                          <p className="text-xs text-muted-foreground">Search for a passage above to add verses</p>
-                        </div>
-                      )}
-                    </>
+                  {/* Error */}
+                  {bibleError && (
+                    <div className="px-3 py-2.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs">
+                      {bibleError}
+                    </div>
                   )}
 
-                  {/* ── Paste tab ── */}
-                  {scriptureInputMode === 'paste' && (
-                    <>
-                      <div>
-                        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1.5">
-                          Paste from BibleGateway
+                  {/* Search results with per-verse checkboxes */}
+                  {bibleResult && (() => {
+                    const selectedCount = bibleResult.verses.filter(v => bibleSelectedVerses.has(v.verse)).length
+                    return (
+                      <div className="rounded-lg border border-border bg-card overflow-hidden">
+                        <div className="px-4 py-2.5 border-b border-border flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold">{bibleResult.reference}</p>
+                            <p className="text-[11px] text-muted-foreground mt-0.5">
+                              {selectedCount} of {bibleResult.verses.length} {bibleResult.verses.length === 1 ? 'verse' : 'verses'} selected · {bibleResult.translation_name}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const allSelected = bibleResult.verses.every(v => bibleSelectedVerses.has(v.verse))
+                                if (allSelected) {
+                                  setBibleSelectedVerses(new Set())
+                                } else {
+                                  setBibleSelectedVerses(new Set(bibleResult.verses.map(v => v.verse)))
+                                }
+                              }}
+                              className="text-[10px] text-muted-foreground hover:text-foreground underline-offset-2 hover:underline"
+                            >
+                              {bibleResult.verses.every(v => bibleSelectedVerses.has(v.verse)) ? 'Deselect all' : 'Select all'}
+                            </button>
+                            <Button
+                              size="sm"
+                              onClick={saveBibleResult}
+                              disabled={selectedCount === 0}
+                              className="text-xs h-7 px-3"
+                            >
+                              Use {selectedCount} {selectedCount === 1 ? 'verse' : 'verses'}
+                            </Button>
+                          </div>
+                        </div>
+                        <div className="divide-y divide-border max-h-80 overflow-y-auto">
+                          {bibleResult.verses.map(v => {
+                            const isChecked = bibleSelectedVerses.has(v.verse)
+                            return (
+                              <label
+                                key={v.verse}
+                                className={`flex items-start gap-3 px-4 py-2.5 cursor-pointer transition-colors select-none ${isChecked ? 'bg-background' : 'bg-muted/30 opacity-50'}`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => {
+                                    setBibleSelectedVerses(prev => {
+                                      const next = new Set(prev)
+                                      if (next.has(v.verse)) next.delete(v.verse)
+                                      else next.add(v.verse)
+                                      return next
+                                    })
+                                  }}
+                                  className="mt-0.5 accent-violet-500 shrink-0"
+                                />
+                                <span className="text-[11px] font-bold text-violet-400 shrink-0 w-5 pt-0.5">{v.verse}</span>
+                                <p className="text-[12px] text-foreground leading-relaxed">{v.text.trim()}</p>
+                              </label>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  })()}
+
+                  {/* Saved verses thumbnails (when no active search) */}
+                  {!bibleResult && !bibleLoading && scriptureVerses.length > 0 && (
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                          {scriptureVerses.length} {scriptureVerses.length === 1 ? 'slide' : 'slides'} · click to preview
                         </label>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        {scriptureVerses.map((v, i) => {
+                          const isPreview = previewSlideIdx === i
+                          return (
+                            <button key={i} onClick={() => setPreviewSlideIdx(i)}
+                              className={`rounded-lg overflow-hidden border-2 transition-all text-left ${isPreview ? "border-primary ring-2 ring-primary/30" : "border-border hover:border-primary/50"}`}>
+                              <div className="bg-gray-900 flex flex-col" style={{ aspectRatio: "16/9" }}>
+                                <div className="flex-1 flex items-center justify-center px-2 py-1.5 min-h-0">
+                                  <p className="text-[8px] text-white text-center leading-relaxed line-clamp-4">{v.text}</p>
+                                </div>
+                                <div className="px-2 pb-1.5 text-center">
+                                  <p className="text-[7px] text-white/60 font-semibold truncate tracking-wide">{v.label}</p>
+                                </div>
+                              </div>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {!bibleResult && !bibleLoading && scriptureVerses.length === 0 && (
+                    <div className="flex flex-col items-center justify-center py-8 text-center gap-2">
+                      <BookOpen className="h-8 w-8 text-muted-foreground/30" />
+                      <p className="text-xs text-muted-foreground">Search for a passage above to add verses</p>
+                    </div>
+                  )}
+
+                  {/* ── Paste section (collapsible) ── */}
+                  <div className="border-t border-border pt-3">
+                    <button
+                      type="button"
+                      onClick={() => setScripturePasteOpen(o => !o)}
+                      className="text-[11px] text-muted-foreground hover:text-foreground flex items-center gap-1.5 transition-colors"
+                    >
+                      <ChevronDown className={`h-3 w-3 transition-transform ${scripturePasteOpen ? 'rotate-180' : ''}`} />
+                      Paste from BibleGateway
+                    </button>
+                    {scripturePasteOpen && (
+                      <div className="mt-3 flex flex-col gap-3">
                         <textarea
                           value={scripturePasteText}
                           readOnly={isPast}
-                          rows={7}
-                          placeholder={"Paste scripture from biblegateway.com\n\nExample:\nJohn 3:16-17 New International Version\n16 For God so loved the world that he gave his one and only Son... 17 For God did not send his Son into the world to condemn the world..."}
+                          rows={6}
+                          placeholder={"Paste scripture from biblegateway.com\n\nExample:\nJohn 3:16-17 New International Version\n16 For God so loved the world..."}
                           onChange={e => setScripturePasteText(e.target.value)}
                           className="w-full px-3 py-2.5 text-sm bg-background border border-border rounded-md outline-none focus:border-primary/50 transition-colors resize-none placeholder:text-muted-foreground/40 leading-relaxed"
                         />
-                        <p className="text-[10px] text-muted-foreground mt-1.5">
-                          Each verse gets its own projection slide. The reference ({`"John 3:16 NIV"`}) appears on every slide.
-                        </p>
-                      </div>
-
-                      {scripturePasteText.trim() && (
-                        parsedScripture ? (
-                          <div className="rounded-lg border border-border bg-card overflow-hidden">
-                            <div className="px-4 py-2.5 border-b border-border flex items-center justify-between gap-3">
-                              <div>
-                                <p className="text-sm font-semibold">{parsedScripture.title}</p>
-                                <p className="text-[11px] text-muted-foreground mt-0.5">
-                                  {parsedScripture.verses.length} {parsedScripture.verses.length === 1 ? 'slide' : 'slides'} · saving…
-                                </p>
-                              </div>
-                              <span className="text-[10px] font-bold bg-green-500/15 text-green-500 px-2 py-0.5 rounded-full shrink-0">Detected</span>
-                            </div>
-                            <div className="divide-y divide-border">
-                              {parsedScripture.verses.map(v => (
-                                <div key={v.number} className="flex items-start gap-3 px-4 py-2.5">
-                                  <span className="text-[11px] font-bold text-violet-400 shrink-0 w-5 pt-0.5">{v.number}</span>
-                                  <p className="text-[12px] text-foreground leading-relaxed">{v.text}</p>
+                        {scripturePasteText.trim() && (
+                          parsedScripture ? (
+                            <div className="rounded-lg border border-border bg-card overflow-hidden">
+                              <div className="px-4 py-2.5 border-b border-border flex items-center justify-between gap-3">
+                                <div>
+                                  <p className="text-sm font-semibold">{parsedScripture.title}</p>
+                                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                                    {parsedScripture.verses.length} {parsedScripture.verses.length === 1 ? 'slide' : 'slides'} · saving automatically…
+                                  </p>
                                 </div>
-                              ))}
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs">
-                            Could not detect a reference. Make sure the text starts with something like "John 3:16" or "Psalm 23:1-6".
-                          </div>
-                        )
-                      )}
-
-                      {!scripturePasteText.trim() && scriptureVerses.length > 0 && (
-                        <div>
-                          <div className="flex items-center justify-between mb-2">
-                            <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                              Current content · {scriptureVerses.length} {scriptureVerses.length === 1 ? 'slide' : 'slides'}
-                            </label>
-                            <span className="text-[10px] text-muted-foreground">Click to preview on right</span>
-                          </div>
-                          <div className="grid grid-cols-3 gap-2">
-                            {scriptureVerses.map((v, i) => {
-                              const isPreview = previewSlideIdx === i
-                              return (
-                                <button key={i} onClick={() => setPreviewSlideIdx(i)}
-                                  className={`rounded-lg overflow-hidden border-2 transition-all text-left ${isPreview ? "border-primary ring-2 ring-primary/30" : "border-border hover:border-primary/50"}`}>
-                                  <div className="bg-gray-900 flex flex-col" style={{ aspectRatio: "16/9" }}>
-                                    <div className="flex-1 flex items-center justify-center px-2 py-1.5 min-h-0">
-                                      <p className="text-[8px] text-white text-center leading-relaxed line-clamp-4">{v.text}</p>
-                                    </div>
-                                    <div className="px-2 pb-1.5 text-center">
-                                      <p className="text-[7px] text-white/60 font-semibold truncate tracking-wide">{v.label}</p>
-                                    </div>
+                                <span className="text-[10px] font-bold bg-green-500/15 text-green-500 px-2 py-0.5 rounded-full shrink-0">Detected</span>
+                              </div>
+                              <div className="divide-y divide-border">
+                                {parsedScripture.verses.map(v => (
+                                  <div key={v.number} className="flex items-start gap-3 px-4 py-2.5">
+                                    <span className="text-[11px] font-bold text-violet-400 shrink-0 w-5 pt-0.5">{v.number}</span>
+                                    <p className="text-[12px] text-foreground leading-relaxed">{v.text}</p>
                                   </div>
-                                </button>
-                              )
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {!scripturePasteText.trim() && scriptureVerses.length === 0 && (
-                        <div className="flex flex-col items-center justify-center py-6 text-center gap-2">
-                          <BookOpen className="h-8 w-8 text-muted-foreground/30" />
-                          <p className="text-xs text-muted-foreground">Paste scripture from BibleGateway above to add verses</p>
-                        </div>
-                      )}
-                    </>
-                  )}
+                                ))}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs">
+                              Could not detect a reference. Make sure the text starts with something like "John 3:16" or "Psalm 23:1-6".
+                            </div>
+                          )
+                        )}
+                      </div>
+                    )}
+                  </div>
 
                 </div>
               </div>

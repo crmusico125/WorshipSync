@@ -1,15 +1,24 @@
-import { BrowserWindow, shell, screen } from 'electron'
+import { BrowserWindow, shell, screen, app, nativeImage } from 'electron'
 import { electronApp, is } from '@electron-toolkit/utils'
 import { join } from 'path'
 import { windows } from '../../lib/state'
 
+const iconPath = is.dev
+  ? join(process.cwd(), 'resources/icon.png')
+  : join(__dirname, '../../resources/icon.png')
+
 export function createControlWindow(): void {
+  const icon = nativeImage.createFromPath(iconPath)
+
+  if (process.platform === 'darwin') app.dock.setIcon(icon)
+
   windows.control = new BrowserWindow({
     width: 1280,
     height: 800,
     minWidth: 1024,
     minHeight: 640,
     title: 'WorshipSync',
+    icon,
     backgroundColor: '#0c0c10',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     webPreferences: {

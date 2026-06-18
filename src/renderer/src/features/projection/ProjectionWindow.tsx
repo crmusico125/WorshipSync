@@ -18,23 +18,294 @@ const DEFAULT_THEME = {
   accentColor: undefined as string | undefined,
 };
 
+// ── Slide frame renderer ──────────────────────────────────────────────────────
+// Renders one complete frame (background + overlay + content) as an absolutely
+// positioned layer. Used twice for crossfade: once for the outgoing slide
+// (fades out) and once for the incoming slide (fades in).
+
+interface FrameProps {
+  slide: SlidePayload;
+  zIndex: number;
+  animationName?: string;
+  transitionMs?: number;
+  // Only the active (incoming) frame gets the measurement refs
+  containerRef?: React.RefObject<HTMLDivElement>;
+  textRef?: React.RefObject<HTMLDivElement>;
+  videoRef?: React.RefObject<HTMLVideoElement>;
+  scaledFontSize: number;
+  onVideoProgress?: (force?: boolean) => void;
+  showCounter?: boolean;
+}
+
+function SlideFrame({
+  slide,
+  zIndex,
+  animationName,
+  transitionMs = 0,
+  containerRef,
+  textRef,
+  videoRef,
+  scaledFontSize,
+  onVideoProgress,
+  showCounter,
+}: FrameProps) {
+  const theme = slide.theme ?? DEFAULT_THEME;
+  const overlayAlpha = (theme.overlayOpacity / 100).toFixed(2);
+  const shadowOpacity = (theme.textShadowOpacity / 100).toFixed(2);
+  const scaleMode = theme.backgroundScaleMode ?? "cover";
+  const imgBgSize = scaleMode === "stretch" ? "100% 100%" : scaleMode;
+  const videoObjectFit = scaleMode === "stretch" ? "fill" : (scaleMode as "cover" | "contain");
+  const alignItems =
+    theme.textPosition === "top" ? "flex-start" :
+    theme.textPosition === "bottom" ? "flex-end" : "center";
+
+  const bp = slide.backgroundPath;
+  const isVideo = !!bp && /\.(mp4|webm|mov)$/i.test(bp);
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        zIndex,
+        animation: animationName && transitionMs > 0
+          ? `${animationName} ${transitionMs}ms ease forwards`
+          : "none",
+      }}
+    >
+      {/* ── Background ── */}
+      {bp && (
+        bp.startsWith("color:") ? (
+          <div style={{ position: "absolute", inset: 0, zIndex: 1, background: bp.replace("color:", "") }} />
+        ) : isVideo ? (
+          <video
+            ref={videoRef}
+            key={bp}
+            playsInline
+            style={{
+              position: "absolute", inset: 0, zIndex: 1,
+              width: "100%", height: "100%",
+              objectFit: videoObjectFit,
+              background: "#000",
+            }}
+            src={`file://${encodeURI(bp)}`}
+            onTimeUpdate={() => onVideoProgress?.()}
+            onPlay={() => onVideoProgress?.(true)}
+            onPause={() => onVideoProgress?.(true)}
+            onSeeked={() => onVideoProgress?.(true)}
+            onEnded={() => onVideoProgress?.(true)}
+          />
+        ) : (
+          <div
+            style={{
+              position: "absolute", inset: 0, zIndex: 1,
+              backgroundColor: "#000",
+              backgroundImage: `url("file://${encodeURI(bp)}")`,
+              backgroundSize: imgBgSize,
+              backgroundPosition: "center",
+              backgroundRepeat: "no-repeat",
+            }}
+          />
+        )
+      )}
+
+      {/* ── Dark overlay (images only — video has its own blend) ── */}
+      {!isVideo && (
+        <div
+          style={{
+            position: "absolute", inset: 0, zIndex: 2,
+            background: `rgba(0,0,0,${overlayAlpha})`,
+          }}
+        />
+      )}
+
+      {/* ── Content ── */}
+      {slide.itemType === "scripture" ? (
+        // Scripture: verse text centred + reference badge bottom-right
+        <div
+          style={{
+            position: "absolute", inset: 0, zIndex: 3,
+            display: "flex", flexDirection: "column",
+            padding: "6% 10%",
+          }}
+        >
+          <div
+            ref={containerRef}
+            style={{
+              flex: 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              overflow: "hidden",
+              minHeight: 0,
+            }}
+          >
+            <div
+              ref={textRef}
+              style={{
+                fontFamily: theme.fontFamily,
+                fontSize: scaledFontSize,
+                fontWeight: theme.fontWeight,
+                color: theme.textColor,
+                textAlign: "center",
+                lineHeight: 1.4,
+                textShadow: `0 2px 12px rgba(0,0,0,${shadowOpacity}), 0 1px 3px rgba(0,0,0,${shadowOpacity})`,
+                width: "100%",
+              }}
+            >
+              {slide.lines.map((line, i) => (
+                <div key={i}>{line || " "}</div>
+              ))}
+            </div>
+          </div>
+
+          {/* Reference badge */}
+          {slide.sectionType !== "blank" && (() => {
+            const label = slide.sectionLabel ?? "";
+            const lastSpace = label.lastIndexOf(" ");
+            const hasTranslation = lastSpace > 0 && /^[A-Z0-9]{2,10}$/.test(label.slice(lastSpace + 1));
+            const ref = (hasTranslation ? label.slice(0, lastSpace) : label)
+              .toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+            const translation = hasTranslation ? label.slice(lastSpace + 1) : null;
+            const badgeFontSize = Math.max(32, Math.round(scaledFontSize * 0.58));
+            return (
+              <div style={{
+                position: "absolute", bottom: "4%", right: "6%",
+                display: "flex", alignItems: "center",
+                gap: Math.max(8, Math.round(scaledFontSize * 0.12)),
+                zIndex: 4,
+              }}>
+                <span style={{
+                  fontFamily: theme.fontFamily,
+                  fontSize: badgeFontSize,
+                  fontWeight: "600",
+                  color: "rgba(255,255,255,0.9)",
+                  letterSpacing: "0.03em",
+                  textShadow: "0 1px 6px rgba(0,0,0,0.6)",
+                }}>
+                  {ref}
+                </span>
+                {translation && (
+                  <>
+                    <span style={{ fontSize: badgeFontSize * 0.8, color: "rgba(255,255,255,0.35)", fontWeight: "300" }}>{"·"}</span>
+                    <span style={{
+                      fontFamily: theme.fontFamily,
+                      fontSize: badgeFontSize * 0.82,
+                      fontWeight: "700",
+                      letterSpacing: "0.08em",
+                      color: "rgba(255,255,255,0.55)",
+                      textShadow: "0 1px 4px rgba(0,0,0,0.5)",
+                    }}>
+                      {translation}
+                    </span>
+                  </>
+                )}
+              </div>
+            );
+          })()}
+        </div>
+
+      ) : slide.itemType === "announcement" && slide.announcementCards?.length ? (
+        // Announcement event cards
+        <div
+          style={{
+            position: "absolute", inset: 0, zIndex: 3,
+            display: "flex", flexDirection: "column",
+            justifyContent: "center",
+            padding: "5% 8%",
+          }}
+        >
+          <AnnouncementCardsView
+            title={slide.songTitle}
+            cards={slide.announcementCards}
+            textColor={theme.textColor}
+            accentColor={theme.accentColor ?? "#fbbf24"}
+            fontSize={theme.fontSize}
+          />
+        </div>
+
+      ) : (
+        // Standard lyrics
+        <div
+          ref={containerRef}
+          style={{
+            position: "absolute", inset: 0, zIndex: 3,
+            display: "flex", flexDirection: "column",
+            alignItems: "center",
+            justifyContent: alignItems,
+            padding: "8% 10%",
+          }}
+        >
+          <div
+            ref={textRef}
+            style={{
+              fontFamily: theme.fontFamily,
+              fontSize: scaledFontSize,
+              fontWeight: theme.fontWeight,
+              color: theme.textColor,
+              textAlign: theme.textAlign,
+              lineHeight: 1.4,
+              textShadow: `0 2px 12px rgba(0,0,0,${shadowOpacity}), 0 1px 3px rgba(0,0,0,${shadowOpacity})`,
+              width: "100%",
+            }}
+          >
+            {slide.lines.map((line, i) => (
+              <div key={i}>{line || " "}</div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Slide counter (active frame only) */}
+      {showCounter && (
+        <div
+          style={{
+            position: "absolute", bottom: 16, right: 20, zIndex: 4,
+            fontSize: 11,
+            color: "rgba(255,255,255,0.15)",
+            fontFamily: "monospace",
+          }}
+        >
+          {(slide.slideIndex ?? 0) + 1}/{slide.totalSlides ?? 0}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+
 export default function ProjectionWindow() {
-  const [slide, setSlide] = useState<SlidePayload | null>(null);
+  // Double-buffer: currentFrame is the incoming slide, prevFrame is the outgoing one.
+  // prevFrame stays rendered (fading out) while currentFrame fades in; then prevFrame
+  // is cleared once the transition completes.
+  const [currentFrame, setCurrentFrame] = useState<SlidePayload | null>(null);
+  const [prevFrame,    setPrevFrame]    = useState<SlidePayload | null>(null);
   const [displayState, setDisplayState] = useState<DisplayState>("blank");
   const [slideTransitionMs, setSlideTransitionMs] = useState(300);
-  const [slideVersion, setSlideVersion] = useState(0);
+  const [frameKey, setFrameKey] = useState(0);
+
   const [countdownTarget, setCountdownTarget] = useState<string>("");
   const [countdownParts, setCountdownParts] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
   const [churchName, setChurchName] = useState("");
   const [scaledFontSize, setScaledFontSize] = useState<number>(48);
-  const cleanupRef = useRef<(() => void)[]>([]);
-  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Refs used inside IPC callbacks — always hold the latest values without stale closures
+  const currentFrameRef   = useRef<SlidePayload | null>(null);
+  const transitionMsRef   = useRef(300);
+  const prevClearTimer    = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const cleanupRef        = useRef<(() => void)[]>([]);
+  const countdownRef      = useRef<ReturnType<typeof setInterval> | null>(null);
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
-  const lyricsTextRef = useRef<HTMLDivElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const lyricsTextRef     = useRef<HTMLDivElement>(null);
+  const videoRef          = useRef<HTMLVideoElement>(null);
   const pendingVideoAction = useRef<"play" | "pause" | "stop" | null>(null);
-  const pendingSeekTime = useRef<number | null>(null);
+  const pendingSeekTime   = useRef<number | null>(null);
   const lastVideoReportRef = useRef(0);
+
+  // Keep refs in sync with state so IPC handlers always read the latest values
+  useEffect(() => { transitionMsRef.current = slideTransitionMs; }, [slideTransitionMs]);
 
   useEffect(() => {
     window.worshipsync.projection.ready();
@@ -43,14 +314,37 @@ export default function ProjectionWindow() {
       if (s.slideTransitionMs !== undefined) setSlideTransitionMs(s.slideTransitionMs);
     }).catch(() => {});
 
+    // Inject keyframes for crossfade
     const styleEl = document.createElement("style");
-    styleEl.textContent = `@keyframes wsSlideIn { from { opacity: 0 } to { opacity: 1 } }`;
+    styleEl.textContent = [
+      `@keyframes wsSlideIn  { from { opacity: 0 } to { opacity: 1 } }`,
+      `@keyframes wsSlideOut { from { opacity: 1 } to { opacity: 0 } }`,
+    ].join("\n");
     document.head.appendChild(styleEl);
 
     const cleanSlide = window.worshipsync.slide.onShow((payload) => {
-      setSlide(payload);
+      const outgoing = currentFrameRef.current;
+      currentFrameRef.current = payload;
+
+      const ms = transitionMsRef.current;
+      // Skip crossfade when video is involved — two <video> elements on screen simultaneously
+      // causes audio glitches and seek desync.
+      const outgoingIsVideo = !!outgoing?.backgroundPath && /\.(mp4|webm|mov)$/i.test(outgoing.backgroundPath);
+      const incomingIsVideo = !!payload.backgroundPath  && /\.(mp4|webm|mov)$/i.test(payload.backgroundPath ?? "");
+
+      if (outgoing && ms > 0 && !outgoingIsVideo && !incomingIsVideo) {
+        setPrevFrame(outgoing);
+        if (prevClearTimer.current) clearTimeout(prevClearTimer.current);
+        prevClearTimer.current = setTimeout(() => setPrevFrame(null), ms + 50);
+      } else {
+        // No crossfade — clear any lingering prevFrame immediately
+        if (prevClearTimer.current) { clearTimeout(prevClearTimer.current); prevClearTimer.current = null; }
+        setPrevFrame(null);
+      }
+
+      setCurrentFrame(payload);
       setDisplayState("slide");
-      setSlideVersion((v) => v + 1);
+      setFrameKey((k) => k + 1);
     });
 
     const cleanBlank = window.worshipsync.slide.onBlank((isBlank) => {
@@ -80,10 +374,7 @@ export default function ProjectionWindow() {
 
     const cleanVideoSeek = window.worshipsync.slide.onVideoSeek((time) => {
       const vid = videoRef.current;
-      if (!vid) {
-        pendingSeekTime.current = time;
-        return;
-      }
+      if (!vid) { pendingSeekTime.current = time; return; }
       const wasPlaying = !vid.paused;
       vid.currentTime = time;
       if (wasPlaying) vid.play().catch(() => {});
@@ -95,34 +386,19 @@ export default function ProjectionWindow() {
 
     const cleanVideo = window.worshipsync.slide.onVideoControl((action) => {
       const vid = videoRef.current;
-      if (!vid) {
-        // Video element not mounted yet — store for when it mounts
-        pendingVideoAction.current = action;
-        return;
-      }
+      if (!vid) { pendingVideoAction.current = action; return; }
       pendingVideoAction.current = null;
       if (action === "play") vid.play();
       else if (action === "pause") vid.pause();
-      else if (action === "stop") {
-        vid.pause();
-        vid.currentTime = 0;
-        setDisplayState("blank");
-      }
+      else if (action === "stop") { vid.pause(); vid.currentTime = 0; setDisplayState("blank"); }
     });
 
-    cleanupRef.current = [
-      cleanSlide,
-      cleanBlank,
-      cleanLogo,
-      cleanCountdown,
-      cleanVideo,
-      cleanVideoSeek,
-      cleanVideoLoop,
-    ];
+    cleanupRef.current = [cleanSlide, cleanBlank, cleanLogo, cleanCountdown, cleanVideo, cleanVideoSeek, cleanVideoLoop];
 
     return () => {
       cleanupRef.current.forEach((fn) => fn());
       if (countdownRef.current) clearInterval(countdownRef.current);
+      if (prevClearTimer.current) clearTimeout(prevClearTimer.current);
       styleEl.remove();
     };
   }, []);
@@ -135,10 +411,7 @@ export default function ProjectionWindow() {
       const target = new Date(countdownTarget).getTime();
       const now = Date.now();
       const diff = target - now;
-      if (diff <= 0) {
-        setCountdownParts({ days: 0, hours: 0, minutes: 0, seconds: 0 });
-        return;
-      }
+      if (diff <= 0) { setCountdownParts({ days: 0, hours: 0, minutes: 0, seconds: 0 }); return; }
       setCountdownParts({
         days:    Math.floor(diff / 86400000),
         hours:   Math.floor((diff % 86400000) / 3600000),
@@ -149,15 +422,10 @@ export default function ProjectionWindow() {
 
     tick();
     countdownRef.current = setInterval(tick, 1000);
-    return () => {
-      if (countdownRef.current) {
-        clearInterval(countdownRef.current);
-        countdownRef.current = null;
-      }
-    };
+    return () => { if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; } };
   }, [displayState, countdownTarget]);
 
-  // Recover audio pipeline when system audio device changes (Chromium silently drops audio on device switch)
+  // Recover audio pipeline when system audio device changes
   useEffect(() => {
     const handleDeviceChange = () => {
       const vid = videoRef.current;
@@ -165,16 +433,11 @@ export default function ProjectionWindow() {
       const wasPlaying = !vid.paused;
       const currentTime = vid.currentTime;
       vid.load();
-      vid.addEventListener(
-        "loadedmetadata",
-        () => {
-          vid.currentTime = currentTime;
-          if (wasPlaying) vid.play().catch(() => {});
-        },
-        { once: true },
-      );
+      vid.addEventListener("loadedmetadata", () => {
+        vid.currentTime = currentTime;
+        if (wasPlaying) vid.play().catch(() => {});
+      }, { once: true });
     };
-
     navigator.mediaDevices.addEventListener("devicechange", handleDeviceChange);
     return () => navigator.mediaDevices.removeEventListener("devicechange", handleDeviceChange);
   }, []);
@@ -183,10 +446,10 @@ export default function ProjectionWindow() {
   useEffect(() => {
     if (
       displayState === "slide" &&
-      slide?.backgroundPath &&
+      currentFrame?.backgroundPath &&
       (pendingVideoAction.current !== null || pendingSeekTime.current !== null)
     ) {
-      if (/\.(mp4|webm|mov)$/i.test(slide.backgroundPath)) {
+      if (/\.(mp4|webm|mov)$/i.test(currentFrame.backgroundPath)) {
         requestAnimationFrame(() => {
           const vid = videoRef.current;
           if (vid && pendingSeekTime.current !== null) {
@@ -201,20 +464,13 @@ export default function ProjectionWindow() {
             pendingVideoAction.current = null;
             if (action === "play") vid.play();
             else if (action === "pause") vid.pause();
-            else if (action === "stop") {
-              vid.pause();
-              vid.currentTime = 0;
-              setDisplayState("blank");
-            }
+            else if (action === "stop") { vid.pause(); vid.currentTime = 0; setDisplayState("blank"); }
           }
         });
       }
     }
-  }, [displayState, slide]);
+  }, [displayState, currentFrame]);
 
-  // Reports this window's actual video playback position so the presenter preview,
-  // confidence monitor, and PWA controller can stay in sync with what's on screen
-  // (the presenter's preview is a separate <video> element that can drift over time).
   const reportVideoProgress = useCallback((force = false) => {
     const vid = videoRef.current;
     if (!vid) return;
@@ -225,33 +481,23 @@ export default function ProjectionWindow() {
       currentTime: vid.currentTime,
       duration: Number.isFinite(vid.duration) ? vid.duration : 0,
       isPlaying: !vid.paused,
-      lineupItemId: slide?.lineupItemId,
+      lineupItemId: currentFrame?.lineupItemId,
     });
-  }, [slide?.lineupItemId]);
+  }, [currentFrame?.lineupItemId]);
 
-  const theme = slide?.theme ?? DEFAULT_THEME;
-  const overlayAlpha = (theme.overlayOpacity / 100).toFixed(2);
-  const shadowOpacity = (theme.textShadowOpacity / 100).toFixed(2);
-  const scaleMode = theme.backgroundScaleMode ?? "cover";
-  const imgBgSize = scaleMode === "stretch" ? "100% 100%" : scaleMode;
-  const videoObjectFit = scaleMode === "stretch" ? "fill" : scaleMode as "cover" | "contain";
+  const theme = currentFrame?.theme ?? DEFAULT_THEME;
 
-  // Auto-scale font size to fit the container
+  // Auto-scale font size to fit the container (runs on the active/incoming frame's refs)
   const fitText = useCallback(() => {
     const container = lyricsContainerRef.current;
     const text = lyricsTextRef.current;
     if (!container || !text) return;
-
     const maxW = container.clientWidth;
     const maxH = container.clientHeight;
     let size = theme.fontSize;
     const minSize = Math.max(20, theme.fontSize * 0.45);
-
     text.style.fontSize = `${size}px`;
-    while (
-      size > minSize &&
-      (text.scrollHeight > maxH || text.scrollWidth > maxW)
-    ) {
+    while (size > minSize && (text.scrollHeight > maxH || text.scrollWidth > maxW)) {
       size -= 2;
       text.style.fontSize = `${size}px`;
     }
@@ -259,174 +505,92 @@ export default function ProjectionWindow() {
   }, [theme.fontSize]);
 
   useEffect(() => {
-    if (displayState === "slide" && slide) {
-      requestAnimationFrame(fitText);
-    }
-  }, [slide, displayState, fitText]);
-
-  const alignItems =
-    theme.textPosition === "top"
-      ? "flex-start"
-      : theme.textPosition === "bottom"
-        ? "flex-end"
-        : "center";
-
-  const backgroundPath = slide?.backgroundPath;
-  const isVideo = backgroundPath && /\.(mp4|webm|mov)$/i.test(backgroundPath);
+    if (displayState === "slide" && currentFrame) requestAnimationFrame(fitText);
+  }, [currentFrame, displayState, fitText]);
 
   return (
-    <div
-      style={{
-        width: "100vw",
-        height: "100vh",
-        background: "#000",
-        position: "relative",
-        overflow: "hidden",
-      }}
-    >
-      {/* Background */}
-      {displayState === "slide" &&
-        backgroundPath &&
-        (backgroundPath.startsWith("color:") ? (
-          <div
-            style={{
-              position: "absolute",
-              inset: 0,
-              zIndex: 1,
-              background: backgroundPath.replace("color:", ""),
-            }}
-          />
-        ) : /\.(mp4|webm|mov)$/i.test(backgroundPath) ? (
-          <video
-            ref={videoRef}
-            key={backgroundPath}
-            playsInline
-            style={{
-              position: "absolute",
-              inset: 0,
-              zIndex: 1,
-              width: "100%",
-              height: "100%",
-              objectFit: videoObjectFit,
-              background: "#000",
-            }}
-            src={`file://${encodeURI(backgroundPath)}`}
-            onTimeUpdate={() => reportVideoProgress()}
-            onPlay={() => reportVideoProgress(true)}
-            onPause={() => reportVideoProgress(true)}
-            onSeeked={() => reportVideoProgress(true)}
-            onEnded={() => reportVideoProgress(true)}
-          />
-        ) : (
-          <div
-            style={{
-              position: "absolute",
-              inset: 0,
-              zIndex: 1,
-              backgroundColor: "#000",
-              backgroundImage: `url("file://${encodeURI(backgroundPath)}")`,
-              backgroundSize: imgBgSize,
-              backgroundPosition: "center",
-              backgroundRepeat: "no-repeat",
-            }}
-          />
-        ))}
+    <div style={{ width: "100vw", height: "100vh", background: "#000", position: "relative", overflow: "hidden" }}>
 
-      {/* Dark overlay */}
-      {displayState === "slide" && !isVideo && (
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            zIndex: 2,
-            background: `rgba(0,0,0,${overlayAlpha})`,
-          }}
-        />
+      {/* ── Slide frames (double-buffer crossfade) ── */}
+      {displayState === "slide" && (
+        <>
+          {/* Outgoing frame — stays visible and fades out while incoming fades in */}
+          {prevFrame && (
+            <SlideFrame
+              key={`prev-${frameKey}`}
+              slide={prevFrame}
+              zIndex={3}
+              animationName="wsSlideOut"
+              transitionMs={slideTransitionMs}
+              scaledFontSize={scaledFontSize}
+            />
+          )}
+
+          {/* Incoming frame — fades in over the outgoing frame */}
+          {currentFrame && (
+            <SlideFrame
+              key={`curr-${frameKey}`}
+              slide={currentFrame}
+              zIndex={4}
+              animationName={prevFrame ? "wsSlideIn" : undefined}
+              transitionMs={slideTransitionMs}
+              containerRef={lyricsContainerRef}
+              textRef={lyricsTextRef}
+              videoRef={videoRef}
+              scaledFontSize={scaledFontSize}
+              onVideoProgress={reportVideoProgress}
+              showCounter
+            />
+          )}
+        </>
       )}
 
-      {/* Blank screen */}
+      {/* ── Blank screen ── */}
       {displayState === "blank" && (
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            zIndex: 10,
-            background: "#000",
-          }}
-        />
+        <div style={{ position: "absolute", inset: 0, zIndex: 10, background: "#000" }} />
       )}
 
-      {/* Logo screen */}
+      {/* ── Logo screen ── */}
       {displayState === "logo" && (
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            zIndex: 10,
-            background: "#000",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <div
-            style={{
-              fontFamily: "Montserrat, sans-serif",
-              fontSize: 64,
-              fontWeight: 700,
-              color: "rgba(255,255,255,0.15)",
-              letterSpacing: "-0.03em",
-            }}
-          >
+        <div style={{
+          position: "absolute", inset: 0, zIndex: 10,
+          background: "#000",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+          <div style={{
+            fontFamily: "Montserrat, sans-serif",
+            fontSize: 64, fontWeight: 700,
+            color: "rgba(255,255,255,0.15)",
+            letterSpacing: "-0.03em",
+          }}>
             WorshipSync
           </div>
         </div>
       )}
 
-      {/* Countdown */}
+      {/* ── Countdown ── */}
       {displayState === "countdown" && (
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            zIndex: 10,
-            background: "linear-gradient(to bottom, rgba(0,0,0,0.52) 0%, rgba(0,0,0,0.62) 100%), linear-gradient(135deg, #1a1a2e 0%, #16213e 60%, #0f3460 100%)",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          {/* WELCOME */}
-          <div
-            style={{
-              fontFamily: "Montserrat, sans-serif",
-              fontSize: "7vh",
-              fontWeight: 800,
-              color: "#ffffff",
-              letterSpacing: "0.38em",
-              textTransform: "uppercase",
-              marginBottom: "2vh",
-            }}
-          >
+        <div style={{
+          position: "absolute", inset: 0, zIndex: 10,
+          background: "linear-gradient(to bottom, rgba(0,0,0,0.52) 0%, rgba(0,0,0,0.62) 100%), linear-gradient(135deg, #1a1a2e 0%, #16213e 60%, #0f3460 100%)",
+          display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+        }}>
+          <div style={{
+            fontFamily: "Montserrat, sans-serif",
+            fontSize: "7vh", fontWeight: 800, color: "#ffffff",
+            letterSpacing: "0.38em", textTransform: "uppercase", marginBottom: "2vh",
+          }}>
             Welcome
           </div>
 
-          {/* Subtitle */}
-          <div
-            style={{
-              fontFamily: "Montserrat, sans-serif",
-              fontSize: "3vh",
-              fontWeight: 400,
-              color: "rgba(255,255,255,0.82)",
-              letterSpacing: "0.01em",
-              marginBottom: "4vh",
-            }}
-          >
+          <div style={{
+            fontFamily: "Montserrat, sans-serif",
+            fontSize: "3vh", fontWeight: 400, color: "rgba(255,255,255,0.82)",
+            letterSpacing: "0.01em", marginBottom: "4vh",
+          }}>
             Our Sunday Service will begin in
           </div>
 
-          {/* Countdown segments */}
           {(() => {
             const { days, hours, minutes, seconds } = countdownParts;
             const showHours = days > 0 || hours > 0;
@@ -436,23 +600,17 @@ export default function ProjectionWindow() {
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
                 <div style={{
                   fontFamily: "Montserrat, sans-serif",
-                  fontSize: "22vh",
-                  fontWeight: 800,
-                  color: "#ffffff",
-                  letterSpacing: "0.03em",
-                  lineHeight: 1,
+                  fontSize: "22vh", fontWeight: 800, color: "#ffffff",
+                  letterSpacing: "0.03em", lineHeight: 1,
                   textShadow: "0 4px 40px rgba(0,0,0,0.5)",
                 }}>
                   {pad(value)}
                 </div>
                 <div style={{
                   fontFamily: "Montserrat, sans-serif",
-                  fontSize: "2vh",
-                  fontWeight: 600,
+                  fontSize: "2vh", fontWeight: 600,
                   color: "rgba(255,255,255,0.5)",
-                  letterSpacing: "0.25em",
-                  textTransform: "uppercase",
-                  marginTop: "1vh",
+                  letterSpacing: "0.25em", textTransform: "uppercase", marginTop: "1vh",
                 }}>
                   {label}
                 </div>
@@ -462,20 +620,17 @@ export default function ProjectionWindow() {
             const Colon = () => (
               <div style={{
                 fontFamily: "Montserrat, sans-serif",
-                fontSize: "16vh",
-                fontWeight: 800,
+                fontSize: "16vh", fontWeight: 800,
                 color: "rgba(255,255,255,0.4)",
-                lineHeight: 1,
-                paddingBottom: "4.5vh",
-                alignSelf: "flex-end",
-                margin: "0 1vh",
+                lineHeight: 1, paddingBottom: "4.5vh",
+                alignSelf: "flex-end", margin: "0 1vh",
               }}>:</div>
             );
 
             return (
               <div style={{ display: "flex", alignItems: "flex-end", marginBottom: "4vh" }}>
-                {days > 0 && <><Segment value={days}    label="Days"    /><Colon /></>}
-                {showHours && <><Segment value={hours}   label="Hours"   /><Colon /></>}
+                {days > 0 && <><Segment value={days} label="Days" /><Colon /></>}
+                {showHours && <><Segment value={hours} label="Hours" /><Colon /></>}
                 <Segment value={minutes} label="Minutes" />
                 <Colon />
                 <Segment value={seconds} label="Seconds" />
@@ -483,223 +638,30 @@ export default function ProjectionWindow() {
             );
           })()}
 
-          {/* Please find your seats */}
-          <div
-            style={{
-              fontFamily: "Montserrat, sans-serif",
-              fontSize: "2.5vh",
-              fontWeight: 400,
-              color: "rgba(255,255,255,0.65)",
-              letterSpacing: "0.02em",
-            }}
-          >
+          <div style={{
+            fontFamily: "Montserrat, sans-serif",
+            fontSize: "2.5vh", fontWeight: 400,
+            color: "rgba(255,255,255,0.65)", letterSpacing: "0.02em",
+          }}>
             Please find your seats and silence your devices
           </div>
 
-          {/* Bottom branding */}
           {churchName && (
-            <div
-              style={{
-                position: "absolute",
-                bottom: "4vh",
-                display: "flex",
-                alignItems: "center",
-                gap: "0.9vh",
-              }}
-            >
+            <div style={{ position: "absolute", bottom: "4vh", display: "flex", alignItems: "center", gap: "0.9vh" }}>
               <svg width="1.65vh" height="1.65vh" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
                 <polyline points="9 22 9 12 15 12 15 22" />
               </svg>
-              <div
-                style={{
-                  fontFamily: "Montserrat, sans-serif",
-                  fontSize: "1.6vh",
-                  fontWeight: 600,
-                  color: "rgba(255,255,255,0.35)",
-                  letterSpacing: "0.2em",
-                  textTransform: "uppercase",
-                }}
-              >
+              <div style={{
+                fontFamily: "Montserrat, sans-serif",
+                fontSize: "1.6vh", fontWeight: 600,
+                color: "rgba(255,255,255,0.35)",
+                letterSpacing: "0.2em", textTransform: "uppercase",
+              }}>
                 {churchName}
               </div>
             </div>
           )}
-        </div>
-      )}
-
-      {/* Slide content \u2014 scripture uses column layout; announcements use event-card layout; everything else is lyrics */}
-      {displayState === "slide" && slide && (
-        slide.itemType === "scripture" ? (
-          <div
-            key={slideVersion}
-            style={{
-              position: "absolute",
-              inset: 0,
-              zIndex: 3,
-              display: "flex",
-              flexDirection: "column",
-              padding: "6% 10%",
-              animation: slideTransitionMs > 0 ? `wsSlideIn ${slideTransitionMs}ms ease forwards` : "none",
-            }}
-          >
-            {/* Verse text \u2014 fills available space, measured by fitText */}
-            <div
-              ref={lyricsContainerRef}
-              style={{
-                flex: 1,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                overflow: "hidden",
-                minHeight: 0,
-              }}
-            >
-              <div
-                ref={lyricsTextRef}
-                style={{
-                  fontFamily: theme.fontFamily,
-                  fontSize: scaledFontSize,
-                  fontWeight: theme.fontWeight,
-                  color: theme.textColor,
-                  textAlign: "center",
-                  lineHeight: 1.4,
-                  textShadow: `0 2px 12px rgba(0,0,0,${shadowOpacity}), 0 1px 3px rgba(0,0,0,${shadowOpacity})`,
-                  width: "100%",
-                }}
-              >
-                {slide.lines.map((line, i) => (
-                  <div key={i}>{line || "\u00A0"}</div>
-                ))}
-              </div>
-            </div>
-
-            {/* Scripture reference badge \u2014 bottom-right, separated from verse content */}
-            {slide.sectionType !== "blank" && (() => {
-              // sectionLabel = "John 3:16 NIV" \u2014 split off the trailing translation token
-              const label = slide.sectionLabel ?? ""
-              const lastSpace = label.lastIndexOf(" ")
-              const hasTranslation = lastSpace > 0 && /^[A-Z0-9]{2,10}$/.test(label.slice(lastSpace + 1))
-              const ref = (hasTranslation ? label.slice(0, lastSpace) : label)
-                .toLowerCase().replace(/\b\w/g, c => c.toUpperCase())
-              const translation = hasTranslation ? label.slice(lastSpace + 1) : null
-              const badgeFontSize = Math.max(32, Math.round(scaledFontSize * 0.58))
-              return (
-                <div style={{
-                  position: "absolute",
-                  bottom: "4%",
-                  right: "6%",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: Math.max(8, Math.round(scaledFontSize * 0.12)),
-                  zIndex: 4,
-                }}>
-                  <span style={{
-                    fontFamily: theme.fontFamily,
-                    fontSize: badgeFontSize,
-                    fontWeight: "600",
-                    color: "rgba(255,255,255,0.9)",
-                    letterSpacing: "0.03em",
-                    textShadow: "0 1px 6px rgba(0,0,0,0.6)",
-                  }}>
-                    {ref}
-                  </span>
-                  {translation && (
-                    <>
-                      <span style={{
-                        fontSize: badgeFontSize * 0.8,
-                        color: "rgba(255,255,255,0.35)",
-                        fontWeight: "300",
-                      }}>{"\u00b7"}</span>
-                      <span style={{
-                        fontFamily: theme.fontFamily,
-                        fontSize: badgeFontSize * 0.82,
-                        fontWeight: "700",
-                        letterSpacing: "0.08em",
-                        color: "rgba(255,255,255,0.55)",
-                        textShadow: "0 1px 4px rgba(0,0,0,0.5)",
-                      }}>
-                        {translation}
-                      </span>
-                    </>
-                  )}
-                </div>
-              )
-            })()}
-          </div>
-        ) : slide.itemType === "announcement" && slide.announcementCards?.length ? (
-          <div
-            key={slideVersion}
-            style={{
-              position: "absolute",
-              inset: 0,
-              zIndex: 3,
-              display: "flex",
-              flexDirection: "column",
-              justifyContent: "center",
-              padding: "5% 8%",
-              animation: slideTransitionMs > 0 ? `wsSlideIn ${slideTransitionMs}ms ease forwards` : "none",
-            }}
-          >
-            <AnnouncementCardsView
-              title={slide.songTitle}
-              cards={slide.announcementCards}
-              textColor={theme.textColor}
-              accentColor={theme.accentColor ?? '#fbbf24'}
-              fontSize={theme.fontSize}
-            />
-          </div>
-        ) : (
-          <div
-            key={slideVersion}
-            ref={lyricsContainerRef}
-            style={{
-              position: "absolute",
-              inset: 0,
-              zIndex: 3,
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: alignItems,
-              padding: "8% 10%",
-              animation: slideTransitionMs > 0 ? `wsSlideIn ${slideTransitionMs}ms ease forwards` : "none",
-            }}
-          >
-            <div
-              ref={lyricsTextRef}
-              style={{
-                fontFamily: theme.fontFamily,
-                fontSize: scaledFontSize,
-                fontWeight: theme.fontWeight,
-                color: theme.textColor,
-                textAlign: theme.textAlign,
-                lineHeight: 1.4,
-                textShadow: `0 2px 12px rgba(0,0,0,${shadowOpacity}), 0 1px 3px rgba(0,0,0,${shadowOpacity})`,
-                width: "100%",
-              }}
-            >
-              {slide.lines.map((line, i) => (
-                <div key={i}>{line || "\u00A0"}</div>
-              ))}
-            </div>
-          </div>
-        )
-      )}
-
-      {/* Slide counter */}
-      {displayState === "slide" && slide && (
-        <div
-          style={{
-            position: "absolute",
-            bottom: 16,
-            right: 20,
-            zIndex: 3,
-            fontSize: 11,
-            color: "rgba(255,255,255,0.15)",
-            fontFamily: "monospace",
-          }}
-        >
-          {(slide.slideIndex ?? 0) + 1}/{slide.totalSlides ?? 0}
         </div>
       )}
     </div>

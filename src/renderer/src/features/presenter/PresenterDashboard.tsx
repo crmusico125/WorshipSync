@@ -2734,16 +2734,16 @@ export default function PresenterDashboard({
                       <div className="flex items-center justify-between gap-1 px-0.5 h-4">
                         <div className="flex items-center gap-1 min-w-0">
                           {currentSong.itemType !== "scripture" && slide.sectionType !== "blank" && (
-                            <span className={`text-[9px] font-bold px-1 py-0.5 rounded leading-none shrink-0 ${isActive ? "bg-red-500 text-white" : "bg-muted-foreground text-background"}`}>
+                            <span className={`text-[9px] font-bold px-1 py-0.5 rounded leading-none shrink-0 ${isActive ? "bg-red-500 text-white" : isNextSlide ? "bg-green-500 text-white" : "bg-muted-foreground text-background"}`}>
                               {abbrev}
                             </span>
                           )}
-                          <span className={`text-[10px] font-semibold truncate ${isActive ? "text-red-400" : "text-muted-foreground"}`}>
+                          <span className={`text-[10px] font-semibold truncate ${isActive ? "text-red-400" : isNextSlide ? "text-green-400" : "text-muted-foreground"}`}>
                             {slide.sectionLabel}
                           </span>
                         </div>
                         {isActive && <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-red-500/20 text-red-400 leading-none shrink-0">LIVE</span>}
-                        {isNextSlide && <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-green-500/20 text-green-400 leading-none shrink-0">NEXT</span>}
+                        {isNextSlide && <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-green-500/20 text-green-300 leading-none shrink-0">NEXT</span>}
                       </div>
                       <button
                         onClick={(e) => { e.currentTarget.blur(); sendSlide(selectedSongIdx, i); }}
@@ -2751,10 +2751,10 @@ export default function PresenterDashboard({
                           isActive
                             ? "border-red-500 ring-2 ring-red-500/25 scale-[1.015]"
                             : isNextSlide
-                            ? "border-green-500/50 ring-1 ring-green-500/15"
+                            ? "border-green-500/60"
                             : "border-transparent hover:border-muted-foreground/30"
                         }`}
-                        style={{ outline: "none", boxShadow: isActive ? "0 0 0 0 transparent" : undefined }}
+                        style={{ outline: "none" }}
                       >
                         <div className="w-full" style={{ paddingBottom: "56.25%" }} />
                         <div className="absolute inset-0">

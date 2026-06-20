@@ -265,6 +265,7 @@ export default function PresenterDashboard({
 
 
   // ── Run-of-show inline search ────────────────────────────────────────────
+  const [rosTab, setRosTab] = useState<"song" | "scripture">("song")
   const [rosSearch, setRosSearch] = useState("")
   const [rosResults, setRosResults] = useState<{ id: number; title: string; artist: string }[]>([])
   const rosSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -1842,110 +1843,104 @@ export default function PresenterDashboard({
           </button>
         </div>
 
-        {/* Inline song search */}
-        <div className="px-2 py-2 border-b border-border shrink-0">
-          <div className="relative">
-            <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
-            <input
-              value={rosSearch}
-              onChange={e => handleRosSearch(e.target.value)}
-              placeholder="Quick-add song…"
-              className="w-full pl-6 pr-6 py-1.5 text-xs bg-input border border-border rounded focus:outline-none focus:border-primary/50 transition-colors placeholder:text-muted-foreground/50"
-            />
-            {rosSearch && (
-              <button
-                onClick={() => { setRosSearch(""); setRosResults([]); }}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            )}
-          </div>
-          {rosResults.length > 0 && (
-            <div className="mt-1.5 border border-border rounded-md bg-background shadow-lg overflow-hidden">
-              {rosResults.slice(0, 6).map(song => (
-                <button
-                  key={song.id}
-                  onClick={async () => {
-                    await addSongToLineup(song.id)
-                    setRosSearch("")
-                    setRosResults([])
-                    setSelectedSongIdx(liveSongs.length)
-                  }}
-                  className="w-full flex items-center gap-2 px-2.5 py-2 hover:bg-accent/40 transition-colors border-b border-border last:border-0 text-left"
-                >
-                  <Music className="h-3 w-3 text-muted-foreground shrink-0" />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[11px] font-medium truncate">{song.title}</p>
-                    <p className="text-[10px] text-muted-foreground truncate">{song.artist || "Unknown"}</p>
-                  </div>
-                  <Plus className="h-3 w-3 text-primary shrink-0" />
-                </button>
-              ))}
-            </div>
-          )}
-          {rosSearch.trim() && rosResults.length === 0 && (
-            <p className="text-[10px] text-muted-foreground mt-1.5 px-1">No songs found</p>
-          )}
+        {/* Tab bar */}
+        <div className="flex shrink-0 border-b border-border">
+          <button
+            onClick={() => setRosTab("song")}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[11px] font-semibold transition-colors border-b-2 -mb-px ${
+              rosTab === "song"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Music className="h-3 w-3" />
+            Song
+          </button>
+          <button
+            onClick={() => setRosTab("scripture")}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[11px] font-semibold transition-colors border-b-2 -mb-px ${
+              rosTab === "scripture"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <BookOpen className="h-3 w-3" />
+            Scripture
+          </button>
         </div>
 
-        {/* Quick-add scripture */}
-        <form onSubmit={handleScriptureQuickAdd} className="px-2 py-2 border-b border-border shrink-0 flex flex-col gap-1.5">
-          <div className="relative">
-            <BookOpen className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
-            <input
-              value={scriptureQuery}
-              onChange={e => { setScriptureQuery(e.target.value); setScriptureQueryError(null) }}
-              placeholder="Scripture… e.g. John 3:16"
-              disabled={scriptureQueryLoading}
-              className="w-full pl-6 pr-6 py-1.5 text-xs bg-input border border-border rounded focus:outline-none focus:border-primary/50 transition-colors placeholder:text-muted-foreground/50 disabled:opacity-70"
-            />
-            {scriptureQueryLoading
-              ? <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 animate-spin text-muted-foreground" />
-              : scriptureQuery && (
-                <button type="button" onClick={() => { setScriptureQuery(""); setScriptureQueryError(null) }}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+        {/* Tab content */}
+        {rosTab === "song" ? (
+          <div className="px-2 py-2 border-b border-border shrink-0">
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
+              <input
+                value={rosSearch}
+                onChange={e => handleRosSearch(e.target.value)}
+                placeholder="Search songs…"
+                className="w-full pl-6 pr-6 py-1.5 text-xs bg-input border border-border rounded focus:outline-none focus:border-primary/50 transition-colors placeholder:text-muted-foreground/50"
+              />
+              {rosSearch && (
+                <button
+                  onClick={() => { setRosSearch(""); setRosResults([]); }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                >
                   <X className="h-3 w-3" />
                 </button>
-              )
-            }
-          </div>
-          <select
-            value={scriptureTranslation}
-            onChange={e => setScriptureTranslation(e.target.value)}
-            disabled={scriptureQueryLoading}
-            className="w-full px-2 py-1 text-xs bg-input border border-border rounded focus:outline-none focus:border-primary/50 cursor-pointer disabled:opacity-70"
-          >
-            {availableTranslations.map(t => (
-              <option key={t.id} value={t.id}>{t.label}</option>
-            ))}
-          </select>
-          {scriptureQueryError && (
-            <p className="text-[10px] text-red-400 px-1">{scriptureQueryError}</p>
-          )}
-        </form>
-
-        {/* Recently used scriptures */}
-        {recentScriptures.length > 0 && !scriptureQuery && (
-          <div className="px-2 pb-1">
-            <p className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground/60 px-1 mb-1">Recent</p>
-            <div className="flex flex-col gap-0.5">
-              {recentScriptures.map((r, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  onClick={() => {
-                    setScriptureQuery(r.query)
-                    if (availableTranslations.some(t => t.id === r.translationId)) setScriptureTranslation(r.translationId)
-                  }}
-                  className="flex items-center justify-between gap-2 px-2 py-1 rounded hover:bg-muted/50 transition-colors text-left group"
-                >
-                  <span className="text-[11px] text-foreground/80 group-hover:text-foreground truncate">{r.reference}</span>
-                  <span className="text-[10px] font-bold text-muted-foreground shrink-0">{r.translationLabel}</span>
-                </button>
-              ))}
+              )}
             </div>
+            {rosResults.length > 0 && (
+              <div className="mt-1.5 border border-border rounded-md bg-background shadow-lg overflow-hidden">
+                {rosResults.slice(0, 6).map(song => (
+                  <button
+                    key={song.id}
+                    onClick={async () => {
+                      await addSongToLineup(song.id)
+                      setRosSearch("")
+                      setRosResults([])
+                      setSelectedSongIdx(liveSongs.length)
+                    }}
+                    className="w-full flex items-center gap-2 px-2.5 py-2 hover:bg-accent/40 transition-colors border-b border-border last:border-0 text-left"
+                  >
+                    <Music className="h-3 w-3 text-muted-foreground shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[11px] font-medium truncate">{song.title}</p>
+                      <p className="text-[10px] text-muted-foreground truncate">{song.artist || "Unknown"}</p>
+                    </div>
+                    <Plus className="h-3 w-3 text-primary shrink-0" />
+                  </button>
+                ))}
+              </div>
+            )}
+            {rosSearch.trim() && rosResults.length === 0 && (
+              <p className="text-[10px] text-muted-foreground mt-1.5 px-1">No songs found</p>
+            )}
           </div>
+        ) : (
+          <form onSubmit={handleScriptureQuickAdd} className="px-2 py-2 border-b border-border shrink-0">
+            <div className="relative">
+              <BookOpen className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
+              <input
+                value={scriptureQuery}
+                onChange={e => { setScriptureQuery(e.target.value); setScriptureQueryError(null) }}
+                placeholder={`e.g. John 3:16 (${availableTranslations.find(t => t.id === scriptureTranslation)?.label ?? scriptureTranslation.toUpperCase()})`}
+                disabled={scriptureQueryLoading}
+                className="w-full pl-6 pr-6 py-1.5 text-xs bg-input border border-border rounded focus:outline-none focus:border-primary/50 transition-colors placeholder:text-muted-foreground/50 disabled:opacity-70"
+              />
+              {scriptureQueryLoading
+                ? <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 animate-spin text-muted-foreground" />
+                : scriptureQuery
+                  ? <button type="button" onClick={() => { setScriptureQuery(""); setScriptureQueryError(null) }}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                      <X className="h-3 w-3" />
+                    </button>
+                  : null
+              }
+            </div>
+            {scriptureQueryError && (
+              <p className="text-[10px] text-red-400 mt-1 px-1">{scriptureQueryError}</p>
+            )}
+          </form>
         )}
 
         <div className="flex-1 overflow-y-auto">

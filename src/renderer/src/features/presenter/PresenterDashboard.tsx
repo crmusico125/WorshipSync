@@ -46,6 +46,7 @@ import BackgroundPickerPanel from "../../components/BackgroundPickerPanel";
 import EditLyricsModal from "../../components/EditLyricsModal";
 import type { AnnouncementCard } from "../../../../../shared/types";
 import { fetchBiblePassage, bibleResultToScriptureRef, FREE_TRANSLATIONS, fetchApiBibleTranslations, type BibleTranslation } from "../../lib/bibleApi";
+import TranslationPicker from "../../components/TranslationPicker";
 
 
 // ── Audio singleton — survives PresenterDashboard unmounts ───────────────────
@@ -300,7 +301,7 @@ export default function PresenterDashboard({
           if (lastTranslationId && all.some(t => t.id === lastTranslationId)) {
             setScriptureTranslation(lastTranslationId)
           } else {
-            const niv = keyed.find(t => t.label === 'NIV')
+            const niv = keyed.find(t => t.label === 'NIV' || t.label.startsWith('NIV'))
             if (niv) setScriptureTranslation(niv.id)
           }
         } catch {
@@ -1917,13 +1918,13 @@ export default function PresenterDashboard({
             )}
           </div>
         ) : (
-          <form onSubmit={handleScriptureQuickAdd} className="px-2 py-2 border-b border-border shrink-0">
+          <form onSubmit={handleScriptureQuickAdd} className="px-2 pt-2 pb-1.5 border-b border-border shrink-0">
             <div className="relative">
               <BookOpen className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
               <input
                 value={scriptureQuery}
                 onChange={e => { setScriptureQuery(e.target.value); setScriptureQueryError(null) }}
-                placeholder={`e.g. John 3:16 (${availableTranslations.find(t => t.id === scriptureTranslation)?.label ?? scriptureTranslation.toUpperCase()})`}
+                placeholder="e.g. John 3:16 — press Enter"
                 disabled={scriptureQueryLoading}
                 className="w-full pl-6 pr-6 py-1.5 text-xs bg-input border border-border rounded focus:outline-none focus:border-primary/50 transition-colors placeholder:text-muted-foreground/50 disabled:opacity-70"
               />
@@ -1936,6 +1937,17 @@ export default function PresenterDashboard({
                     </button>
                   : null
               }
+            </div>
+            {/* Translation selector */}
+            <div className="mt-1.5">
+              <TranslationPicker
+                translations={availableTranslations}
+                value={scriptureTranslation}
+                onChange={id => {
+                  setScriptureTranslation(id)
+                  window.worshipsync.appState.set({ lastBibleTranslation: id }).catch(() => {})
+                }}
+              />
             </div>
             {scriptureQueryError && (
               <p className="text-[10px] text-red-400 mt-1 px-1">{scriptureQueryError}</p>

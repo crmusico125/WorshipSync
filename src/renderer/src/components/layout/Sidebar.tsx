@@ -10,6 +10,7 @@ import {
   Image,
   LayoutDashboard,
   Radio,
+  BookOpen,
 } from "lucide-react";
 
 interface Props {
@@ -27,12 +28,13 @@ interface NavItem {
 }
 
 const NAV_TOP: NavItem[] = [
-  { id: "overview", icon: LayoutDashboard, label: "Overview" },
-  { id: "planner",  icon: Calendar,        label: "Planner"  },
-  { id: "library",  icon: Music,           label: "Library"  },
-  { id: "media",    icon: Image,           label: "Media"    },
-  { id: "themes",   icon: Palette,         label: "Themes"   },
-  { id: "analytics",icon: BarChart3,       label: "Analytics"},
+  { id: "overview", icon: LayoutDashboard, label: "Overview"  },
+  { id: "planner",  icon: Calendar,        label: "Planner"   },
+  { id: "bible",    icon: BookOpen,        label: "Bible"     },
+  { id: "library",  icon: Music,           label: "Library"   },
+  { id: "media",    icon: Image,           label: "Media"     },
+  { id: "themes",   icon: Palette,         label: "Themes"    },
+  { id: "analytics",icon: BarChart3,       label: "Analytics" },
 ];
 
 // Nav items that are non-essential during a live show

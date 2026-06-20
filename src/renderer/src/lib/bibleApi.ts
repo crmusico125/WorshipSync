@@ -39,8 +39,10 @@ export const BIBLE_TRANSLATIONS = FREE_TRANSLATIONS
 
 const API_BIBLE_BASE = 'https://api.scripture.api.bible/v1'
 
-// Priority order for the "quick access" row when API.Bible is available
-const PREFERRED_ABBREVS = ['NIV', 'NLT', 'NKJV', 'ESV', 'CSB', 'NASB', 'KJV', 'WEB', 'MSG', 'AMP', 'NCV', 'CEV']
+// Priority order for the "quick access" row when API.Bible is available.
+// Include common variant abbreviations (NIV11, ESVSB, etc.) that API.Bible uses.
+export const COMMON_TRANSLATION_LABELS = ['NIV', 'NIV11', 'NLT', 'NKJV', 'ESV', 'ESVSB', 'CSB', 'NASB', 'NASB2020', 'KJV', 'WEB', 'MSG', 'AMP', 'NCV', 'CEV']
+const PREFERRED_ABBREVS = COMMON_TRANSLATION_LABELS
 
 // Simple in-memory cache so we don't refetch on every component mount
 const _translationCache = new Map<string, BibleTranslation[]>()

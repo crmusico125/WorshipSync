@@ -30,7 +30,9 @@ export function registerAppStateHandlers(): void {
     return true
   })
 
-  ipcMain.handle('app:getBibleApiKey', () => readAppState().bibleApiKey ?? null)
+  ipcMain.handle('app:getBibleApiKey', () =>
+    readAppState().bibleApiKey ?? process.env['BIBLE_API_KEY'] ?? null
+  )
 
   ipcMain.handle('app:getTodayService', () => {
     const today = new Date().toISOString().split('T')[0]

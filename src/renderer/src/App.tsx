@@ -10,6 +10,7 @@ import ThemesScreen from "./features/themes/ThemesScreen"
 import AnalyticsScreen from "./features/analytics/AnalyticsScreen"
 import SettingsScreen from "./features/settings/SettingsScreen"
 import OverviewScreen from "./features/planner/OverviewScreen"
+import BibleScreen from "./features/bible/BibleScreen"
 import { useServiceStore } from "./store/useServiceStore"
 
 export default function App() {
@@ -190,6 +191,7 @@ export default function App() {
               />
             </div>
           )}
+          {currentScreen === "bible"     && <BibleScreen projectionOpen={projectionOpen} />}
           {currentScreen === "library"   && <LibraryScreen />}
           {currentScreen === "media"     && <MediaLibraryScreen />}
           {currentScreen === "themes"    && <ThemesScreen />}

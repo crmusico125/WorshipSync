@@ -7,6 +7,7 @@ export type AppScreen =
   | "themes"
   | "analytics"
   | "settings"
+  | "bible"
 
 export interface Song {
   id: number

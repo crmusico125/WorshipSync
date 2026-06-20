@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react"
 import {
   BookOpen, Search, Radio, X, Loader2, ChevronRight,
-  MonitorPlay, BookMarked, ArrowLeft,
+  MonitorPlay, BookMarked, ArrowLeft, History, Clock,
 } from "lucide-react"
 import {
   fetchBiblePassage, fetchApiBibleTranslations,
@@ -34,6 +34,19 @@ const DEFAULT_THEME: ResolvedTheme = {
   overlayOpacity: 45,
   textShadowOpacity: 40,
   maxLinesPerSlide: 2,
+}
+
+interface SessionEntry {
+  verse: BibleApiVerse
+  translationLabel: string
+  label: string
+}
+
+interface RecentPassage {
+  query: string
+  translationId: string
+  translationLabel: string
+  reference: string
 }
 
 // Popular passages shown when no chapter is open
@@ -133,18 +146,26 @@ function ChapterVerseRow({
   verse,
   isLive,
   isProjected,
+  isActive,
   onProject,
 }: {
   verse: BibleApiVerse
   isLive: boolean
   isProjected: boolean
+  isActive: boolean
   onProject: () => void
 }) {
   return (
-    <div className={`group flex items-start gap-3 px-4 py-2.5 transition-colors rounded-lg ${
-      isProjected ? "bg-red-500/8 border border-red-500/20" : "hover:bg-accent/30 border border-transparent"
-    }`}>
-      <span className="text-[11px] font-bold text-muted-foreground/60 mt-0.5 w-6 shrink-0 text-right">
+    <div className={`group flex items-start gap-3 px-4 py-2.5 transition-colors rounded-lg cursor-pointer ${
+      isProjected
+        ? "bg-red-500/8 border border-red-500/20"
+        : isActive
+          ? "bg-primary/8 border border-primary/25"
+          : "hover:bg-accent/30 border border-transparent"
+    }`} onClick={onProject}>
+      <span className={`text-[11px] font-bold mt-0.5 w-6 shrink-0 text-right ${
+        isProjected ? "text-red-400" : isActive ? "text-primary" : "text-muted-foreground/60"
+      }`}>
         {verse.verse}
       </span>
       <p className="flex-1 text-sm leading-relaxed text-foreground/90">
@@ -180,13 +201,20 @@ export default function BibleScreen({ projectionOpen }: Props) {
   const [chapterError, setChapterError]             = useState<string | null>(null)
 
   const [projectedLabel, setProjectedLabel]         = useState<string | null>(null)
+  const [sessionHistory, setSessionHistory]         = useState<SessionEntry[]>([])
+  const [recentPassages, setRecentPassages]         = useState<RecentPassage[]>([])
 
   const [scriptureBackgroundPath, setScriptureBackgroundPath] = useState<string | null>(null)
   const [defaultThemeBg, setDefaultThemeBg]                   = useState<string | null>(null)
   const [resolvedTheme, setResolvedTheme]                     = useState<ResolvedTheme>(DEFAULT_THEME)
 
-  const inputRef        = useRef<HTMLInputElement>(null)
+  const [activeVerseIndex, setActiveVerseIndex] = useState(0)
+  const [jumpInput, setJumpInput]               = useState("")
+
+  const inputRef         = useRef<HTMLInputElement>(null)
   const scrollToVerseRef = useRef<number | null>(null)
+  // Mirrors activeVerseIndex for reads inside event handlers (avoids stale closures on rapid keypresses)
+  const activeIdxRef     = useRef(0)
 
   // ── Bootstrap ────────────────────────────────────────────────────────────────
 
@@ -229,6 +257,9 @@ export default function BibleScreen({ projectionOpen }: Props) {
       if (state.projectionFontSize) {
         setResolvedTheme(prev => ({ ...prev, fontSize: state.projectionFontSize }))
       }
+      if (Array.isArray(state.recentScriptures)) {
+        setRecentPassages(state.recentScriptures as RecentPassage[])
+      }
     }).catch(() => {})
   }, [])
 
@@ -269,28 +300,90 @@ export default function BibleScreen({ projectionOpen }: Props) {
     }
   }
 
-  // Scroll to the originating verse after the chapter reader renders
+  // Scroll to originating verse and initialise active index after chapter renders
   useEffect(() => {
-    if (!chapterResult || scrollToVerseRef.current == null) return
+    if (!chapterResult) { activeIdxRef.current = 0; setActiveVerseIndex(0); return }
     const targetVerse = scrollToVerseRef.current
     scrollToVerseRef.current = null
-    // Let the DOM paint first, then scroll
-    requestAnimationFrame(() => {
-      const el = document.getElementById(`chapter-verse-${targetVerse}`)
-      el?.scrollIntoView({ behavior: "smooth", block: "center" })
-    })
+    const idx = targetVerse != null
+      ? Math.max(0, chapterResult.verses.findIndex(v => v.verse === targetVerse))
+      : 0
+    activeIdxRef.current = idx
+    setActiveVerseIndex(idx)
+    if (targetVerse != null) {
+      requestAnimationFrame(() => {
+        document.getElementById(`chapter-verse-${targetVerse}`)?.scrollIntoView({ behavior: "smooth", block: "center" })
+      })
+    }
   }, [chapterResult])
+
+  // Arrow-key navigation through chapter verses
+  useEffect(() => {
+    if (!chapterResult) return
+    const handler = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement).tagName
+      if (tag === "INPUT" || tag === "TEXTAREA") return
+      let next: number | null = null
+      if (e.key === "ArrowDown") { e.preventDefault(); next = Math.min(activeIdxRef.current + 1, chapterResult.verses.length - 1) }
+      else if (e.key === "ArrowUp") { e.preventDefault(); next = Math.max(activeIdxRef.current - 1, 0) }
+      if (next == null || next === activeIdxRef.current) return
+      activeIdxRef.current = next
+      setActiveVerseIndex(next)
+      const verse = chapterResult.verses[next]
+      document.getElementById(`chapter-verse-${verse.verse}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" })
+      if (projectionOpen) projectVerse(verse)
+    }
+    document.addEventListener("keydown", handler)
+    return () => document.removeEventListener("keydown", handler)
+  }, [chapterResult, projectionOpen])
 
   const handleQuickPassage = (ref: string) => {
     setQuery(ref)
     handleSearch(undefined, ref)
   }
 
-  const projectVerse = (verse: BibleApiVerse) => {
-    const tLabel = availableTranslations.find(t => t.id === translation)?.label ?? translation.toUpperCase()
-    const label = `${verse.book_name} ${verse.chapter}:${verse.verse} ${tLabel}`
+  const handleJumpToVerse = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!chapterResult) return
+    const num = parseInt(jumpInput.trim())
+    if (isNaN(num)) return
+    const idx = chapterResult.verses.findIndex(v => v.verse === num)
+    if (idx < 0) return
+    activeIdxRef.current = idx
+    setActiveVerseIndex(idx)
+    setJumpInput("")
+    const verse = chapterResult.verses[idx]
+    document.getElementById(`chapter-verse-${verse.verse}`)?.scrollIntoView({ behavior: "smooth", block: "center" })
+    if (projectionOpen) projectVerse(verse)
+  }
+
+  const handleRecentPassage = (recent: RecentPassage) => {
+    setTranslation(recent.translationId)
+    setQuery(recent.query)
+    handleSearch(undefined, recent.query)
+  }
+
+  const projectVerse = (verse: BibleApiVerse, tLabel?: string) => {
+    const translationLabel = tLabel ?? availableTranslations.find(t => t.id === translation)?.label ?? translation.toUpperCase()
+    const label = `${verse.book_name} ${verse.chapter}:${verse.verse} ${translationLabel}`
     setProjectedLabel(label)
-    // Scripture background takes priority over general theme background
+
+    // Update session history — deduplicate by label, most recent first
+    setSessionHistory(prev => {
+      const entry: SessionEntry = { verse, translationLabel, label }
+      return [entry, ...prev.filter(e => e.label !== label)]
+    })
+
+    // Persist to recentScriptures (shared with presenter)
+    const reference = `${verse.book_name} ${verse.chapter}:${verse.verse}`
+    const query = reference
+    const entry: RecentPassage = { query, translationId: translation, translationLabel, reference }
+    setRecentPassages(prev => {
+      const updated = [entry, ...prev.filter(r => r.reference !== reference || r.translationId !== translation)].slice(0, 8)
+      window.worshipsync.appState.set({ recentScriptures: updated, lastBibleTranslation: translation }).catch(() => {})
+      return updated
+    })
+
     const bg = scriptureBackgroundPath ?? defaultThemeBg
     window.worshipsync.slide.show({
       lines: [verse.text],
@@ -334,7 +427,7 @@ export default function BibleScreen({ projectionOpen }: Props) {
       <div className="flex-1 flex overflow-hidden">
 
         {/* ─── LEFT: Search + results ─────────────────────────────────────── */}
-        <div className="w-[380px] shrink-0 border-r border-border flex flex-col overflow-hidden">
+        <div className="w-[480px] shrink-0 border-r border-border flex flex-col overflow-hidden">
 
           {/* Search form */}
           <div className="px-4 pt-4 pb-3 shrink-0">
@@ -395,8 +488,8 @@ export default function BibleScreen({ projectionOpen }: Props) {
             </div>
           )}
 
-          {/* Results */}
-          <div className="flex-1 overflow-y-auto px-4 pb-4">
+          {/* Results / empty state — takes all available space */}
+          <div className="flex-1 overflow-y-auto px-4 py-3">
 
             {/* Loading */}
             {loading && (
@@ -408,11 +501,9 @@ export default function BibleScreen({ projectionOpen }: Props) {
             {/* Verse results */}
             {!loading && result && (
               <div className="flex flex-col gap-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                    {result.verses.length} verse{result.verses.length !== 1 ? "s" : ""} · {translationLabel}
-                  </span>
-                </div>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+                  {result.verses.length} verse{result.verses.length !== 1 ? "s" : ""} · {translationLabel}
+                </span>
 
                 {result.verses.map((verse) => {
                   const label = `${verse.book_name} ${verse.chapter}:${verse.verse} ${translationLabel}`
@@ -428,33 +519,52 @@ export default function BibleScreen({ projectionOpen }: Props) {
                   )
                 })}
 
-                {/* Read chapter CTA */}
                 {chapterRef && (
                   <button
                     onClick={handleReadChapter}
                     disabled={chapterLoading}
                     className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-border text-sm font-medium text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-primary/5 transition-colors disabled:opacity-50"
                   >
-                    {chapterLoading
-                      ? <Loader2 className="h-4 w-4 animate-spin" />
-                      : <BookMarked className="h-4 w-4" />}
+                    {chapterLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <BookMarked className="h-4 w-4" />}
                     {chapterLoading ? "Loading…" : `Read all of ${chapterRef} →`}
                   </button>
                 )}
-                {chapterError && (
-                  <p className="text-xs text-destructive text-center">{chapterError}</p>
-                )}
+                {chapterError && <p className="text-xs text-destructive text-center">{chapterError}</p>}
               </div>
             )}
 
-            {/* Empty state — quick passages */}
+            {/* Empty state */}
             {!loading && !result && !error && (
-              <div className="flex flex-col gap-4 pt-2">
+              <div className="flex flex-col gap-5">
+
+                {recentPassages.length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5 flex items-center gap-1.5">
+                      <Clock className="h-3 w-3" />
+                      Recent
+                    </p>
+                    <div className="flex flex-col gap-0.5">
+                      {recentPassages.map((p, i) => (
+                        <button
+                          key={i}
+                          onClick={() => handleRecentPassage(p)}
+                          className="flex items-center gap-2 px-3 py-2 rounded-lg text-left hover:bg-accent/40 transition-colors group"
+                        >
+                          <span className="flex-1 min-w-0 text-sm text-foreground truncate">{p.reference}</span>
+                          <span className="text-[10px] font-semibold text-muted-foreground bg-muted px-1.5 py-0.5 rounded shrink-0">
+                            {p.translationLabel}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5">
                     Popular passages
                   </p>
-                  <div className="flex flex-col gap-1">
+                  <div className="flex flex-col gap-0.5">
                     {QUICK_PASSAGES.map(p => (
                       <button
                         key={p.ref}
@@ -467,9 +577,74 @@ export default function BibleScreen({ projectionOpen }: Props) {
                     ))}
                   </div>
                 </div>
+
               </div>
             )}
+
           </div>
+
+          {/* ── Session history — pinned at the bottom ── */}
+          {sessionHistory.length > 0 && (
+            <div className="shrink-0 border-t border-border">
+              <div className="flex items-center gap-1.5 px-4 pt-2.5 pb-1.5">
+                <History className="h-3 w-3 text-red-400" />
+                <span className="text-[10px] font-bold uppercase tracking-widest text-red-400">
+                  This session
+                </span>
+                <span className="text-[10px] text-red-400/60 ml-auto">{sessionHistory.length}</span>
+              </div>
+              <div className="overflow-y-auto max-h-[236px] px-4 pb-2 flex flex-col gap-1">
+                {sessionHistory.map(entry => {
+                  const isOnScreen = projectedLabel === entry.label
+                  return (
+                    <div
+                      key={entry.label}
+                      className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-colors ${
+                        isOnScreen
+                          ? "bg-red-500/10 border border-red-500/20"
+                          : "hover:bg-accent/30 border border-transparent"
+                      }`}
+                    >
+                      <div className="shrink-0 w-2 flex justify-center">
+                        {isOnScreen
+                          ? <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse block" />
+                          : <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30 block" />
+                        }
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className={`text-[11px] font-bold truncate ${isOnScreen ? "text-red-300" : "text-foreground"}`}>
+                            {entry.verse.book_name} {entry.verse.chapter}:{entry.verse.verse}
+                          </span>
+                          <span className="text-[9px] font-semibold text-muted-foreground bg-muted px-1 py-0.5 rounded shrink-0">
+                            {entry.translationLabel}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-muted-foreground/60 truncate leading-tight">
+                          {entry.verse.text}
+                        </p>
+                      </div>
+                      {isOnScreen ? (
+                        <div className="shrink-0 flex items-center gap-1 text-[10px] font-bold text-red-400">
+                          <Radio className="h-2.5 w-2.5" />
+                          Live
+                        </div>
+                      ) : (
+                        projectionOpen && (
+                          <button
+                            onClick={() => projectVerse(entry.verse, entry.translationLabel)}
+                            className="shrink-0 px-2 py-1 rounded text-[10px] font-semibold bg-red-600 hover:bg-red-500 text-white transition-colors"
+                          >
+                            Project
+                          </button>
+                        )
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ─── RIGHT: Chapter reader ──────────────────────────────────────── */}
@@ -481,13 +656,13 @@ export default function BibleScreen({ projectionOpen }: Props) {
               <div className="h-12 shrink-0 border-b border-border flex items-center gap-3 px-5">
                 <button
                   onClick={() => setChapterResult(null)}
-                  className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
+                  className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors shrink-0"
                 >
                   <ArrowLeft className="h-3.5 w-3.5" />
                   Back
                 </button>
-                <div className="h-4 w-px bg-border" />
-                <div className="flex items-center gap-2 min-w-0">
+                <div className="h-4 w-px bg-border shrink-0" />
+                <div className="flex items-center gap-2 min-w-0 flex-1">
                   <span className="text-sm font-bold truncate">
                     {chapterResult.verses[0]?.book_name} {chapterResult.verses[0]?.chapter}
                   </span>
@@ -495,20 +670,29 @@ export default function BibleScreen({ projectionOpen }: Props) {
                     {translationLabel}
                   </span>
                   <span className="text-[11px] text-muted-foreground shrink-0">
-                    {chapterResult.verses.length} verses
+                    {chapterResult.verses.length} v
                   </span>
                 </div>
-                {!projectionOpen && (
-                  <span className="ml-auto text-[11px] text-muted-foreground/60 italic shrink-0">
-                    Go live to project
-                  </span>
-                )}
+                {/* Jump to verse */}
+                <form onSubmit={handleJumpToVerse} className="flex items-center gap-1.5 shrink-0">
+                  <span className="text-[11px] text-muted-foreground/60">v.</span>
+                  <input
+                    type="number"
+                    min="1"
+                    value={jumpInput}
+                    onChange={e => setJumpInput(e.target.value)}
+                    placeholder="—"
+                    className="w-12 h-6 px-1.5 text-xs text-center bg-input border border-border rounded focus:outline-none focus:border-primary/50 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
+                  />
+                </form>
+                <div className="h-4 w-px bg-border shrink-0" />
+                <span className="text-[11px] text-muted-foreground/50 shrink-0 flex items-center gap-0.5 font-mono">↑↓</span>
               </div>
 
               {/* Verses */}
               <div className="flex-1 overflow-y-auto px-4 py-3">
-                <div className="max-w-2xl mx-auto flex flex-col gap-0.5">
-                  {chapterResult.verses.map(verse => {
+                <div className="flex flex-col gap-0.5">
+                  {chapterResult.verses.map((verse, idx) => {
                     const label = `${verse.book_name} ${verse.chapter}:${verse.verse} ${translationLabel}`
                     return (
                       <div key={verse.verse} id={`chapter-verse-${verse.verse}`}>
@@ -516,7 +700,12 @@ export default function BibleScreen({ projectionOpen }: Props) {
                           verse={verse}
                           isLive={projectionOpen}
                           isProjected={projectedLabel === label}
-                          onProject={() => projectVerse(verse)}
+                          isActive={activeVerseIndex === idx}
+                          onProject={() => {
+                            activeIdxRef.current = idx
+                            setActiveVerseIndex(idx)
+                            projectVerse(verse)
+                          }}
                         />
                       </div>
                     )

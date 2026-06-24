@@ -3,7 +3,7 @@ import {
   Calendar, ChevronRight, Plus, Music2, CheckCircle2,
   Circle, AlertCircle, Trash2, Sparkles, Pencil, Clock,
   Timer, BookOpen, Megaphone, Film, Layers, ListMusic,
-  Play, X,
+  Play,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -77,7 +77,6 @@ export default function PlannerScreen({ onOpenService, onGoLive }: Props) {
   } = useServiceStore()
   const [showNew, setShowNew] = useState(false)
   const [editingService, setEditingService] = useState<any | null>(null)
-  const [showPreflight, setShowPreflight] = useState(false)
   const [initializing, setInitializing] = useState(false)
   const [_songCounts, setSongCounts] = useState<Record<number, number>>({})
   const [itemCounts, setItemCounts] = useState<Record<number, number>>({})
@@ -139,7 +138,7 @@ export default function PlannerScreen({ onOpenService, onGoLive }: Props) {
   }
 
   const goLive = () => {
-    setShowPreflight(true)
+    if (nextService) onGoLive(nextService.id)
   }
 
   if (services.length === 0) {
@@ -246,203 +245,6 @@ export default function PlannerScreen({ onOpenService, onGoLive }: Props) {
         />
       )}
 
-      {showPreflight && nextService && (
-        <GoLiveModal
-          service={nextService}
-          lineup={nextServiceLineup}
-          itemCount={itemCounts[nextService.id] ?? 0}
-          onCancel={() => setShowPreflight(false)}
-          onConfirm={() => { setShowPreflight(false); onGoLive(nextService.id) }}
-        />
-      )}
-    </div>
-  )
-}
-
-// ── Go Live Pre-Flight Modal ─────────────────────────────────────────────────
-
-function GoLiveModal({
-  service, lineup, itemCount, onCancel, onConfirm,
-}: {
-  service: any
-  lineup: any[]
-  itemCount: number
-  onCancel: () => void
-  onConfirm: () => void
-}) {
-  const [displays, setDisplays] = useState<{ id: number; label: string; width: number; height: number; isPrimary: boolean }[]>([])
-  const [selectedDisplayId, setSelectedDisplayId] = useState<number | undefined>(undefined)
-  const [confidenceOn, setConfidenceOn] = useState(false)
-  const [firstSongData, setFirstSongData] = useState<any | null>(null)
-
-  useEffect(() => {
-    window.worshipsync.window.getDisplays().then((d: any[]) => {
-      setDisplays(d)
-      const ext = d.find((x: any) => !x.isPrimary)
-      setSelectedDisplayId((ext ?? d[0])?.id)
-    }).catch(() => {})
-
-    // Load first real song for slide preview
-    const first = lineup.find(i => i.itemType === 'song' && i.song)
-    if (first?.song?.id) {
-      window.worshipsync.songs.getById(first.song.id).then((s: any) => {
-        if (s) setFirstSongData(s)
-      }).catch(() => {})
-    }
-  }, [])
-
-  const canGoLive = itemCount > 0
-
-  // Build first slide preview lines from first song's sections
-  const firstSlideLines = useMemo(() => {
-    if (!firstSongData?.sections?.length) return []
-    const firstSection = firstSongData.sections[0]
-    const lines = (firstSection.lyrics || '').split('\n').filter(Boolean)
-    return lines.slice(0, 2)
-  }, [firstSongData])
-
-  const firstItemTitle = lineup.find(i => i.itemType !== 'section')?.song?.title ?? lineup.find(i => i.itemType !== 'section')?.title ?? '—'
-
-  const checks = [
-    { label: `${itemCount} item${itemCount !== 1 ? 's' : ''} in lineup`, done: itemCount > 0 },
-    { label: 'Output display selected', done: selectedDisplayId !== undefined },
-    { label: 'Confidence monitor', done: confidenceOn, optional: true },
-  ]
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onCancel}>
-      <div
-        className="bg-card border border-border rounded-2xl shadow-2xl w-[780px] max-h-[90vh] flex flex-col overflow-hidden"
-        onClick={e => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-border flex items-center justify-between shrink-0">
-          <div>
-            <h2 className="text-base font-bold">Ready to go live?</h2>
-            <p className="text-sm text-muted-foreground mt-0.5">{service.label} · {formatDate(service.date)}</p>
-          </div>
-          <button onClick={onCancel} className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        {/* Body */}
-        <div className="flex flex-1 min-h-0 overflow-hidden">
-
-          {/* Left: checklist + controls */}
-          <div className="w-[300px] shrink-0 border-r border-border flex flex-col gap-5 p-5 overflow-y-auto">
-
-            {/* Checklist */}
-            <div className="flex flex-col gap-2.5">
-              <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Pre-Flight Checks</span>
-              {checks.map(c => (
-                <div key={c.label} className="flex items-center gap-2.5">
-                  {c.done
-                    ? <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
-                    : c.optional
-                      ? <Circle className="h-4 w-4 text-muted-foreground/40 shrink-0" />
-                      : <AlertCircle className="h-4 w-4 text-amber-400 shrink-0" />
-                  }
-                  <span className={`text-sm ${c.done ? 'text-foreground' : c.optional ? 'text-muted-foreground' : 'text-amber-400'}`}>
-                    {c.label}
-                    {c.optional && <span className="text-xs text-muted-foreground ml-1">(optional)</span>}
-                  </span>
-                </div>
-              ))}
-            </div>
-
-            <div className="h-px bg-border" />
-
-            {/* Output display */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Output Display</label>
-              {displays.length > 0 ? (
-                <select
-                  value={selectedDisplayId ?? ''}
-                  onChange={e => setSelectedDisplayId(Number(e.target.value))}
-                  className="w-full bg-input border border-border rounded-md px-2.5 py-1.5 text-[13px] text-foreground cursor-pointer outline-none focus:border-primary/50"
-                >
-                  {displays.map(d => (
-                    <option key={d.id} value={d.id}>
-                      {d.label}{d.isPrimary ? ' (Primary)' : ''} — {d.width}×{d.height}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <p className="text-xs text-muted-foreground">No external displays detected.</p>
-              )}
-            </div>
-
-            {/* Confidence monitor toggle */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Confidence Monitor</label>
-              <button
-                onClick={() => setConfidenceOn(v => !v)}
-                className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg border transition-all text-left ${
-                  confidenceOn
-                    ? 'bg-amber-500/10 border-amber-500/40 text-amber-300'
-                    : 'bg-muted/30 border-border text-muted-foreground hover:bg-muted hover:text-foreground'
-                }`}
-              >
-                <span className={`h-2 w-2 rounded-full shrink-0 ${confidenceOn ? 'bg-amber-400' : 'bg-muted-foreground/30'}`} />
-                <span className="text-[13px] font-medium flex-1">{confidenceOn ? 'Will open on start' : 'Off — click to enable'}</span>
-                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${confidenceOn ? 'bg-amber-500/20 text-amber-400' : 'bg-muted text-muted-foreground'}`}>
-                  {confidenceOn ? 'ON' : 'OFF'}
-                </span>
-              </button>
-            </div>
-          </div>
-
-          {/* Right: first slide preview */}
-          <div className="flex-1 flex flex-col items-center justify-center gap-3 p-6 bg-background/40">
-            <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">First Slide</span>
-            <div className="w-full max-w-md flex flex-col gap-2">
-              <div
-                className="relative overflow-hidden rounded-xl border border-border bg-black shadow-[0_0_40px_rgba(0,0,0,0.5)]"
-                style={{ aspectRatio: '16/9', containerType: 'inline-size' }}
-              >
-                {firstSlideLines.length > 0 ? (
-                  <div className="absolute inset-0 flex items-center justify-center px-6">
-                    <p className="text-center font-bold leading-snug text-white whitespace-pre-wrap" style={{ fontSize: '5cqw' }}>
-                      {firstSlideLines.join('\n')}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <p className="text-[12px] text-muted-foreground/50 italic">{firstItemTitle}</p>
-                  </div>
-                )}
-              </div>
-              <p className="text-center text-[11px] text-muted-foreground">{firstItemTitle}</p>
-            </div>
-            <p className="text-[11px] text-muted-foreground/50 text-center max-w-xs">
-              This is what the congregation will see the moment you go live.
-            </p>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="px-5 py-4 border-t border-border shrink-0 flex items-center gap-3">
-          <button onClick={onCancel} className="px-4 py-2 rounded-lg text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors">
-            Cancel
-          </button>
-          <div className="flex-1" />
-          {!canGoLive && (
-            <span className="text-xs text-amber-400 flex items-center gap-1.5">
-              <AlertCircle className="h-3.5 w-3.5" /> Add items in the Builder first
-            </span>
-          )}
-          <button
-            onClick={onConfirm}
-            disabled={!canGoLive}
-            className="flex items-center gap-2.5 px-6 py-2.5 rounded-xl text-sm font-black uppercase tracking-wider transition-all disabled:opacity-40 disabled:cursor-not-allowed
-              bg-green-600 hover:bg-green-500 text-white shadow-[0_0_16px_rgba(34,197,94,0.25)] hover:shadow-[0_0_24px_rgba(34,197,94,0.35)] active:scale-[0.98]"
-          >
-            <Play className="h-4 w-4 fill-white" />
-            Start Live
-          </button>
-        </div>
-      </div>
     </div>
   )
 }

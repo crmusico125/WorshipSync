@@ -1,6 +1,8 @@
 import { useCallback, useState, useEffect } from "react"
 import BuilderScreen from "../builder/BuilderScreen"
 import PresenterDashboard from "../presenter/PresenterDashboard"
+import GoLiveModal from "../../components/GoLiveModal"
+import type { GoLiveConfirmOpts } from "../../components/GoLiveModal"
 
 export type ServiceMode = "prepare" | "live"
 
@@ -18,6 +20,7 @@ export default function ServiceScreen({
   onProjectionChange,
 }: Props) {
   const [mode, setMode] = useState<ServiceMode>(initialMode)
+  const [showPreflight, setShowPreflight] = useState(false)
 
   // When projection opens, switch to present view automatically
   useEffect(() => {
@@ -27,8 +30,18 @@ export default function ServiceScreen({
   // Intentionally NOT reverting to "prepare" when projection closes —
   // the operator stays in whatever view they were in and can freely switch.
 
-  const handleGoLive = useCallback(() => {
-    window.worshipsync.window.openProjection()
+  const handleConfirmGoLive = useCallback(async (opts: GoLiveConfirmOpts) => {
+    setShowPreflight(false)
+    if (opts.displayId !== undefined) {
+      await window.worshipsync.appState.set({ outputDisplayId: opts.displayId })
+    }
+    window.worshipsync.window.openProjection(opts.displayId)
+    if (opts.confidenceOn) {
+      if (opts.confidenceDisplayId !== undefined) {
+        window.worshipsync.appState.set({ confidenceDisplayId: opts.confidenceDisplayId }).catch(() => {})
+      }
+      window.worshipsync.confidence.open(opts.confidenceDisplayId)
+    }
     onProjectionChange(true)
     setMode("live")
   }, [onProjectionChange])
@@ -60,6 +73,14 @@ export default function ServiceScreen({
         </div>
       )}
 
+      {showPreflight && (
+        <GoLiveModal
+          serviceId={serviceId}
+          onCancel={() => setShowPreflight(false)}
+          onConfirm={handleConfirmGoLive}
+        />
+      )}
+
       <div className="flex-1 overflow-hidden min-h-0">
         {mode === "live" ? (
           <PresenterDashboard
@@ -71,7 +92,7 @@ export default function ServiceScreen({
         ) : (
           <BuilderScreen
             serviceId={serviceId}
-            onGoLive={handleGoLive}
+            onGoLive={() => setShowPreflight(true)}
             projectionOpen={projectionOpen}
             onReturnToPresenter={projectionOpen ? handleReturnToPresenter : undefined}
           />

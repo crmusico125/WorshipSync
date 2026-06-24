@@ -417,11 +417,6 @@ export default function PresenterDashboard({
       // if the display isn't available yet.
       setSelectedDisplayId(savedMain);
       setSelectedConfidenceDisplayId(savedConf);
-      // Auto-open confidence monitor if it was on when the operator last closed the app
-      if (state.confidenceEnabled === true && savedConf !== undefined) {
-        window.worshipsync.confidence.open(savedConf);
-        setConfidenceOpen(true);
-      }
       // Restore service time settings
       if (state.serviceTime)        setServiceTime(state.serviceTime as string);
       if (state.serviceTimezone)    setServiceTimezone(state.serviceTimezone as string);

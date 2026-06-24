@@ -11,6 +11,8 @@ import AnalyticsScreen from "./features/analytics/AnalyticsScreen"
 import SettingsScreen from "./features/settings/SettingsScreen"
 import OverviewScreen from "./features/planner/OverviewScreen"
 import BibleScreen from "./features/bible/BibleScreen"
+import GoLiveModal from "./components/GoLiveModal"
+import type { GoLiveConfirmOpts } from "./components/GoLiveModal"
 import { useServiceStore } from "./store/useServiceStore"
 
 export default function App() {
@@ -18,6 +20,7 @@ export default function App() {
   const [projectionOpen, setProjectionOpen] = useState(false)
   const [activeServiceId, setActiveServiceId] = useState<number | null>(null)
   const [serviceLaunchMode, setServiceLaunchMode] = useState<ServiceMode>("prepare")
+  const [pendingGoLiveId, setPendingGoLiveId] = useState<number | null>(null)
   const [liveRuntime, setLiveRuntime] = useState("00:00:00")
   const liveStartRef = useRef<number>(0)
   const liveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -104,10 +107,17 @@ export default function App() {
     window.worshipsync.appState.set({ lastServiceId: serviceId })
   }, [])
 
-  // Open a service directly in live (presenter) mode
-  const handleOpenServiceLive = useCallback(async (serviceId: number) => {
+  // Show the pre-flight modal before going live from Overview / Planner
+  const handleRequestGoLive = useCallback((serviceId: number) => {
+    setPendingGoLiveId(serviceId)
+  }, [])
+
+  // Called by GoLiveModal on confirm — actually opens projection with chosen routing
+  const handleConfirmGoLive = useCallback(async (opts: GoLiveConfirmOpts) => {
+    const serviceId = pendingGoLiveId
+    if (serviceId === null) return
+    setPendingGoLiveId(null)
     setActiveServiceId(serviceId)
-    // Pre-select the service so PresenterDashboard never sees a null selectedService
     const { loadServices, selectService, services } = useServiceStore.getState()
     let list = services
     let svc = list.find((s) => s.id === serviceId)
@@ -117,12 +127,21 @@ export default function App() {
       svc = list.find((s) => s.id === serviceId)
     }
     if (svc) await selectService(svc)
-    window.worshipsync.window.openProjection()
+    if (opts.displayId !== undefined) {
+      await window.worshipsync.appState.set({ outputDisplayId: opts.displayId })
+    }
+    window.worshipsync.window.openProjection(opts.displayId)
+    if (opts.confidenceOn) {
+      if (opts.confidenceDisplayId !== undefined) {
+        window.worshipsync.appState.set({ confidenceDisplayId: opts.confidenceDisplayId }).catch(() => {})
+      }
+      window.worshipsync.confidence.open(opts.confidenceDisplayId)
+    }
     setProjectionOpen(true)
     setServiceLaunchMode("live")
     setCurrentScreen("service")
     window.worshipsync.appState.set({ lastServiceId: serviceId })
-  }, [])
+  }, [pendingGoLiveId])
 
   return (
     <div className="h-screen flex bg-background text-foreground">
@@ -167,7 +186,7 @@ export default function App() {
         <div className="flex-1 overflow-hidden">
           {currentScreen === "overview" && (
             <OverviewScreen
-              onGoLive={handleOpenServiceLive}
+              onGoLive={handleRequestGoLive}
               onOpenBuilder={handleOpenService}
               onNavigate={setCurrentScreen}
               projectionOpen={projectionOpen}
@@ -177,7 +196,7 @@ export default function App() {
           {currentScreen === "planner" && (
             <PlannerScreen
               onOpenService={handleOpenService}
-              onGoLive={handleOpenServiceLive}
+              onGoLive={handleRequestGoLive}
             />
           )}
           {/* ServiceScreen stays mounted once a service is active so mode/state survive navigation */}
@@ -199,6 +218,13 @@ export default function App() {
           {currentScreen === "settings"  && <SettingsScreen />}
         </div>
       </div>
+      {pendingGoLiveId !== null && (
+        <GoLiveModal
+          serviceId={pendingGoLiveId}
+          onCancel={() => setPendingGoLiveId(null)}
+          onConfirm={handleConfirmGoLive}
+        />
+      )}
     </div>
   )
 }

@@ -14,9 +14,11 @@ export function createConfidenceWindow(displayId?: number): void {
   setConfidenceWasOpen(false)
 
   const displays = screen.getAllDisplays()
-  const target = displayId
+  const primaryId = screen.getPrimaryDisplay().id
+  // Never open fullscreen on the primary display — that traps the operator
+  const target = (displayId && displayId !== primaryId)
     ? displays.find(d => d.id === displayId)
-    : displays.find(d => d.id !== screen.getPrimaryDisplay().id)
+    : displays.find(d => d.id !== primaryId)
   const targetDisplay = target ?? screen.getPrimaryDisplay()
   const { x, y, width, height } = targetDisplay.bounds
 

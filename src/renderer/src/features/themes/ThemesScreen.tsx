@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Select } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import BackgroundPickerPanel from "../../components/BackgroundPickerPanel"
+import { toFileUrl } from "../../lib/utils"
 
 interface ThemeSettings {
   fontFamily: string
@@ -384,7 +385,7 @@ export default function ThemesScreen() {
                       <div
                         className="absolute inset-0 bg-cover bg-center"
                         style={{
-                          backgroundImage: `url("file://${encodeURI(settings.backgroundPath)}")`,
+                          backgroundImage: `url("${toFileUrl(settings.backgroundPath)}")`,
                         }}
                       />
                     )

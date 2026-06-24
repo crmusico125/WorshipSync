@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { SlidePayload } from "../../../../../shared/types";
 import AnnouncementCardsView from "../../components/AnnouncementCardsView";
+import { toFileUrl } from "../../lib/utils";
 
 type DisplayState = "slide" | "blank" | "logo" | "countdown";
 
@@ -88,7 +89,7 @@ function SlideFrame({
               objectFit: videoObjectFit,
               background: "#000",
             }}
-            src={`file://${encodeURI(bp)}`}
+            src={`${toFileUrl(bp)}`}
             onTimeUpdate={() => onVideoProgress?.()}
             onPlay={() => onVideoProgress?.(true)}
             onPause={() => onVideoProgress?.(true)}
@@ -100,7 +101,7 @@ function SlideFrame({
             style={{
               position: "absolute", inset: 0, zIndex: 1,
               backgroundColor: "#000",
-              backgroundImage: `url("file://${encodeURI(bp)}")`,
+              backgroundImage: `url("${toFileUrl(bp)}")`,
               backgroundSize: imgBgSize,
               backgroundPosition: "center",
               backgroundRepeat: "no-repeat",

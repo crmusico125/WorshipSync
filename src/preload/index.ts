@@ -220,6 +220,10 @@ contextBridge.exposeInMainWorld('worshipsync', {
       ipcRenderer.on('pwa:countdownCmd', (_e, action) => cb(action))
       return () => ipcRenderer.removeAllListeners('pwa:countdownCmd')
     },
+    onProjectScripture: (cb: (data: { text: string; reference: string; translationLabel: string }) => void) => {
+      ipcRenderer.on('pwa:projectScripture', (_e, data) => cb(data))
+      return () => ipcRenderer.removeAllListeners('pwa:projectScripture')
+    },
   },
 })
 

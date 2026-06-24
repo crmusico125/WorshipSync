@@ -14,6 +14,8 @@ import {
 import { broadcastAll, broadcastPwa, formatDuration } from '../../lib/broadcast'
 import { STAGE_DISPLAY_HTML } from './html'
 import { PWA_CONTROLLER_HTML } from '../pwa/html'
+import { fetchBibleTranslations, searchPassage, COMMON_ABBREVS } from '../pwa/bibleProxy'
+import { readAppState } from '../app-state/handlers'
 
 function parseDeviceLabel(ua: string): string {
   if (/iPhone/i.test(ua))                      return 'iPhone'
@@ -116,6 +118,38 @@ export function startStageServer(port = 4040, pin?: string | null): Promise<bool
         })
         res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' })
         res.end(payload)
+
+      } else if (req.url === '/controller/bible-translations') {
+        ;(async () => {
+          const cors = { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' }
+          try {
+            const apiKey = (readAppState().bibleApiKey as string | null) ?? process.env['BIBLE_API_KEY'] ?? null
+            const translations = await fetchBibleTranslations(apiKey)
+            res.writeHead(200, cors)
+            res.end(JSON.stringify({ translations, commonAbbrevs: COMMON_ABBREVS }))
+          } catch (err) {
+            res.writeHead(500, cors); res.end(JSON.stringify({ error: String(err) }))
+          }
+        })()
+
+      } else if (req.url?.startsWith('/controller/bible-search')) {
+        ;(async () => {
+          const urlObj = new URL(req.url!, 'http://localhost')
+          const ref = urlObj.searchParams.get('ref') ?? ''
+          const translationId = urlObj.searchParams.get('translation') ?? 'web'
+          const cors = { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-cache' }
+          if (!ref) {
+            res.writeHead(400, cors); res.end(JSON.stringify({ error: 'ref required' })); return
+          }
+          try {
+            const apiKey = (readAppState().bibleApiKey as string | null) ?? process.env['BIBLE_API_KEY'] ?? null
+            const result = await searchPassage(ref, translationId, apiKey)
+            res.writeHead(200, cors)
+            res.end(JSON.stringify(result))
+          } catch (err) {
+            res.writeHead(400, cors); res.end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }))
+          }
+        })()
 
       } else if (req.url === '/controller/cmd' && req.method === 'POST') {
         handleControllerCommand(req, res)
@@ -281,6 +315,13 @@ function handleControllerCommand(req: IncomingMessage, res: ServerResponse): voi
             action: cmd.action,
             lineupItemId: cmd.lineupItemId as number,
           })
+        }
+        break
+      }
+      case 'project-scripture': {
+        const { text, reference, translationLabel } = cmd as { text: string; reference: string; translationLabel: string }
+        if (windows.control && !windows.control.isDestroyed()) {
+          windows.control.webContents.send('pwa:projectScripture', { text, reference, translationLabel })
         }
         break
       }

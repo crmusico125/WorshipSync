@@ -206,6 +206,7 @@ declare global {
         onVideoCmd: (cb: (data: { action: string; lineupItemId: number }) => void) => () => void
         broadcastVideoState: (state: { isPlaying: boolean; currentTime: number; duration: number; lineupItemId: number } | null) => void
         onCountdownCmd: (cb: (action: string) => void) => () => void
+        onProjectScripture: (cb: (data: { text: string; reference: string; translationLabel: string }) => void) => () => void
       }
     }
   }

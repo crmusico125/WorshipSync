@@ -47,6 +47,7 @@ import EditLyricsModal from "../../components/EditLyricsModal";
 import type { AnnouncementCard } from "../../../../../shared/types";
 import { fetchBiblePassage, bibleResultToScriptureRef, FREE_TRANSLATIONS, fetchApiBibleTranslations, type BibleTranslation } from "../../lib/bibleApi";
 import TranslationPicker from "../../components/TranslationPicker";
+import { toFileUrl } from "../../lib/utils";
 
 
 // ── Audio singleton — survives PresenterDashboard unmounts ───────────────────
@@ -865,7 +866,7 @@ export default function PresenterDashboard({
       lines: [],
       songTitle: song.title,
       artist: song.artist,
-      sectionLabel: currentSlide?.sectionLabel ?? "",
+      sectionLabel: "",
       slideIndex: currentSlide?.globalIndex ?? 0,
       totalSlides: song.slides.length,
       backgroundPath: bg,
@@ -1338,6 +1339,29 @@ export default function PresenterDashboard({
     pendingVideoPlayRef.current = null
     requestAnimationFrame(() => triggerVideoPlayRef.current?.())
   }, [selectedSongIdx, liveSongs])
+
+  // Handle scripture projection from PWA controller
+  useEffect(() => {
+    const cleanup = window.worshipsync.pwa?.onProjectScripture?.((data: { text: string; reference: string; translationLabel: string }) => {
+      const bg = defaultScriptureThemeBgRef.current ?? defaultThemeBg ?? undefined
+      let theme = DEFAULT_THEME
+      if (defaultTheme?.settings) {
+        try { theme = { ...DEFAULT_THEME, ...JSON.parse(defaultTheme.settings) } } catch {}
+      }
+      window.worshipsync.slide.show({
+        lines: [data.text],
+        songTitle: data.reference.split(':')[0]?.trim() ?? data.reference,
+        sectionLabel: `${data.reference} ${data.translationLabel}`,
+        sectionType: 'verse',
+        itemType: 'scripture',
+        slideIndex: 0,
+        totalSlides: 1,
+        backgroundPath: bg,
+        theme: { ...theme, fontSize: 96, maxLinesPerSlide: 1 },
+      })
+    })
+    return () => cleanup?.()
+  }, [defaultTheme, defaultThemeBg])
 
   // Broadcast current time every second while playing so PWA progress bar stays in sync
   useEffect(() => {
@@ -2266,7 +2290,7 @@ export default function PresenterDashboard({
                     <div className="relative rounded-xl overflow-hidden bg-black border border-border shadow-md" style={{ aspectRatio: "16/9" }}>
                       <video
                         ref={videoPreviewRef}
-                        src={`file://${encodeURI(bg)}`}
+                        src={`${toFileUrl(bg)}`}
                         className="w-full h-full object-cover"
                         muted playsInline preload="auto"
                         loop={videoLoop}
@@ -2366,7 +2390,7 @@ export default function PresenterDashboard({
                   // New file — tear down any previous singleton
                   if (_audio.el) { _audio.el.pause(); }
                   if (_audio.ctx) { _audio.ctx.close(); }
-                  audioRef.current = new Audio(`file://${encodeURI(bg)}`);
+                  audioRef.current = new Audio(`${toFileUrl(bg)}`);
                   audioRef.current.loop = audioLoop;
                   audioRef.current.onloadedmetadata = () => setAudioDuration(audioRef.current?.duration ?? 0);
                   audioRef.current.onended = () => {
@@ -2596,7 +2620,7 @@ export default function PresenterDashboard({
                   >
                     {imgPath ? (
                       <img
-                        src={`file://${imgPath}`}
+                        src={`${toFileUrl(imgPath)}`}
                         className="absolute inset-0 w-full h-full"
                         style={{ objectFit: previewObjectFit }}
                         alt=""
@@ -2632,10 +2656,10 @@ export default function PresenterDashboard({
                   effectiveBg.startsWith("color:") ? (
                     <div className="absolute inset-0" style={{ background: effectiveBg.replace("color:", "") }} />
                   ) : /\.(mp4|webm|mov)$/i.test(effectiveBg) ? (
-                    <video src={`file://${encodeURI(effectiveBg)}`} className="absolute inset-0 w-full h-full object-cover" muted preload="metadata" />
+                    <video src={`${toFileUrl(effectiveBg)}`} className="absolute inset-0 w-full h-full object-cover" muted preload="metadata" />
                   ) : (
                     <>
-                      <img src={`file://${effectiveBg}`} className="absolute inset-0 w-full h-full object-cover" alt="" />
+                      <img src={`${toFileUrl(effectiveBg)}`} className="absolute inset-0 w-full h-full object-cover" alt="" />
                       <div className="absolute inset-0" style={{ background: `rgba(0,0,0,${effectiveTheme.overlayOpacity / 100})` }} />
                     </>
                   )
@@ -2657,7 +2681,7 @@ export default function PresenterDashboard({
                       </div>
                       <p className="text-center font-semibold relative z-10 shrink-0 truncate"
                         style={{ fontSize: "2.2cqw", color: "rgba(255,255,255,0.65)", fontFamily: effectiveTheme.fontFamily }}>
-                        {currentSlide.sectionLabel}
+                        {isTextCleared ? "" : currentSlide.sectionLabel}
                       </p>
                     </div>
                   ) : (
@@ -2770,10 +2794,10 @@ export default function PresenterDashboard({
                             bg.startsWith("color:") ? (
                               <div className="absolute inset-0" style={{ background: bg.replace("color:", "") }} />
                             ) : /\.(mp4|webm|mov)$/i.test(bg) ? (
-                              <video src={`file://${encodeURI(bg)}`} className="absolute inset-0 w-full h-full object-cover" muted preload="metadata" />
+                              <video src={`${toFileUrl(bg)}`} className="absolute inset-0 w-full h-full object-cover" muted preload="metadata" />
                             ) : (
                               <>
-                                <img src={`file://${bg}`} className="absolute inset-0 w-full h-full object-cover" alt="" />
+                                <img src={`${toFileUrl(bg)}`} className="absolute inset-0 w-full h-full object-cover" alt="" />
                                 <div className="absolute inset-0" style={{ background: `rgba(0,0,0,${effectiveTheme.overlayOpacity / 100})` }} />
                               </>
                             )
@@ -2943,7 +2967,7 @@ export default function PresenterDashboard({
                     <div className="absolute inset-0" style={{ background: nextUpBg.replace("color:", "") }} />
                   ) : (
                     <>
-                      <img src={`file://${nextUpBg}`} className="absolute inset-0 w-full h-full object-cover" alt="" />
+                      <img src={`${toFileUrl(nextUpBg)}`} className="absolute inset-0 w-full h-full object-cover" alt="" />
                       <div className="absolute inset-0" style={{ background: `rgba(0,0,0,${nextUpTheme.overlayOpacity / 100})` }} />
                     </>
                   )
@@ -3067,7 +3091,7 @@ export default function PresenterDashboard({
                 effectiveBg.startsWith("color:") ? (
                   <div className="w-full h-full" style={{ background: effectiveBg.replace("color:", "") }} />
                 ) : (
-                  <img src={`file://${effectiveBg}`} className="w-full h-full object-cover" alt="" />
+                  <img src={`${toFileUrl(effectiveBg)}`} className="w-full h-full object-cover" alt="" />
                 )
               ) : (
                 <ImageIcon className="h-4 w-4 text-muted-foreground/40" />
@@ -3168,10 +3192,10 @@ export default function PresenterDashboard({
                 liveBg.startsWith("color:") ? (
                   <div className="absolute inset-0" style={{ background: liveBg.replace("color:", "") }} />
                 ) : /\.(mp4|webm|mov)$/i.test(liveBg) ? (
-                  <video src={`file://${encodeURI(liveBg)}`} className="absolute inset-0 w-full h-full object-cover" muted preload="metadata" />
+                  <video src={`${toFileUrl(liveBg)}`} className="absolute inset-0 w-full h-full object-cover" muted preload="metadata" />
                 ) : (
                   <>
-                    <img src={`file://${liveBg}`} className="absolute inset-0 w-full h-full object-cover" alt="" />
+                    <img src={`${toFileUrl(liveBg)}`} className="absolute inset-0 w-full h-full object-cover" alt="" />
                     <div className="absolute inset-0" style={{ background: `rgba(0,0,0,${liveTheme.overlayOpacity / 100})` }} />
                   </>
                 )
@@ -3721,7 +3745,7 @@ function PreLiveIdle({
               >
                 {firstSlide.song.backgroundPath && (
                   <>
-                    <img src={`file://${firstSlide.song.backgroundPath}`} className="absolute inset-0 w-full h-full object-cover" alt="" />
+                    <img src={`${toFileUrl(firstSlide.song.backgroundPath)}`} className="absolute inset-0 w-full h-full object-cover" alt="" />
                     <div className="absolute inset-0" style={{ background: "rgba(0,0,0,0.45)" }} />
                   </>
                 )}

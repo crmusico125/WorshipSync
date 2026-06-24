@@ -26,7 +26,7 @@ import EditLyricsModal from "../../components/EditLyricsModal"
 import BackgroundPickerPanel from "../../components/BackgroundPickerPanel"
 import { parseBibleGatewayText } from "../../lib/parseBibleGateway"
 import { fetchBiblePassage, bibleResultToScriptureRef, FREE_TRANSLATIONS, fetchApiBibleTranslations, type BibleTranslation } from "../../lib/bibleApi"
-import { fmtDur } from "../../lib/utils"
+import { fmtDur, toFileUrl } from "../../lib/utils"
 import {
   TemplateManagerModal, getSectionColor,
   type SetlistTemplate, type SetlistTemplateItem,
@@ -1242,7 +1242,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
                     <div className="flex-1 flex flex-col items-center justify-center p-8 bg-muted/20 overflow-y-auto">
                       <div className="w-full max-w-2xl flex flex-col gap-5">
                         <div className="relative rounded-xl overflow-hidden bg-black border border-border shadow-md" style={{ aspectRatio: '16/9' }}>
-                          <video ref={previewVideoRef} src={`file://${encodeURI(mediaPath)}`} className="w-full h-full object-cover" playsInline preload="auto"
+                          <video ref={previewVideoRef} src={`${toFileUrl(mediaPath)}`} className="w-full h-full object-cover" playsInline preload="auto"
                             onLoadedMetadata={() => { const v = previewVideoRef.current; if (!v) return; setPreviewVideoDuration(v.duration); v.currentTime = 0.001 }}
                             onEnded={() => { setPreviewVideoPlaying(false); setPreviewVideoTime(0); if (previewVideoTimerRef.current) { clearInterval(previewVideoTimerRef.current); previewVideoTimerRef.current = null } }} />
                         </div>
@@ -1284,7 +1284,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
                 }
                 const ensureAudio = () => {
                   if (!previewAudioRef.current) {
-                    previewAudioRef.current = new Audio(`file://${encodeURI(mediaPath)}`)
+                    previewAudioRef.current = new Audio(`${toFileUrl(mediaPath)}`)
                     previewAudioRef.current.onloadedmetadata = () => setPreviewAudioDuration(previewAudioRef.current?.duration ?? 0)
                     previewAudioRef.current.onended = () => { setPreviewAudioPlaying(false); setPreviewAudioTime(0); if (previewAudioTimerRef.current) { clearInterval(previewAudioTimerRef.current); previewAudioTimerRef.current = null } stopViz() }
                     const ctx = new AudioContext(); const analyser = ctx.createAnalyser(); analyser.fftSize = 256
@@ -1367,7 +1367,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
                       <div className="rounded-xl overflow-hidden border border-border bg-black shadow-md w-full" style={{ aspectRatio: '16/9' }}>
                         {mediaPath ? (
                           <img
-                            src={`file://${mediaPath}`}
+                            src={`${toFileUrl(mediaPath)}`}
                             className="w-full h-full"
                             style={{ objectFit: scaleMode === 'stretch' ? 'fill' : scaleMode }}
                             alt=""
@@ -1914,7 +1914,7 @@ function ItemSettingsPanel({
             </div>
             <div className="rounded-lg overflow-hidden border border-border bg-gray-950 relative" style={{ aspectRatio: "16/9", containerType: "inline-size" }}>
               {/* Background */}
-              {bg && <img src={`file://${bg}`} className="absolute inset-0 w-full h-full object-cover" alt="" />}
+              {bg && <img src={`${toFileUrl(bg)}`} className="absolute inset-0 w-full h-full object-cover" alt="" />}
               {bg && <div className="absolute inset-0" style={{ background: `rgba(0,0,0,${theme.overlayOpacity / 100})` }} />}
 
               {currentItem?.itemType === 'announcement' ? (() => {
@@ -1987,7 +1987,7 @@ function ItemSettingsPanel({
                   bg.startsWith("color:") ? (
                     <div className="w-full h-full" style={{ background: bg.replace("color:", "") }} />
                   ) : (
-                    <img src={`file://${bg}`} className="w-full h-full object-cover" alt="" />
+                    <img src={`${toFileUrl(bg)}`} className="w-full h-full object-cover" alt="" />
                   )
                 ) : (
                   <ImageIcon className="h-3.5 w-3.5 text-muted-foreground/40" />

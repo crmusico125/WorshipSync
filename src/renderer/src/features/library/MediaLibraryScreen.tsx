@@ -9,6 +9,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
+import { toFileUrl } from "../../lib/utils"
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -791,7 +792,7 @@ function FolderCard({
         {thumbnail ? (
           <div
             className="absolute inset-0 bg-cover bg-center opacity-30"
-            style={{ backgroundImage: `url("file://${encodeURI(thumbnail)}")` }}
+            style={{ backgroundImage: `url("${toFileUrl(thumbnail)}")` }}
           />
         ) : null}
         <FolderIcon className="h-10 w-10 text-muted-foreground/60 relative z-10" />
@@ -868,7 +869,7 @@ function MediaCard({
       {/* Background / preview */}
       {isVideo ? (
         <video
-          src={`file://${encodeURI(item.path)}`}
+          src={`${toFileUrl(item.path)}`}
           className="absolute inset-0 w-full h-full object-cover"
           muted preload="metadata"
         />
@@ -885,7 +886,7 @@ function MediaCard({
       ) : (
         <div
           className="absolute inset-0 bg-cover bg-center"
-          style={{ backgroundImage: `url("file://${encodeURI(item.path)}")` }}
+          style={{ backgroundImage: `url("${toFileUrl(item.path)}")` }}
         />
       )}
 
@@ -1078,13 +1079,13 @@ function MediaDetailPanel({
       <div className="p-3 border-b border-border">
         <div className="relative rounded-lg overflow-hidden border border-border" style={{ aspectRatio: "16/9" }}>
           {isVideoFile(item.path) ? (
-            <video src={`file://${item.path}`} className="absolute inset-0 w-full h-full object-cover" muted autoPlay loop playsInline />
+            <video src={`${toFileUrl(item.path)}`} className="absolute inset-0 w-full h-full object-cover" muted autoPlay loop playsInline />
           ) : isAudioFile(item.path) ? (
             <div className="absolute inset-0 bg-muted flex flex-col items-center justify-center gap-2">
               <Volume2 className="h-8 w-8 text-muted-foreground" />
             </div>
           ) : (
-            <img src={`file://${item.path}`} className="absolute inset-0 w-full h-full object-contain bg-black" alt="" />
+            <img src={`${toFileUrl(item.path)}`} className="absolute inset-0 w-full h-full object-contain bg-black" alt="" />
           )}
         </div>
       </div>

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { Search, Music2, Timer, Upload, Trash2, Check, Image as ImageIcon, Play, Volume2, Calendar, BookOpen, ChevronDown, ChevronUp, Megaphone } from "lucide-react"
 import { parseBibleGatewayText } from "../lib/parseBibleGateway"
+import { toFileUrl } from "../lib/utils"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
@@ -399,7 +400,7 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScri
                                   </div>
                                 ) : isVideo ? (
                                   <video
-                                    src={`file://${encodeURI(item.path)}`}
+                                    src={`${toFileUrl(item.path)}`}
                                     className="absolute inset-0 w-full h-full object-cover"
                                     muted
                                     preload="metadata"
@@ -407,7 +408,7 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScri
                                 ) : (
                                   <div
                                     className="absolute inset-0 bg-cover bg-center"
-                                    style={{ backgroundImage: `url("file://${encodeURI(item.path)}")` }}
+                                    style={{ backgroundImage: `url("${toFileUrl(item.path)}")` }}
                                   />
                                 )}
                                 <div className={`absolute inset-0 transition-colors ${isSel ? "bg-black/10" : "bg-black/0 group-hover:bg-black/20"}`} />
@@ -453,7 +454,7 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScri
                         <div className="p-3 border-b border-border shrink-0">
                           <div className="rounded-lg overflow-hidden border border-border" style={{ aspectRatio: "16/9" }}>
                             {/\.(mp4|webm|mov)$/i.test(item.path) ? (
-                              <video src={`file://${item.path}`} className="w-full h-full object-cover" muted autoPlay loop playsInline />
+                              <video src={`${toFileUrl(item.path)}`} className="w-full h-full object-cover" muted autoPlay loop playsInline />
                             ) : /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(item.path) ? (
                               <div className="w-full h-full bg-muted flex flex-col items-center justify-center gap-2">
                                 <Volume2 className="h-8 w-8 text-muted-foreground" />
@@ -462,7 +463,7 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScri
                                 </span>
                               </div>
                             ) : (
-                              <img src={`file://${item.path}`} className="w-full h-full object-cover" alt="" />
+                              <img src={`${toFileUrl(item.path)}`} className="w-full h-full object-cover" alt="" />
                             )}
                           </div>
                         </div>

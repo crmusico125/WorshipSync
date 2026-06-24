@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { toFileUrl } from "../lib/utils";
 
 const PRESET_COLORS = [
   { label: "Deep blue", value: "color:#0a0a2e" },
@@ -82,7 +83,7 @@ export default function BackgroundPickerPanel({
             style={{
               position: "absolute",
               inset: 0,
-              backgroundImage: `url("file://${encodeURI(currentBackground!)}")`,
+              backgroundImage: `url("${toFileUrl(currentBackground!)}")`,
               backgroundSize: "cover",
               backgroundPosition: "center",
             }}
@@ -322,7 +323,7 @@ export default function BackgroundPickerPanel({
                       style={{
                         position: "absolute",
                         inset: 0,
-                        backgroundImage: `url("file://${encodeURI(imgPath)}")`,
+                        backgroundImage: `url("${toFileUrl(imgPath)}")`,
                         backgroundSize: "cover",
                         backgroundPosition: "center",
                       }}

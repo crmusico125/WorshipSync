@@ -121,6 +121,35 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 #btn-logo.active .t-icon,#btn-logo.active .t-label{color:#818cf8}
 #btn-prev,.t-btn.arrow{max-width:64px}
 
+/* ── Bible search bottom sheet ── */
+#bible-sheet{position:fixed;inset:0;z-index:300;pointer-events:none}
+#bible-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.6);opacity:0;transition:opacity .24s}
+#bible-panel{position:absolute;bottom:0;left:0;right:0;max-height:88dvh;background:var(--surface);border-radius:20px 20px 0 0;display:flex;flex-direction:column;transform:translateY(100%);transition:transform .28s cubic-bezier(.4,0,.2,1);overflow:hidden}
+#bible-sheet.open{pointer-events:auto}
+#bible-sheet.open #bible-backdrop{opacity:1}
+#bible-sheet.open #bible-panel{transform:translateY(0)}
+#bible-header{display:flex;align-items:center;justify-content:space-between;padding:16px 16px 10px;flex-shrink:0}
+#bible-header h3{font-size:16px;font-weight:700}
+#bible-close-btn{background:none;border:none;color:var(--muted);font-size:20px;line-height:1;cursor:pointer;padding:4px 8px;border-radius:8px}
+#bible-form{display:flex;gap:8px;padding:0 16px 12px;flex-shrink:0;border-bottom:1px solid var(--border)}
+#bible-ref{flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;padding:9px 12px;outline:none;min-width:0;-webkit-appearance:none}
+#bible-ref:focus{border-color:var(--primary)}
+#bible-trans{background:var(--surface2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;padding:9px 8px;outline:none;flex-shrink:0;cursor:pointer;min-width:72px}
+#bible-go{background:var(--primary);color:#fff;border:none;border-radius:10px;padding:9px 14px;font-size:13px;font-weight:700;cursor:pointer;flex-shrink:0}
+#bible-go:disabled{opacity:.45}
+#bible-results{flex:1;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:10px}
+.bv{background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:8px}
+.bv .bv-ref{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--primary)}
+.bv .bv-text{font-size:14px;line-height:1.6;color:var(--text)}
+.bv .bv-btn{align-self:flex-end;background:var(--surface);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;transition:all .12s}
+.bv .bv-btn:active{transform:scale(.96)}
+.bv.bv-live{border-color:var(--live);background:rgba(239,68,68,.07)}
+.bv.bv-live .bv-btn{background:var(--live);border-color:var(--live);color:#fff}
+#bible-status{text-align:center;color:var(--muted);font-size:13px;padding:24px 0;line-height:1.5}
+#bible-status.error{color:#f87171}
+#btn-bible{display:flex;align-items:center;gap:4px;background:none;border:1px solid var(--border);border-radius:8px;color:var(--muted);padding:5px 9px;font-size:11px;cursor:pointer;flex-shrink:0}
+#btn-bible:hover{color:var(--text)}
+
 /* ── Disconnected overlay ── */
 #disconnected{display:none;position:fixed;inset:0;background:rgba(10,10,18,.92);z-index:999;align-items:center;justify-content:center;flex-direction:column;gap:12px;text-align:center;padding:32px}
 #disconnected.show{display:flex}
@@ -150,6 +179,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
     <div id="item-title">WorshipSync</div>
     <div id="item-subtitle"></div>
     <button id="btn-lineup-toggle" onclick="toggleLineup()">☰ Lineup</button>
+    <button id="btn-bible" onclick="openBible()">📖 Bible</button>
   </div>
 
   <!-- Status banner (blank/logo active) -->
@@ -190,6 +220,25 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
     </button>
   </div>
 
+</div>
+
+<!-- Bible search sheet -->
+<div id="bible-sheet">
+  <div id="bible-backdrop" onclick="closeBible()"></div>
+  <div id="bible-panel">
+    <div id="bible-header">
+      <h3>Scripture Search</h3>
+      <button id="bible-close-btn" onclick="closeBible()">✕</button>
+    </div>
+    <div id="bible-form">
+      <input id="bible-ref" type="text" placeholder="e.g. John 3:16 or Psalm 23" autocomplete="off" onkeydown="if(event.key==='Enter')searchBible()">
+      <select id="bible-trans"><option value="web">WEB</option></select>
+      <button id="bible-go" onclick="searchBible()">Search</button>
+    </div>
+    <div id="bible-results">
+      <div id="bible-status">Search for a Bible passage to project it on screen</div>
+    </div>
+  </div>
 </div>
 
 <!-- Disconnected overlay -->
@@ -808,6 +857,119 @@ function typeIcon(t) {
 }
 function typeLabel(t) {
   return {song:'Song',scripture:'Scripture',media:'Media',countdown:'Countdown',announcement:'Announcement',section:'Section'}[t] ?? t
+}
+
+// ── Bible search ───────────────────────────────────────────────────────────
+let B = { verses: [], translationLabel: '', projectedIdx: -1, translationsLoaded: false }
+
+function openBible() {
+  document.getElementById('bible-sheet').classList.add('open')
+  if (!B.translationsLoaded) loadBibleTranslations()
+  setTimeout(() => { const el = document.getElementById('bible-ref'); if (el) el.focus() }, 100)
+}
+
+async function loadBibleTranslations() {
+  try {
+    const r = await fetch('/controller/bible-translations')
+    const data = await r.json()
+    const translations = data.translations || []
+    const commonSet = new Set(data.commonAbbrevs || [])
+    const sel = document.getElementById('bible-trans')
+    const prevVal = sel.value
+    sel.innerHTML = ''
+    const common = translations.filter(function(t) { return commonSet.has(t.label) })
+    const others = translations.filter(function(t) { return !commonSet.has(t.label) })
+    if (common.length) {
+      const grp = document.createElement('optgroup')
+      grp.label = 'Common'
+      common.forEach(function(t) {
+        const opt = document.createElement('option')
+        opt.value = t.id
+        opt.textContent = t.label
+        grp.appendChild(opt)
+      })
+      sel.appendChild(grp)
+    }
+    if (others.length) {
+      const grp = document.createElement('optgroup')
+      grp.label = 'All Translations'
+      others.forEach(function(t) {
+        const opt = document.createElement('option')
+        opt.value = t.id
+        opt.textContent = t.label
+        grp.appendChild(opt)
+      })
+      sel.appendChild(grp)
+    }
+    // Restore previous selection or pick first common (NIV/NIV11)
+    const allOpts = Array.from(sel.options)
+    const match = allOpts.find(function(o) { return o.value === prevVal })
+    if (match) { sel.value = prevVal }
+    else if (common.length) { sel.value = common[0].id }
+    B.translationsLoaded = true
+  } catch {}
+}
+function closeBible() {
+  document.getElementById('bible-sheet').classList.remove('open')
+}
+
+async function searchBible() {
+  const refEl = document.getElementById('bible-ref')
+  const ref = (refEl.value || '').trim()
+  if (!ref) { refEl.focus(); return }
+  const translation = document.getElementById('bible-trans').value
+  const goBtn = document.getElementById('bible-go')
+  goBtn.disabled = true
+  goBtn.textContent = '…'
+  setBibleStatus('Searching…', false)
+  B.verses = []
+  B.projectedIdx = -1
+  try {
+    const r = await fetch('/controller/bible-search?ref=' + encodeURIComponent(ref) + '&translation=' + encodeURIComponent(translation))
+    const data = await r.json()
+    if (data.error) { setBibleStatus(data.error, true); return }
+    const verses = data.verses || []
+    if (!verses.length) { setBibleStatus('No verses found', true); return }
+    B.verses = verses
+    B.translationLabel = data.translationLabel || translation.toUpperCase()
+    renderBibleVerses()
+  } catch {
+    setBibleStatus('Search failed — check your connection', true)
+  } finally {
+    goBtn.disabled = false
+    goBtn.textContent = 'Search'
+  }
+}
+
+function setBibleStatus(msg, isError) {
+  const results = document.getElementById('bible-results')
+  results.innerHTML = '<div id="bible-status' + (isError ? ' class="error"' : '') + '">' + esc(msg) + '</div>'
+}
+
+function renderBibleVerses() {
+  const results = document.getElementById('bible-results')
+  results.innerHTML = B.verses.map(function(v, i) {
+    const ref = v.book_name + ' ' + v.chapter + ':' + v.verse
+    const isLive = i === B.projectedIdx
+    return '<div class="bv' + (isLive ? ' bv-live' : '') + '" id="bv-' + i + '">'
+      + '<div class="bv-ref">' + esc(ref) + ' • ' + esc(B.translationLabel) + '</div>'
+      + '<div class="bv-text">' + esc(v.text) + '</div>'
+      + '<button class="bv-btn" onclick="projectVerse(' + i + ')">' + (isLive ? '⬤ Live' : 'Project') + '</button>'
+      + '</div>'
+  }).join('')
+}
+
+function projectVerse(idx) {
+  const v = B.verses[idx]
+  if (!v) return
+  const reference = v.book_name + ' ' + v.chapter + ':' + v.verse
+  B.projectedIdx = idx
+  renderBibleVerses()
+  requestAnimationFrame(function() {
+    const el = document.getElementById('bv-' + idx)
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  })
+  cmd('project-scripture', { text: v.text, reference: reference, translationLabel: B.translationLabel })
 }
 
 // ── Boot ───────────────────────────────────────────────────────────────────

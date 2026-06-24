@@ -13,7 +13,7 @@ import {
 import { CSS } from "@dnd-kit/utilities"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
-import { fmtDur } from "../lib/utils"
+import { fmtDur, toFileUrl } from "../lib/utils"
 
 // ── Setlist templates ──────────────────────────────────────────────────────────
 
@@ -624,7 +624,7 @@ export function TemplateManagerModal({
                                       </div>
                                     ) : isVideo ? (
                                       <video
-                                        src={`file://${encodeURI(path)}`}
+                                        src={`${toFileUrl(path)}`}
                                         className="absolute inset-0 w-full h-full object-cover"
                                         muted
                                         preload="metadata"
@@ -632,7 +632,7 @@ export function TemplateManagerModal({
                                     ) : (
                                       <div
                                         className="absolute inset-0 bg-cover bg-center"
-                                        style={{ backgroundImage: `url("file://${encodeURI(path)}")` }}
+                                        style={{ backgroundImage: `url("${toFileUrl(path)}")` }}
                                       />
                                     )}
                                     <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors" />

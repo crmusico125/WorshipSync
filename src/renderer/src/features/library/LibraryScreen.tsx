@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Select } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { useSongStore } from "../../store/useSongStore"
+import { toFileUrl } from "../../lib/utils"
 import BackgroundPickerPanel from "../../components/BackgroundPickerPanel"
 import type { Song, Section } from "../../../../../shared/types"
 
@@ -977,7 +978,7 @@ function SlideThumb({ lines, backgroundPath, small, style }: {
     >
       {isImage && (
         <img
-          src={`file://${bg}`}
+          src={`${toFileUrl(bg)}`}
           className="absolute inset-0 w-full h-full object-cover"
           alt=""
         />

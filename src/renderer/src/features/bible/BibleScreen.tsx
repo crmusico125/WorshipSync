@@ -392,7 +392,7 @@ export default function BibleScreen({ projectionOpen }: Props) {
       sectionType: "verse",
       itemType: "scripture",
       backgroundPath: bg,
-      theme: resolvedTheme,
+      theme: { ...resolvedTheme, fontSize: Math.max(96, resolvedTheme.fontSize), maxLinesPerSlide: 1 },
     })
   }
 

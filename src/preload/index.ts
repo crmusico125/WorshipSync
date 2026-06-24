@@ -195,6 +195,10 @@ contextBridge.exposeInMainWorld('worshipsync', {
       ipcRenderer.on('window:confidenceClosed', cb)
       return () => ipcRenderer.removeListener('window:confidenceClosed', cb)
     },
+    onOpened:  (cb: () => void) => {
+      ipcRenderer.on('window:confidenceOpened', cb)
+      return () => ipcRenderer.removeListener('window:confidenceOpened', cb)
+    },
   },
 
   pwa: {

@@ -251,6 +251,13 @@ export default function PresenterDashboard({
   const [confidenceOpen, setConfidenceOpen] = useState(false);
   const [selectedConfidenceDisplayId, setSelectedConfidenceDisplayId] = useState<number | undefined>(undefined);
   const [outputBarCollapsed, setOutputBarCollapsed] = useState(false);
+  const routingUndoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [routingUndoState, setRoutingUndoState] = useState<{
+    prevMain: number | undefined;
+    prevConf: number | undefined;
+  } | null>(null);
+  const confidenceSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [confidenceSaveToast, setConfidenceSaveToast] = useState<boolean | null>(null);
   const slideGridRef    = useRef<HTMLDivElement>(null);
   const liveItemIdxRef  = useRef<number>(-1);
   const liveSlideIdxRef = useRef<number>(-1);
@@ -394,12 +401,34 @@ export default function PresenterDashboard({
   // ── Load ─────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (selectedService) loadLineup(selectedService.id);
-    window.worshipsync.window.getDisplays().then((d) => {
+
+    // Load displays + appState together so saved routing can be restored.
+    // Saved IDs are always honoured even if the display isn't connected yet —
+    // we never overwrite the preference just because a screen is absent at launch.
+    Promise.all([
+      window.worshipsync.window.getDisplays(),
+      window.worshipsync.appState.get().catch(() => ({} as Record<string, unknown>)),
+    ]).then(([d, state]) => {
       setDisplays(d);
-      const ext = d.find((x) => !x.isPrimary);
-      setSelectedDisplayId(ext?.id ?? d[0]?.id);
-      setSelectedConfidenceDisplayId(ext?.id ?? d[0]?.id);
+      const fallback = d.find((x) => !x.isPrimary)?.id ?? d[0]?.id;
+      const savedMain = typeof state.outputDisplayId === 'number' ? state.outputDisplayId : fallback;
+      const savedConf = typeof state.confidenceDisplayId === 'number' ? state.confidenceDisplayId : fallback;
+      // Use saved preference as-is; the select will show a "not connected" placeholder
+      // if the display isn't available yet.
+      setSelectedDisplayId(savedMain);
+      setSelectedConfidenceDisplayId(savedConf);
+      // Auto-open confidence monitor if it was on when the operator last closed the app
+      if (state.confidenceEnabled === true && savedConf !== undefined) {
+        window.worshipsync.confidence.open(savedConf);
+        setConfidenceOpen(true);
+      }
+      // Restore service time settings
+      if (state.serviceTime)        setServiceTime(state.serviceTime as string);
+      if (state.serviceTimezone)    setServiceTimezone(state.serviceTimezone as string);
+      if (state.serviceSchedules)   setServiceSchedules(state.serviceSchedules as any);
+      if (state.projectionFontSize) setProjectionFontSize(state.projectionFontSize as number);
     });
+
     window.worshipsync.themes.getDefault().then((t: any) => {
       setDefaultTheme(t);
       if (t?.settings) {
@@ -413,27 +442,37 @@ export default function PresenterDashboard({
     });
     window.worshipsync.themes.getAll().then((all: any[]) => {
       const c: Record<number, any> = {};
-      all.forEach((t) => {
-        c[t.id] = t;
-      });
+      all.forEach((t) => { c[t.id] = t; });
       setThemeCache(c);
     });
-    // Load service time settings
-    window.worshipsync.appState
-      .get()
-      .then((state: Record<string, any>) => {
-        if (state.serviceTime)      setServiceTime(state.serviceTime);
-        if (state.serviceTimezone)  setServiceTimezone(state.serviceTimezone);
-        if (state.serviceSchedules) setServiceSchedules(state.serviceSchedules);
-        if (state.projectionFontSize) setProjectionFontSize(state.projectionFontSize);
-      })
-      .catch(() => {});
 
     const cleanupDisplays = window.worshipsync.window.onDisplaysChanged((d) => {
       setDisplays(d);
+      // If the preferred display reconnects, the "Disconnected" badge disappears automatically
+      // because `selectedDisplayId` still holds the saved ID. If the preferred display
+      // disconnects, we move the Electron window to a fallback for the session but do NOT
+      // overwrite the saved preference in appState — the operator's routing intent is preserved.
       setSelectedDisplayId((prev) => {
         if (prev !== undefined && d.find((x) => x.id === prev)) return prev;
-        return d.find((x) => !x.isPrimary)?.id ?? d[0]?.id;
+        const fallback = d.find((x) => !x.isPrimary)?.id ?? d[0]?.id;
+        if (fallback !== undefined) {
+          // Move the window for this session only — do NOT save fallback to appState
+          window.worshipsync.window.moveProjection?.(fallback);
+        }
+        // Keep showing the saved (disconnected) ID so the badge is visible and the
+        // preference is not lost. Return prev so we don't update state at all.
+        return prev;
+      });
+      setSelectedConfidenceDisplayId((prev) => {
+        if (prev !== undefined && d.find((x) => x.id === prev)) return prev;
+        const fallback = d.find((x) => !x.isPrimary)?.id ?? d[0]?.id;
+        if (fallback !== undefined) {
+          // Move confidence monitor for this session only — do NOT save fallback to appState
+          window.worshipsync.confidence.isOpen().then((open) => {
+            if (open) window.worshipsync.confidence.move?.(fallback);
+          }).catch(() => {});
+        }
+        return prev;
       });
     });
 
@@ -443,10 +482,16 @@ export default function PresenterDashboard({
     const cleanupConfidence = window.worshipsync.confidence.onClosed(() => {
       setConfidenceOpen(false);
     });
+    // Sync state when the window is opened externally (e.g. from Settings).
+    // Optional-chained in case the preload hasn't reloaded yet after an update.
+    const cleanupConfidenceOpened = (window.worshipsync.confidence as any).onOpened?.(() => {
+      setConfidenceOpen(true);
+    }) as (() => void) | undefined;
 
     return () => {
       cleanupDisplays();
       cleanupConfidence();
+      cleanupConfidenceOpened?.();
     };
   }, []);
 
@@ -1727,11 +1772,24 @@ export default function PresenterDashboard({
         onStartLive={startLive}
         displays={displays}
         selectedDisplayId={selectedDisplayId}
-        onDisplayChange={setSelectedDisplayId}
+        onDisplayChange={(id) => {
+          setSelectedDisplayId(id);
+          window.worshipsync.appState.set({ outputDisplayId: id }).catch(() => {});
+        }}
+        selectedConfidenceDisplayId={selectedConfidenceDisplayId}
+        onConfidenceDisplayChange={(id) => {
+          setSelectedConfidenceDisplayId(id);
+          window.worshipsync.appState.set({ confidenceDisplayId: id }).catch(() => {});
+          if (confidenceOpen && id !== undefined) window.worshipsync.confidence.move(id);
+        }}
         confidenceOpen={confidenceOpen}
         onToggleConfidence={() => {
+          const next = !confidenceOpen;
           if (confidenceOpen) { window.worshipsync.confidence.close(); setConfidenceOpen(false); }
           else { window.worshipsync.confidence.open(selectedConfidenceDisplayId); setConfidenceOpen(true); }
+          if (confidenceSaveTimerRef.current) clearTimeout(confidenceSaveTimerRef.current);
+          setConfidenceSaveToast(next);
+          confidenceSaveTimerRef.current = setTimeout(() => setConfidenceSaveToast(null), 5000);
         }}
       />
     );
@@ -1742,6 +1800,76 @@ export default function PresenterDashboard({
       {/* Click-away overlay for switcher */}
       {showSwitcher && (
         <div className="fixed inset-0 z-40" onClick={() => { setShowSwitcher(false); setPendingSwitch(null); }} />
+      )}
+
+      {/* ── Confidence default save toast — non-blocking, auto-dismisses in 5s ── */}
+      {confidenceSaveToast !== null && (
+        <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-50 pointer-events-none flex justify-center">
+          <div className="pointer-events-auto flex items-center gap-2.5 bg-card border border-border shadow-lg rounded-full px-3.5 py-2 text-[12px]">
+            <span className={`h-2 w-2 rounded-full shrink-0 ${confidenceSaveToast ? "bg-amber-400" : "bg-muted-foreground/40"}`} />
+            <span className="text-foreground font-medium">
+              Save confidence monitor <span className="font-bold">{confidenceSaveToast ? "ON" : "OFF"}</span> as default?
+            </span>
+            <button
+              className="text-primary font-semibold hover:text-primary/80 transition-colors ml-1"
+              onClick={() => {
+                if (confidenceSaveTimerRef.current) clearTimeout(confidenceSaveTimerRef.current);
+                window.worshipsync.appState.set({ confidenceEnabled: confidenceSaveToast }).catch(() => {});
+                setConfidenceSaveToast(null);
+              }}
+            >
+              Save
+            </button>
+            <button
+              className="text-muted-foreground hover:text-foreground transition-colors"
+              onClick={() => {
+                if (confidenceSaveTimerRef.current) clearTimeout(confidenceSaveTimerRef.current);
+                setConfidenceSaveToast(null);
+              }}
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Routing-changed undo toast — non-blocking, auto-dismisses in 5s ── */}
+      {routingUndoState && (
+        <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-50 pointer-events-none flex justify-center">
+          <div className="pointer-events-auto flex items-center gap-2.5 bg-card border border-border shadow-lg rounded-full px-3.5 py-2 text-[12px]">
+            <Tv className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            <span className="text-foreground font-medium">Routing saved</span>
+            <button
+              className="text-primary font-semibold hover:text-primary/80 transition-colors ml-1"
+              onClick={() => {
+                if (routingUndoTimerRef.current) clearTimeout(routingUndoTimerRef.current);
+                setRoutingUndoState(null);
+                const { prevMain, prevConf } = routingUndoState;
+                if (prevMain !== undefined) {
+                  setSelectedDisplayId(prevMain);
+                  window.worshipsync.appState.set({ outputDisplayId: prevMain }).catch(() => {});
+                  if (projectionOpen) window.worshipsync.window.moveProjection(prevMain);
+                }
+                if (prevConf !== undefined) {
+                  setSelectedConfidenceDisplayId(prevConf);
+                  window.worshipsync.appState.set({ confidenceDisplayId: prevConf }).catch(() => {});
+                  if (confidenceOpen) window.worshipsync.confidence.move(prevConf);
+                }
+              }}
+            >
+              Undo
+            </button>
+            <button
+              className="text-muted-foreground hover:text-foreground transition-colors"
+              onClick={() => {
+                if (routingUndoTimerRef.current) clearTimeout(routingUndoTimerRef.current);
+                setRoutingUndoState(null);
+              }}
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
       )}
 
       {/* ═════ TOP HEADER BAR ═════ */}
@@ -3258,16 +3386,35 @@ export default function PresenterDashboard({
               <div className="flex items-center gap-1.5">
                 <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${!isBlank && !isLogo && (countdownRunning || liveSlideIdxRef.current >= 0) ? "bg-green-500" : "bg-muted-foreground/30"}`} />
                 <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Main Projection</span>
+                {selectedDisplayId !== undefined && !displays.find(d => d.id === selectedDisplayId) && (
+                  <span className="ml-auto flex items-center gap-1 text-[9px] font-bold text-red-400 bg-red-500/10 border border-red-500/25 px-1.5 py-0.5 rounded-full leading-none">
+                    <AlertCircle className="h-2.5 w-2.5 shrink-0" /> Disconnected
+                  </span>
+                )}
               </div>
               <select
-                className="w-full bg-input text-[11px] text-foreground border border-border rounded px-2 py-1.5 outline-none cursor-pointer"
+                className={`w-full bg-input text-[11px] text-foreground border rounded px-2 py-1.5 outline-none cursor-pointer ${
+                  selectedDisplayId !== undefined && !displays.find(d => d.id === selectedDisplayId)
+                    ? "border-red-500/50"
+                    : "border-border"
+                }`}
                 value={selectedDisplayId ?? ""}
                 onChange={(e) => {
                   const id = Number(e.target.value);
+                  const prev = { prevMain: selectedDisplayId, prevConf: selectedConfidenceDisplayId };
                   setSelectedDisplayId(id);
+                  window.worshipsync.appState.set({ outputDisplayId: id }).catch(() => {});
                   if (projectionOpen) window.worshipsync.window.moveProjection(id);
+                  if (routingUndoTimerRef.current) clearTimeout(routingUndoTimerRef.current);
+                  setRoutingUndoState(prev);
+                  routingUndoTimerRef.current = setTimeout(() => setRoutingUndoState(null), 5000);
                 }}
               >
+                {selectedDisplayId !== undefined && !displays.find(d => d.id === selectedDisplayId) && (
+                  <option value={selectedDisplayId} disabled>
+                    Saved display (not connected)
+                  </option>
+                )}
                 {displays.map((d) => (
                   <option key={d.id} value={d.id}>
                     {d.label}{d.isPrimary ? " (Primary)" : ""} — {d.width}×{d.height}
@@ -3347,10 +3494,19 @@ export default function PresenterDashboard({
               <div className="flex items-center gap-1.5">
                 <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${confidenceOpen ? "bg-amber-400" : "bg-muted-foreground/30"}`} />
                 <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Confidence</span>
+                {confidenceOpen && selectedConfidenceDisplayId !== undefined && !displays.find(d => d.id === selectedConfidenceDisplayId) && (
+                  <span className="flex items-center gap-1 text-[9px] font-bold text-red-400 bg-red-500/10 border border-red-500/25 px-1.5 py-0.5 rounded-full leading-none">
+                    <AlertCircle className="h-2.5 w-2.5 shrink-0" /> Disconnected
+                  </span>
+                )}
                 <button
                   onClick={() => {
+                    const next = !confidenceOpen;
                     if (confidenceOpen) { window.worshipsync.confidence.close(); setConfidenceOpen(false); }
                     else { window.worshipsync.confidence.open(selectedConfidenceDisplayId); setConfidenceOpen(true); }
+                    if (confidenceSaveTimerRef.current) clearTimeout(confidenceSaveTimerRef.current);
+                    setConfidenceSaveToast(next);
+                    confidenceSaveTimerRef.current = setTimeout(() => setConfidenceSaveToast(null), 5000);
                   }}
                   className={`ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full transition-colors ${
                     confidenceOpen
@@ -3362,14 +3518,28 @@ export default function PresenterDashboard({
                 </button>
               </div>
               <select
-                className="w-full bg-input text-[11px] text-foreground border border-border rounded px-2 py-1.5 outline-none cursor-pointer"
+                className={`w-full bg-input text-[11px] text-foreground border rounded px-2 py-1.5 outline-none cursor-pointer ${
+                  confidenceOpen && selectedConfidenceDisplayId !== undefined && !displays.find(d => d.id === selectedConfidenceDisplayId)
+                    ? "border-red-500/50"
+                    : "border-border"
+                }`}
                 value={selectedConfidenceDisplayId ?? ""}
                 onChange={(e) => {
                   const id = Number(e.target.value) || undefined;
+                  const prev = { prevMain: selectedDisplayId, prevConf: selectedConfidenceDisplayId };
                   setSelectedConfidenceDisplayId(id);
+                  if (id !== undefined) window.worshipsync.appState.set({ confidenceDisplayId: id }).catch(() => {});
                   if (confidenceOpen && id !== undefined) window.worshipsync.confidence.move(id);
+                  if (routingUndoTimerRef.current) clearTimeout(routingUndoTimerRef.current);
+                  setRoutingUndoState(prev);
+                  routingUndoTimerRef.current = setTimeout(() => setRoutingUndoState(null), 5000);
                 }}
               >
+                {selectedConfidenceDisplayId !== undefined && !displays.find(d => d.id === selectedConfidenceDisplayId) && (
+                  <option value={selectedConfidenceDisplayId} disabled>
+                    Saved display (not connected)
+                  </option>
+                )}
                 {displays.map((d) => (
                   <option key={d.id} value={d.id}>
                     {d.label}{d.isPrimary ? " (Primary)" : ""} — {d.width}×{d.height}
@@ -3603,6 +3773,7 @@ function SwitcherRow({
 function PreLiveIdle({
   serviceLabel, songs, canGoLive, onStartLive,
   displays, selectedDisplayId, onDisplayChange,
+  selectedConfidenceDisplayId, onConfidenceDisplayChange,
   confidenceOpen, onToggleConfidence,
 }: {
   serviceLabel: string
@@ -3612,11 +3783,16 @@ function PreLiveIdle({
   displays: { id: number; label: string; width: number; height: number; isPrimary: boolean }[]
   selectedDisplayId: number | undefined
   onDisplayChange: (id: number) => void
+  selectedConfidenceDisplayId: number | undefined
+  onConfidenceDisplayChange: (id: number) => void
   confidenceOpen: boolean
   onToggleConfidence: () => void
 }) {
   const totalSlides = songs.reduce((sum, s) => sum + s.slides.filter(sl => sl.sectionType !== "blank").length, 0)
   const itemCount = songs.filter(s => s.itemType !== "section").length
+
+  const mainDisplay = displays.find(d => d.id === selectedDisplayId)
+  const confDisplay = displays.find(d => d.id === selectedConfidenceDisplayId)
 
   // Find the first real slide for the preview
   const firstSlide = useMemo(() => {
@@ -3640,7 +3816,7 @@ function PreLiveIdle({
         <div className="flex h-2 w-2 relative">
           <span className="relative inline-flex rounded-full h-2 w-2 bg-muted-foreground/40" />
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <span className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Pre-Flight Check</span>
           <p className="text-sm font-semibold text-foreground truncate">{serviceLabel}</p>
         </div>
@@ -3649,8 +3825,8 @@ function PreLiveIdle({
       {/* Body — two columns */}
       <div className="flex-1 flex min-h-0 overflow-hidden">
 
-        {/* Left: checklist + controls */}
-        <div className="w-[340px] shrink-0 border-r border-border flex flex-col p-6 gap-5 overflow-y-auto">
+        {/* Left: checklist + routing */}
+        <div className="w-[380px] shrink-0 border-r border-border flex flex-col p-6 gap-5 overflow-y-auto">
 
           {/* Checklist */}
           <div className="flex flex-col gap-2">
@@ -3672,16 +3848,40 @@ function PreLiveIdle({
 
           <div className="h-px bg-border" />
 
-          {/* Output display */}
-          <div className="flex flex-col gap-2">
-            <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Output Display</label>
+          {/* Output routing — confirmation panel */}
+          <div className="flex flex-col gap-3">
             <div className="flex items-center gap-2">
-              <Tv className="h-4 w-4 text-muted-foreground shrink-0" />
+              <h3 className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Output Routing</h3>
+              <span className="text-[9px] font-semibold text-green-400 bg-green-500/10 border border-green-500/20 px-1.5 py-0.5 rounded-full leading-none">
+                Saved
+              </span>
+            </div>
+
+            {/* Main projection routing row */}
+            <div className="rounded-lg border border-border bg-muted/20 p-3 flex flex-col gap-2">
+              <div className="flex items-center gap-2 mb-0.5">
+                <Tv className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                <span className="text-[11px] font-bold text-foreground">Main Projection</span>
+                {mainDisplay && (
+                  <span className="ml-auto text-[10px] text-muted-foreground shrink-0">
+                    {mainDisplay.width}×{mainDisplay.height}
+                  </span>
+                )}
+              </div>
               <select
-                className="flex-1 bg-input border border-border rounded-md px-3 py-1.5 text-[13px] text-foreground cursor-pointer outline-none focus:border-primary/50"
+                className={`w-full bg-input border rounded-md px-2.5 py-1.5 text-[12px] text-foreground cursor-pointer outline-none focus:border-primary/50 ${
+                  selectedDisplayId !== undefined && !displays.find(d => d.id === selectedDisplayId)
+                    ? "border-red-500/50"
+                    : "border-border"
+                }`}
                 value={selectedDisplayId ?? ""}
                 onChange={(e) => onDisplayChange(Number(e.target.value))}
               >
+                {selectedDisplayId !== undefined && !displays.find(d => d.id === selectedDisplayId) && (
+                  <option value={selectedDisplayId} disabled>
+                    Saved display (not connected)
+                  </option>
+                )}
                 {displays.map((d) => (
                   <option key={d.id} value={d.id}>
                     {d.label}{d.isPrimary ? " (Primary)" : ""} — {d.width}×{d.height}
@@ -3689,27 +3889,56 @@ function PreLiveIdle({
                 ))}
               </select>
             </div>
-          </div>
 
-          {/* Confidence monitor */}
-          <div className="flex flex-col gap-2">
-            <label className="text-[10px] font-black uppercase tracking-wider text-muted-foreground">Confidence Monitor</label>
-            <button
-              onClick={onToggleConfidence}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-all ${
-                confidenceOpen
-                  ? "bg-amber-500/10 border-amber-500/40 text-amber-300"
-                  : "bg-muted/40 border-border text-muted-foreground hover:text-foreground hover:bg-muted"
-              }`}
-            >
-              <span className={`h-2 w-2 rounded-full shrink-0 ${confidenceOpen ? "bg-amber-400" : "bg-muted-foreground/40"}`} />
-              <span className="text-[13px] font-medium flex-1 text-left">
-                {confidenceOpen ? "On — showing to presenter" : "Off — click to enable"}
-              </span>
-              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${confidenceOpen ? "bg-amber-500/20 text-amber-400" : "bg-muted text-muted-foreground"}`}>
-                {confidenceOpen ? "ON" : "OFF"}
-              </span>
-            </button>
+            {/* Confidence monitor routing row */}
+            <div className="rounded-lg border border-border bg-muted/20 p-3 flex flex-col gap-2">
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className={`h-2 w-2 rounded-full shrink-0 ${confidenceOpen ? "bg-amber-400" : "bg-muted-foreground/40"}`} />
+                <span className="text-[11px] font-bold text-foreground">Confidence Monitor</span>
+                {confDisplay && confidenceOpen && (
+                  <span className="ml-auto text-[10px] text-muted-foreground shrink-0">
+                    {confDisplay.width}×{confDisplay.height}
+                  </span>
+                )}
+              </div>
+              {/* Enable/disable toggle */}
+              <button
+                onClick={onToggleConfidence}
+                className={`flex items-center gap-2 px-2.5 py-1.5 rounded-md border transition-all text-[12px] font-medium ${
+                  confidenceOpen
+                    ? "bg-amber-500/10 border-amber-500/40 text-amber-300"
+                    : "bg-background border-border text-muted-foreground hover:text-foreground hover:bg-accent/30"
+                }`}
+              >
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${confidenceOpen ? "bg-amber-500/20 text-amber-400" : "bg-muted text-muted-foreground"}`}>
+                  {confidenceOpen ? "ON" : "OFF"}
+                </span>
+                {confidenceOpen ? "Showing to presenter — click to disable" : "Click to enable"}
+              </button>
+              {/* Display picker — only shown when enabled */}
+              {confidenceOpen && (
+                <select
+                  className={`w-full bg-input border rounded-md px-2.5 py-1.5 text-[12px] text-foreground cursor-pointer outline-none focus:border-primary/50 ${
+                    selectedConfidenceDisplayId !== undefined && !displays.find(d => d.id === selectedConfidenceDisplayId)
+                      ? "border-red-500/50"
+                      : "border-border"
+                  }`}
+                  value={selectedConfidenceDisplayId ?? ""}
+                  onChange={(e) => onConfidenceDisplayChange(Number(e.target.value))}
+                >
+                  {selectedConfidenceDisplayId !== undefined && !displays.find(d => d.id === selectedConfidenceDisplayId) && (
+                    <option value={selectedConfidenceDisplayId} disabled>
+                      Saved display (not connected)
+                    </option>
+                  )}
+                  {displays.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.label}{d.isPrimary ? " (Primary)" : ""} — {d.width}×{d.height}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
           </div>
 
           {/* Stats */}

@@ -197,6 +197,7 @@ declare global {
         isOpen:   ()                   => Promise<boolean>
         ready:    ()                   => void
         onClosed: (cb: () => void)     => () => void
+        onOpened: (cb: () => void)     => () => void
       }
       pwa: {
         syncLineup: (items: PwaLineupItem[], currentIdx: number, serviceDate: string | null, serviceTime: string | null) => void

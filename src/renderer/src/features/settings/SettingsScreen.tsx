@@ -237,6 +237,10 @@ export default function SettingsScreen() {
   // Display
   const [projectionFontSize, setProjectionFontSize] = useState(48)
   const [slideTransitionMs, setSlideTransitionMs]   = useState(300)
+  const [displays, setDisplays] = useState<{ id: number; label: string; width: number; height: number; isPrimary: boolean }[]>([])
+  const [outputDisplayId, setOutputDisplayId]           = useState<number | undefined>(undefined)
+  const [confidenceDisplayId, setConfidenceDisplayId]   = useState<number | undefined>(undefined)
+  const [confidenceEnabled, setConfidenceEnabled]       = useState(false)
 
   // Network / stage display
   const [stageRunning, setStageRunning]       = useState(false)
@@ -287,7 +291,10 @@ export default function SettingsScreen() {
   }, [])
 
   useEffect(() => {
-    window.worshipsync.appState.get().then((state: Record<string, any>) => {
+    Promise.all([
+      window.worshipsync.appState.get().catch(() => ({} as Record<string, any>)),
+      window.worshipsync.window.getDisplays().catch(() => [] as typeof displays),
+    ]).then(([state, d]) => {
       if (state.churchName)         setChurchName(state.churchName)
       if (state.bibleApiKey)        setBibleApiKey(state.bibleApiKey as string)
       if (state.serviceSchedules)   setSchedules(state.serviceSchedules)
@@ -299,7 +306,18 @@ export default function SettingsScreen() {
       if (state.projectionFontSize) setProjectionFontSize(state.projectionFontSize)
       if (state.slideTransitionMs !== undefined) setSlideTransitionMs(state.slideTransitionMs)
       if (state.controllerPin !== undefined)     setControllerPin(state.controllerPin ?? "")
-    }).catch(() => {})
+      setDisplays(d)
+      const fallback = d.find((x: typeof d[0]) => !x.isPrimary)?.id ?? d[0]?.id
+      // Always honour the saved preference even if the display isn't connected yet;
+      // only fall back to a default if no preference has ever been saved.
+      setOutputDisplayId(
+        typeof state.outputDisplayId === 'number' ? state.outputDisplayId : fallback
+      )
+      setConfidenceDisplayId(
+        typeof state.confidenceDisplayId === 'number' ? state.confidenceDisplayId : fallback
+      )
+      if (typeof state.confidenceEnabled === 'boolean') setConfidenceEnabled(state.confidenceEnabled)
+    })
     refreshStageStatus().catch(() => {})
   }, [refreshStageStatus])
 
@@ -647,6 +665,132 @@ export default function SettingsScreen() {
           {/* ── Display ── */}
           {activeTab === "display" && (
             <div className="flex flex-col gap-5 max-w-2xl">
+
+              {/* Output routing */}
+              <SectionCard>
+                <div className="flex items-start gap-3 px-5 pt-5 pb-4 border-b border-border">
+                  <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
+                    <Monitor className="h-4 w-4 text-primary" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h2 className="text-sm font-semibold">Output routing</h2>
+                    <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+                      Choose which physical screens receive the projection and confidence monitor. Saved automatically and restored every session.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() =>
+                      window.worshipsync.window.getDisplays().then((d) => {
+                        setDisplays(d)
+                        // Refresh only clears the selection if no preference was ever saved;
+                        // it does not overwrite the saved preference just because the display
+                        // isn't currently connected.
+                        const fallback = d.find((x) => !x.isPrimary)?.id ?? d[0]?.id
+                        if (outputDisplayId === undefined) setOutputDisplayId(fallback)
+                        if (confidenceDisplayId === undefined) setConfidenceDisplayId(fallback)
+                      })
+                    }
+                    className="shrink-0 text-[11px] font-medium text-muted-foreground hover:text-foreground px-2.5 py-1 rounded-md border border-border hover:bg-accent/30 transition-colors mt-0.5"
+                  >
+                    Refresh
+                  </button>
+                </div>
+                <SettingRow
+                  label="Main projection"
+                  description={
+                    outputDisplayId !== undefined && !displays.find(d => d.id === outputDisplayId)
+                      ? "⚠ Previously selected display is disconnected — choose another."
+                      : "The audience-facing screen where slides appear."
+                  }
+                >
+                  <select
+                    className={`w-64 bg-input border rounded-md px-3 py-1.5 text-sm text-foreground cursor-pointer outline-none focus:border-primary/50 ${
+                      outputDisplayId !== undefined && !displays.find(d => d.id === outputDisplayId)
+                        ? "border-red-500/50"
+                        : "border-border"
+                    }`}
+                    value={outputDisplayId ?? ""}
+                    onChange={(e) => {
+                      const id = Number(e.target.value)
+                      setOutputDisplayId(id)
+                      queueSave({ outputDisplayId: id })
+                    }}
+                  >
+                    {outputDisplayId !== undefined && !displays.find(d => d.id === outputDisplayId) && (
+                      <option value={outputDisplayId} disabled>
+                        Saved display (not connected)
+                      </option>
+                    )}
+                    {displays.length === 0 && outputDisplayId === undefined && (
+                      <option value="">No displays detected</option>
+                    )}
+                    {displays.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.label}{d.isPrimary ? " (Primary)" : ""} — {d.width}×{d.height}
+                      </option>
+                    ))}
+                  </select>
+                </SettingRow>
+                <SettingRow
+                  label="Confidence monitor"
+                  description={
+                    confidenceDisplayId !== undefined && !displays.find(d => d.id === confidenceDisplayId)
+                      ? "⚠ Previously selected display is disconnected — choose another."
+                      : "Opens automatically at startup when enabled. The presenter-facing screen showing upcoming lyrics."
+                  }
+                  last
+                >
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => {
+                        const next = !confidenceEnabled
+                        setConfidenceEnabled(next)
+                        queueSave({ confidenceEnabled: next })
+                        if (next) window.worshipsync.confidence.open(confidenceDisplayId)
+                        else window.worshipsync.confidence.close()
+                      }}
+                      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors focus:outline-none ${
+                        confidenceEnabled ? "bg-amber-500 border-amber-600" : "bg-muted border-border"
+                      }`}
+                      role="switch"
+                      aria-checked={confidenceEnabled}
+                      title={confidenceEnabled ? "Disable auto-open" : "Enable auto-open"}
+                    >
+                      <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${confidenceEnabled ? "translate-x-5" : "translate-x-1"}`} />
+                    </button>
+                    <select
+                      disabled={!confidenceEnabled}
+                      className={`w-64 bg-input border rounded-md px-3 py-1.5 text-sm text-foreground outline-none transition-opacity ${
+                        !confidenceEnabled
+                          ? "opacity-40 cursor-not-allowed"
+                          : confidenceDisplayId !== undefined && !displays.find(d => d.id === confidenceDisplayId)
+                            ? "border-red-500/50 cursor-pointer focus:border-primary/50"
+                            : "border-border cursor-pointer focus:border-primary/50"
+                      }`}
+                      value={confidenceDisplayId ?? ""}
+                      onChange={(e) => {
+                        const id = Number(e.target.value)
+                        setConfidenceDisplayId(id)
+                        queueSave({ confidenceDisplayId: id })
+                      }}
+                    >
+                      {confidenceDisplayId !== undefined && !displays.find(d => d.id === confidenceDisplayId) && (
+                        <option value={confidenceDisplayId} disabled>
+                          Saved display (not connected)
+                        </option>
+                      )}
+                      {displays.length === 0 && confidenceDisplayId === undefined && (
+                        <option value="">No displays detected</option>
+                      )}
+                      {displays.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.label}{d.isPrimary ? " (Primary)" : ""} — {d.width}×{d.height}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </SettingRow>
+              </SectionCard>
 
               <SectionCard>
                 <SectionHeader

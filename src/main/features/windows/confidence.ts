@@ -42,6 +42,7 @@ export function createConfidenceWindow(displayId?: number): void {
 
   windows.confidence.on('ready-to-show', () => {
     windows.confidence?.show()
+    windows.control?.webContents.send('window:confidenceOpened')
   })
 
   windows.confidence.on('closed', () => {

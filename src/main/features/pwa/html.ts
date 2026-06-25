@@ -31,11 +31,15 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
   #topbar{grid-column:1/3;grid-row:1}
   #status-banner{grid-column:1/3;grid-row:2}
   #lineup{grid-column:1;grid-row:3;position:static!important;transform:none!important;
-          display:flex!important;border-right:1px solid var(--border);overflow-y:auto}
+          display:flex!important;width:100%!important;max-width:100%!important;
+          border-right:1px solid var(--border);overflow-y:auto;overflow-x:hidden}
   #lineup-backdrop{display:none!important}
-  #btn-lineup-toggle{display:none}
-  #slides{grid-column:2;grid-row:3;overflow-y:auto;min-height:0}
+  #slides{grid-column:2;grid-row:3;overflow-y:auto;min-height:0;min-width:0}
   #transport{grid-column:1/3;grid-row:4}
+  /* Collapsible sidebar */
+  #app.sidebar-hidden{grid-template-columns:1fr}
+  #app.sidebar-hidden #lineup{display:none!important}
+  #app.sidebar-hidden #slides{grid-column:1}
 }
 
 /* ── Top bar ── */
@@ -47,7 +51,6 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 #item-title{flex:1;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
 #item-subtitle{font-size:10px;color:var(--muted);flex-shrink:0}
 #btn-lineup-toggle{display:flex;align-items:center;gap:4px;background:none;border:1px solid var(--border);border-radius:8px;color:var(--muted);padding:5px 9px;font-size:11px;cursor:pointer}
-@media(min-width:680px){#btn-lineup-toggle{display:none}}
 
 /* ── Blank / logo status banner ── */
 #status-banner{display:none;padding:7px 14px;text-align:center;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
@@ -530,14 +533,23 @@ function toggleLogo() {
 }
 
 function toggleLineup() {
-  const lineup = document.getElementById('lineup')
-  const backdrop = document.getElementById('lineup-backdrop')
-  const isOpen = lineup.classList.toggle('open')
-  backdrop.classList.toggle('show', isOpen)
+  if (window.matchMedia('(min-width:680px)').matches) {
+    const app = document.getElementById('app')
+    const hidden = app.classList.toggle('sidebar-hidden')
+    document.getElementById('btn-lineup-toggle').textContent = hidden ? '☰ Lineup' : '← Hide'
+  } else {
+    const lineup = document.getElementById('lineup')
+    const backdrop = document.getElementById('lineup-backdrop')
+    const isOpen = lineup.classList.toggle('open')
+    backdrop.classList.toggle('show', isOpen)
+  }
 }
 function closeLineup() {
-  document.getElementById('lineup').classList.remove('open')
-  document.getElementById('lineup-backdrop').classList.remove('show')
+  // Mobile only — wide-screen sidebar stays open unless toggled
+  if (!window.matchMedia('(min-width:680px)').matches) {
+    document.getElementById('lineup').classList.remove('open')
+    document.getElementById('lineup-backdrop').classList.remove('show')
+  }
 }
 
 // ── Rendering ──────────────────────────────────────────────────────────────
@@ -973,6 +985,10 @@ function projectVerse(idx) {
 }
 
 // ── Boot ───────────────────────────────────────────────────────────────────
+// On wide screens the sidebar starts visible — reflect that in the button label
+if (window.matchMedia('(min-width:680px)').matches) {
+  document.getElementById('btn-lineup-toggle').textContent = '← Hide'
+}
 initPin()
 connect()
 </script>

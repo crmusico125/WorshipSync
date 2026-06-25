@@ -746,8 +746,6 @@ export default function SettingsScreen() {
                         const next = !confidenceEnabled
                         setConfidenceEnabled(next)
                         queueSave({ confidenceEnabled: next })
-                        if (next) window.worshipsync.confidence.open(confidenceDisplayId)
-                        else window.worshipsync.confidence.close()
                       }}
                       className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors focus:outline-none ${
                         confidenceEnabled ? "bg-amber-500 border-amber-600" : "bg-muted border-border"

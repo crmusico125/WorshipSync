@@ -127,9 +127,20 @@ export function registerSlideHandlers(): void {
   })
 
   ipcMain.on('slide:videoControl', (_event, action: 'play' | 'pause' | 'stop') => {
-    if (windows.projection && !windows.projection.isDestroyed()) {
-      windows.projection.webContents.send('slide:videoControl', action)
+    if (!windows.projection || windows.projection.isDestroyed()) return
+    if (action === 'play') {
+      // executeJavaScript with userGesture=true creates a trusted user activation
+      // in the renderer so vid.play() proceeds with audio, bypassing Chromium's
+      // autoplay policy. Two calls cover both timing paths:
+      //   - immediate: video already mounted (slide was shown earlier)
+      //   - delayed:   video still rendering (slide:show and play arrived together)
+      windows.projection.webContents.executeJavaScript('window.__projVideoPlay?.()', true).catch(() => {})
+      setTimeout(() => {
+        if (!windows.projection || windows.projection.isDestroyed()) return
+        windows.projection.webContents.executeJavaScript('window.__projVideoPlay?.()', true).catch(() => {})
+      }, 50)
     }
+    windows.projection.webContents.send('slide:videoControl', action)
   })
 
   ipcMain.on('slide:videoSeek', (_event, time: number) => {

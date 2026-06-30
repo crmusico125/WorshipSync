@@ -305,6 +305,14 @@ export default function ProjectionWindow() {
   const pendingSeekTime   = useRef<number | null>(null);
   const lastVideoReportRef = useRef(0);
 
+  // Expose play function globally so the main process can invoke it via
+  // executeJavaScript(userGesture=true), creating a trusted activation that
+  // bypasses Chromium's autoplay audio restriction.
+  useEffect(() => {
+    ;(window as any).__projVideoPlay = () => videoRef.current?.play().catch(() => {})
+    return () => { ;(window as any).__projVideoPlay = null }
+  }, [])
+
   // Keep refs in sync with state so IPC handlers always read the latest values
   useEffect(() => { transitionMsRef.current = slideTransitionMs; }, [slideTransitionMs]);
 
@@ -389,7 +397,7 @@ export default function ProjectionWindow() {
       const vid = videoRef.current;
       if (!vid) { pendingVideoAction.current = action; return; }
       pendingVideoAction.current = null;
-      if (action === "play") vid.play();
+      if (action === "play") vid.play().catch(() => {});
       else if (action === "pause") vid.pause();
       else if (action === "stop") { vid.pause(); vid.currentTime = 0; setDisplayState("blank"); }
     });
@@ -463,7 +471,7 @@ export default function ProjectionWindow() {
           if (vid && pendingVideoAction.current) {
             const action = pendingVideoAction.current;
             pendingVideoAction.current = null;
-            if (action === "play") vid.play();
+            if (action === "play") vid.play().catch(() => {});
             else if (action === "pause") vid.pause();
             else if (action === "stop") { vid.pause(); vid.currentTime = 0; setDisplayState("blank"); }
           }

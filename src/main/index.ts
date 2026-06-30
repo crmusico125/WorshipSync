@@ -1,4 +1,8 @@
 import { app, BrowserWindow } from 'electron'
+
+// Must be called before app.ready — disables Chromium's autoplay policy so
+// video audio plays in the projection window without requiring a user click.
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import { screen } from 'electron'
 import { runMigrations } from './db/migrate'

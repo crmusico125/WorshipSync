@@ -30,7 +30,8 @@ export function createProjectionWindow(displayId?: number): void {
       sandbox: false,
       contextIsolation: true,
       nodeIntegration: false,
-      webSecurity: false  // ← allows file:// image loading
+      webSecurity: false,           // allows file:// image loading
+      autoplayPolicy: 'no-user-gesture-required',  // allows video audio without a click
     },
     show: false
   })

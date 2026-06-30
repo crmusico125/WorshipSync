@@ -2419,40 +2419,43 @@ export default function PresenterDashboard({
                 </div>
 
                 {/* Player body */}
-                <div className="flex-1 flex flex-col items-center justify-center p-8 bg-muted/20 overflow-y-auto">
-                  <div className="w-full max-w-2xl flex flex-col gap-5">
+                <div className="flex-1 flex flex-col min-h-0 bg-muted/20 overflow-hidden">
 
-                    {/* Video preview */}
-                    <div className="relative rounded-xl overflow-hidden bg-black border border-border shadow-md" style={{ aspectRatio: "16/9" }}>
-                      <video
-                        ref={videoPreviewRef}
-                        src={`${toFileUrl(bg)}`}
-                        className="w-full h-full object-cover"
-                        muted playsInline preload="auto"
-                        loop={videoLoop}
-                        onLoadedMetadata={() => {
-                          const v = videoPreviewRef.current;
-                          if (!v) return;
-                          setVideoDuration(v.duration);
-                          if (videoPlaying) {
-                            // Calculate where the projection currently is
-                            const elapsed = videoTimerStoppedAtRef.current
-                              ? (Date.now() - videoTimerStoppedAtRef.current) / 1000
-                              : 0;
-                            videoTimerStoppedAtRef.current = null;
-                            const seekTo = Math.min(videoCurrentTime + elapsed, v.duration - 0.05);
-                            v.currentTime = seekTo;
-                            window.worshipsync.slide.videoSeek(seekTo);
-                            v.play().catch(() => {});
-                            if (videoTimerRef.current) clearInterval(videoTimerRef.current);
-                            videoTimerRef.current = setInterval(() => setVideoCurrentTime(videoPreviewRef.current?.currentTime ?? 0), 100);
-                          } else {
-                            v.currentTime = videoCurrentTime || 0.001;
-                          }
-                        }}
-                        onEnded={videoLoop ? undefined : stopVideo}
-                      />
-                    </div>
+                  {/* Video preview — fills available height, browser preserves the video's native aspect ratio */}
+                  <div className="flex-1 min-h-0 flex items-center justify-center p-4 pb-2">
+                    <video
+                      ref={videoPreviewRef}
+                      src={`${toFileUrl(bg)}`}
+                      className="rounded-xl border border-border shadow-lg bg-black"
+                      style={{ maxWidth: "100%", maxHeight: "100%", display: "block" }}
+                      muted playsInline preload="auto"
+                      loop={videoLoop}
+                      onLoadedMetadata={() => {
+                        const v = videoPreviewRef.current;
+                        if (!v) return;
+                        setVideoDuration(v.duration);
+                        if (videoPlaying) {
+                          // Calculate where the projection currently is
+                          const elapsed = videoTimerStoppedAtRef.current
+                            ? (Date.now() - videoTimerStoppedAtRef.current) / 1000
+                            : 0;
+                          videoTimerStoppedAtRef.current = null;
+                          const seekTo = Math.min(videoCurrentTime + elapsed, v.duration - 0.05);
+                          v.currentTime = seekTo;
+                          window.worshipsync.slide.videoSeek(seekTo);
+                          v.play().catch(() => {});
+                          if (videoTimerRef.current) clearInterval(videoTimerRef.current);
+                          videoTimerRef.current = setInterval(() => setVideoCurrentTime(videoPreviewRef.current?.currentTime ?? 0), 100);
+                        } else {
+                          v.currentTime = videoCurrentTime || 0.001;
+                        }
+                      }}
+                      onEnded={videoLoop ? undefined : stopVideo}
+                    />
+                  </div>
+
+                  {/* Controls pinned to bottom */}
+                  <div className="shrink-0 px-6 pb-5 flex flex-col gap-3 w-full max-w-2xl mx-auto">
 
                     {/* Seek bar + timestamps */}
                     <div className="flex flex-col gap-1.5">

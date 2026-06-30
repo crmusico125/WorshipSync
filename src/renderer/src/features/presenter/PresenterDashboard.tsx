@@ -865,6 +865,8 @@ export default function PresenterDashboard({
   const stopCountdownRef  = useRef<(() => void) | null>(null);
   const isBlankRef = useRef(isBlank);
   isBlankRef.current = isBlank;
+  const videoPlayingRef = useRef(videoPlaying);
+  videoPlayingRef.current = videoPlaying;
   const isLogoRef = useRef(isLogo);
   isLogoRef.current = isLogo;
   const activeSlideIdxRef = useRef(activeSlideIdx);
@@ -1438,8 +1440,11 @@ export default function PresenterDashboard({
       if (!song || data.lineupItemId !== song.lineupItemId) return
       setVideoCurrentTime(data.currentTime)
       if (data.duration) setVideoDuration(data.duration)
+      // Only resync the preview position while the video is actively playing.
+      // After stopVideo() the preview is reset to 0; the projection's final
+      // onVideoProgress report must not seek it back to the end.
       const preview = videoPreviewRef.current
-      if (preview && Math.abs(preview.currentTime - data.currentTime) > 0.75) {
+      if (videoPlayingRef.current && preview && Math.abs(preview.currentTime - data.currentTime) > 0.75) {
         preview.currentTime = data.currentTime
       }
     })
@@ -2354,6 +2359,7 @@ export default function PresenterDashboard({
                   overlayOpacity: 0,
                   textShadowOpacity: 0,
                   maxLinesPerSlide: DEFAULT_THEME.maxLinesPerSlide,
+                  backgroundScaleMode: imgScaleMode,
                 },
               });
               window.worshipsync.slide.videoLoop(videoLoop);

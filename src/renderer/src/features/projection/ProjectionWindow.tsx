@@ -484,6 +484,9 @@ export default function ProjectionWindow() {
       isPlaying: !vid.paused,
       lineupItemId: currentFrame?.lineupItemId,
     });
+    // When the video finishes naturally (not looping), go blank immediately
+    // rather than waiting for the presenter's videoControl("stop") IPC which can race.
+    if (vid.ended) setDisplayState("blank");
   }, [currentFrame?.lineupItemId]);
 
   const theme = currentFrame?.theme ?? DEFAULT_THEME;

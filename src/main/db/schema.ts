@@ -9,8 +9,9 @@ export const songs = sqliteTable('songs', {
   tempo:          text('tempo', { enum: ['slow', 'medium', 'fast'] }),
   ccliNumber:     text('ccli_number'),
   copyright:      text('copyright'),
-  backgroundPath: text('background_path'),
-  themeId:        integer('theme_id'),
+  backgroundPath:  text('background_path'),
+  themeId:         integer('theme_id'),
+  styleOverrides:  text('style_overrides'),
   tags:           text('tags').notNull().default('[]'),
   createdAt:      text('created_at').notNull().default("(datetime('now'))"),
   updatedAt:      text('updated_at').notNull().default("(datetime('now'))")

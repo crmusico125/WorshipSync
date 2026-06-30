@@ -225,5 +225,16 @@ export function runMigrations(): void {
     console.error('[db] migration error (songs copyright):', e)
   }
 
+  // ── Migration: add style_overrides column to songs ───────────────────────
+  try {
+    const songCols2 = sqlite.prepare("PRAGMA table_info(songs)").all() as { name: string }[]
+    if (!songCols2.some(c => c.name === 'style_overrides')) {
+      sqlite.exec(`ALTER TABLE songs ADD COLUMN style_overrides TEXT`)
+      console.log('[db] migration: added style_overrides column to songs')
+    }
+  } catch (e) {
+    console.error('[db] migration error (songs style_overrides):', e)
+  }
+
   console.log('[db] migrations complete')
 }

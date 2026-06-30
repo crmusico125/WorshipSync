@@ -68,24 +68,6 @@ const DEFAULT_SETTINGS: ThemeSettings = {
   backgroundPath: null,
 }
 
-const FONT_OPTIONS = [
-  "Montserrat, sans-serif",
-  "Inter, sans-serif",
-  "Georgia, serif",
-  "Arial, sans-serif",
-  "Times New Roman, serif",
-  "Trebuchet MS, sans-serif",
-  "Palatino, serif",
-]
-
-const TEXT_COLORS = [
-  { hex: "#ffffff", label: "White" },
-  { hex: "#f5f0e0", label: "Cream" },
-  { hex: "#f5c842", label: "Gold" },
-  { hex: "#60a5fa", label: "Blue" },
-  { hex: "#f472b6", label: "Pink" },
-  { hex: "#4ade80", label: "Green" },
-]
 
 // ── Helpers: serialize/parse bracket-tag lyrics ─────────────────────────
 
@@ -486,25 +468,12 @@ function SongDetailView({
 }) {
   const lyricsText = useMemo(() => sectionsToText(song.sections), [song.sections])
 
-  // Load per-song theme settings
-  const [songTheme, setSongTheme] = useState<ThemeSettings>({ ...DEFAULT_SETTINGS, backgroundPath: song.backgroundPath ?? null })
-  useEffect(() => {
-    if (song.themeId) {
-      window.worshipsync.themes.getAll().then((all: any[]) => {
-        const t = all.find((th: any) => th.id === song.themeId)
-        if (t?.settings) {
-          try {
-            const parsed = JSON.parse(t.settings)
-            setSongTheme({ ...DEFAULT_SETTINGS, ...parsed, backgroundPath: song.backgroundPath ?? parsed.backgroundPath ?? null })
-          } catch {}
-        }
-      })
-    } else {
-      setSongTheme({ ...DEFAULT_SETTINGS, backgroundPath: song.backgroundPath ?? null })
-    }
-  }, [song.id, song.themeId, song.backgroundPath])
+  const songStyle = useMemo<ThemeSettings>(
+    () => ({ ...DEFAULT_SETTINGS, backgroundPath: song.backgroundPath ?? null }),
+    [song.backgroundPath]
+  )
 
-  const slides = useMemo(() => buildSlides(lyricsText, songTheme.maxLinesPerSlide), [lyricsText, songTheme.maxLinesPerSlide])
+  const slides = useMemo(() => buildSlides(lyricsText, DEFAULT_SETTINGS.maxLinesPerSlide), [lyricsText])
 
   return (
     <>
@@ -583,7 +552,7 @@ function SongDetailView({
       </div>
 
       {/* ── Right: slide preview ─────────────────────────────────────── */}
-      <SlidePreviewPanel slides={slides} style={songTheme} />
+      <SlidePreviewPanel slides={slides} style={songStyle} />
     </>
   )
 }
@@ -723,27 +692,21 @@ function SongFormScreen({
     ...DEFAULT_SETTINGS,
     backgroundPath: song?.backgroundPath ?? null,
   })
-  const [existingThemeId] = useState<number | null>(song?.themeId ?? null)
   const [saving,      setSaving]      = useState(false)
   const [showStyle,   setShowStyle]   = useState(false)
 
-  // Load existing per-song theme settings on mount
+  // Seed styleSettings from global default theme, then layer song-level overrides on top
   useEffect(() => {
-    if (song?.themeId) {
-      window.worshipsync.themes.getAll().then((allThemes: any[]) => {
-        const t = allThemes.find((th: any) => th.id === song.themeId)
-        if (t?.settings) {
-          try {
-            const parsed = JSON.parse(t.settings)
-            setStyleSettings((prev) => ({
-              ...prev,
-              ...parsed,
-              backgroundPath: song.backgroundPath ?? parsed.backgroundPath ?? null,
-            }))
-          } catch {}
-        }
-      })
-    }
+    window.worshipsync.themes.getDefault().then((t: any) => {
+      let base = { ...DEFAULT_SETTINGS }
+      if (t?.settings) {
+        try { base = { ...DEFAULT_SETTINGS, ...JSON.parse(t.settings) } } catch {}
+      }
+      const songOverrides = song?.styleOverrides
+        ? (() => { try { return JSON.parse(song.styleOverrides!) } catch { return {} } })()
+        : {}
+      setStyleSettings(prev => ({ ...base, ...songOverrides, backgroundPath: prev.backgroundPath }))
+    })
   }, [])
 
   const insertTag = useCallback((tag: string) => {
@@ -760,25 +723,22 @@ function SongFormScreen({
     setSaving(true)
 
     const parsed = textToSections(lyricsText)
-    const themeSettingsJson = JSON.stringify(styleSettings)
-
     let savedId: number | undefined
 
-    if (isEdit && song) {
-      // Update or create per-song theme
-      let themeId = existingThemeId
-      if (themeId) {
-        await window.worshipsync.themes.update(themeId, { settings: themeSettingsJson })
-      } else {
-        const created = await window.worshipsync.themes.create({
-          name: `Song: ${title.trim()}`,
-          type: "per-song",
-          isDefault: false,
-          settings: themeSettingsJson,
-        }) as { id: number }
-        themeId = created.id
-      }
+    // Compute style overrides: only persist fields that differ from global default
+    const { backgroundPath, ...styleCopy } = styleSettings
+    const globalBase: ThemeSettings = await window.worshipsync.themes.getDefault().then((t: any) => {
+      if (t?.settings) { try { return { ...DEFAULT_SETTINGS, ...JSON.parse(t.settings) } } catch {} }
+      return DEFAULT_SETTINGS
+    })
+    const overrideKeys = (Object.keys(styleCopy) as (keyof typeof styleCopy)[]).filter(
+      k => styleCopy[k] !== (globalBase as any)[k]
+    )
+    const styleOverrides = overrideKeys.length > 0
+      ? JSON.stringify(Object.fromEntries(overrideKeys.map(k => [k, styleCopy[k]])))
+      : null
 
+    if (isEdit && song) {
       await window.worshipsync.songs.update(song.id, {
         title: title.trim(),
         artist: artist.trim(),
@@ -787,19 +747,11 @@ function SongFormScreen({
         ccliNumber: ccli.trim() || null,
         copyright: copyright.trim() || null,
         backgroundPath: styleSettings.backgroundPath,
-        themeId,
+        styleOverrides,
       })
       await window.worshipsync.songs.upsertSections(song.id, parsed)
       savedId = song.id
     } else {
-      // Create per-song theme first
-      const createdTheme = await window.worshipsync.themes.create({
-        name: `Song: ${title.trim()}`,
-        type: "per-song",
-        isDefault: false,
-        settings: themeSettingsJson,
-      }) as { id: number }
-
       const created = await window.worshipsync.songs.create({
         title: title.trim(),
         artist: artist.trim(),
@@ -811,12 +763,10 @@ function SongFormScreen({
         sections: parsed,
       }) as { id: number } | undefined
       savedId = created?.id
-
-      if (savedId) {
-        // Link theme and set background on newly created song
+      if (savedId && (styleSettings.backgroundPath || styleOverrides)) {
         await window.worshipsync.songs.update(savedId, {
-          themeId: createdTheme.id,
           backgroundPath: styleSettings.backgroundPath,
+          styleOverrides,
         })
       }
     }
@@ -1015,126 +965,94 @@ function SlideThumb({ lines, backgroundPath, small, style }: {
 
 // ── Presentation Style Panel (right column in form screen) ──────────────
 
+const LIBRARY_FONT_OPTIONS = [
+  { value: "Inter, sans-serif", label: "Inter" },
+  { value: "Montserrat, sans-serif", label: "Montserrat" },
+  { value: "Georgia, serif", label: "Georgia" },
+  { value: "Roboto, sans-serif", label: "Roboto" },
+]
+
 function PresentationStylePanel({ settings, onSettingsChange }: {
   settings: ThemeSettings
   onSettingsChange: (s: ThemeSettings) => void
 }) {
-  const update = <K extends keyof ThemeSettings>(key: K, value: ThemeSettings[K]) => {
-    onSettingsChange({ ...settings, [key]: value })
-  }
-
+  const set = (patch: Partial<ThemeSettings>) => onSettingsChange({ ...settings, ...patch })
   return (
-    <div className="w-[388px] shrink-0 flex flex-col border-l border-border bg-card overflow-y-auto">
-      <div className="p-5 flex flex-col gap-5">
-        {/* Header */}
-        <div>
-          <h2 className="text-base font-semibold">Presentation Style</h2>
-          <p className="text-[13px] text-muted-foreground mt-1">
-            Choose projection background, text treatment, and font settings for this song.
-          </p>
+    <div className="w-[280px] shrink-0 flex flex-col border-l border-border bg-card overflow-y-auto">
+      <div className="px-4 py-4 space-y-4">
+        <div className="space-y-3">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">Font Size</p>
+            <div className="flex items-center gap-2">
+              <input type="range" className="flex-1 h-1 accent-primary" min={24} max={96} step={2}
+                value={settings.fontSize} onChange={e => set({ fontSize: Number(e.target.value) })} />
+              <span className="text-xs text-muted-foreground w-10 text-right tabular-nums">{settings.fontSize}px</span>
+            </div>
+          </div>
+
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">Lines per Slide</p>
+            <div className="flex gap-1.5">
+              {([1, 2, 3, 4] as const).map(n => (
+                <button key={n} onClick={() => set({ maxLinesPerSlide: n })}
+                  className={`flex-1 h-8 rounded-md border text-xs font-medium transition-colors ${settings.maxLinesPerSlide === n ? "bg-primary/10 text-primary border-primary/30" : "border-input text-muted-foreground hover:text-foreground hover:bg-accent"}`}>
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">Text Alignment</p>
+            <div className="flex gap-1.5">
+              {(["left", "center", "right"] as const).map(align => (
+                <button key={align} onClick={() => set({ textAlign: align })}
+                  className={`flex-1 h-8 rounded-md border flex items-center justify-center text-sm transition-colors ${settings.textAlign === align ? "bg-primary/10 text-primary border-primary/30" : "border-input text-muted-foreground hover:text-foreground hover:bg-accent"}`}>
+                  {align === "left" ? "⫷" : align === "center" ? "☰" : "⫸"}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">Position</p>
+            <div className="flex gap-1.5">
+              {(["top", "middle", "bottom"] as const).map(pos => (
+                <button key={pos} onClick={() => set({ textPosition: pos })}
+                  className={`flex-1 h-8 rounded-md border text-xs capitalize transition-colors ${settings.textPosition === pos ? "bg-primary/10 text-primary border-primary/30" : "border-input text-muted-foreground hover:text-foreground hover:bg-accent"}`}>
+                  {pos}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">Font</p>
+            <select className="w-full h-8 rounded-md border border-input bg-background px-2 text-xs"
+              value={settings.fontFamily} onChange={e => set({ fontFamily: e.target.value })}>
+              {LIBRARY_FONT_OPTIONS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">Overlay Opacity</p>
+            <div className="flex items-center gap-2">
+              <input type="range" className="flex-1 h-1 accent-primary" min={0} max={100} step={5}
+                value={settings.overlayOpacity} onChange={e => set({ overlayOpacity: Number(e.target.value) })} />
+              <span className="text-xs text-muted-foreground w-8 text-right tabular-nums">{settings.overlayOpacity}%</span>
+            </div>
+          </div>
         </div>
 
-        {/* Background picker */}
-        <StyleCard title="Background">
+        <div className="border-t border-border pt-4">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">Background</p>
           <BackgroundPickerPanel
             currentBackground={settings.backgroundPath}
             previewLabel=""
-            onSelect={(bg) => update("backgroundPath", bg)}
+            onSelect={(bg) => set({ backgroundPath: bg })}
           />
-        </StyleCard>
-
-        {/* Typography */}
-        <StyleCard title="Typography">
-          <Field label="Font Family">
-            <Select value={settings.fontFamily} onChange={(e) => update("fontFamily", e.target.value)}>
-              {FONT_OPTIONS.map((f) => (
-                <option key={f} value={f}>{f.split(",")[0]}</option>
-              ))}
-            </Select>
-          </Field>
-          <Field label={`Font Size (${settings.fontSize}px)`}>
-            <input
-              type="range"
-              min={24}
-              max={96}
-              step={2}
-              value={settings.fontSize}
-              onChange={(e) => update("fontSize", Number(e.target.value))}
-              className="w-full accent-primary"
-            />
-          </Field>
-          <Field label="Text Color">
-            <div className="flex gap-2 flex-wrap">
-              {TEXT_COLORS.map((c) => (
-                <button
-                  key={c.hex}
-                  title={c.label}
-                  className={`w-7 h-7 rounded-full border-2 transition-all ${
-                    settings.textColor === c.hex ? "border-primary scale-110" : "border-border"
-                  }`}
-                  style={{ background: c.hex }}
-                  onClick={() => update("textColor", c.hex)}
-                />
-              ))}
-            </div>
-          </Field>
-          <Field label="Text Align">
-            <Select value={settings.textAlign} onChange={(e) => update("textAlign", e.target.value as ThemeSettings["textAlign"])}>
-              <option value="left">Left</option>
-              <option value="center">Center</option>
-              <option value="right">Right</option>
-            </Select>
-          </Field>
-          <Field label="Text Position">
-            <Select value={settings.textPosition} onChange={(e) => update("textPosition", e.target.value as ThemeSettings["textPosition"])}>
-              <option value="top">Top</option>
-              <option value="middle">Middle</option>
-              <option value="bottom">Bottom</option>
-            </Select>
-          </Field>
-        </StyleCard>
-
-        {/* Text Effects */}
-        <StyleCard title="Text Effects">
-          <Field label={`Overlay Opacity (${settings.overlayOpacity}%)`}>
-            <input
-              type="range"
-              min={0}
-              max={100}
-              value={settings.overlayOpacity}
-              onChange={(e) => update("overlayOpacity", Number(e.target.value))}
-              className="w-full accent-primary"
-            />
-          </Field>
-          <Field label={`Text Shadow (${settings.textShadowOpacity}%)`}>
-            <input
-              type="range"
-              min={0}
-              max={100}
-              value={settings.textShadowOpacity}
-              onChange={(e) => update("textShadowOpacity", Number(e.target.value))}
-              className="w-full accent-primary"
-            />
-          </Field>
-          <Field label="Max Lines Per Slide">
-            <Select value={String(settings.maxLinesPerSlide)} onChange={(e) => update("maxLinesPerSlide", Number(e.target.value))}>
-              <option value="2">2 lines</option>
-              <option value="3">3 lines</option>
-              <option value="4">4 lines</option>
-              <option value="6">6 lines</option>
-            </Select>
-          </Field>
-        </StyleCard>
+        </div>
       </div>
-    </div>
-  )
-}
-
-function StyleCard({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="rounded-lg bg-input p-3.5 flex flex-col gap-3">
-      <span className="text-[13px] font-medium">{title}</span>
-      {children}
     </div>
   )
 }

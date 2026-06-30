@@ -80,6 +80,7 @@ interface LiveSong {
   backgroundPath: string | null;
   mediaPath: string | null;
   themeId: number | null;
+  styleOverrides: string | null;
   notes: string | null;
   itemStyle: string | null;
   imageScaleMode: 'cover' | 'contain' | 'stretch' | null;
@@ -223,7 +224,6 @@ export default function PresenterDashboard({
   const [showHelp, setShowHelp] = useState(false);
   const [confirmEndShow, setConfirmEndShow] = useState(false);
   const confirmEndTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [themeCache, setThemeCache] = useState<Record<number, any>>({});
   const [defaultTheme, setDefaultTheme] = useState<any>(null);
   const [defaultThemeBg, setDefaultThemeBg] = useState<string | null>(null);
   const defaultScriptureThemeBgRef = useRef<string | null>(null);
@@ -390,6 +390,9 @@ export default function PresenterDashboard({
     label: string; timezone?: string;
   }>>([]);
   const [projectionFontSize, setProjectionFontSize] = useState(48);
+  // True once appState confirms the operator has explicitly saved a font size override.
+  // Used to prevent the default theme from overwriting an intentional operator choice.
+  const fontSizeExplicitRef = useRef(false);
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
     null,
   );
@@ -421,7 +424,10 @@ export default function PresenterDashboard({
       if (state.serviceTime)        setServiceTime(state.serviceTime as string);
       if (state.serviceTimezone)    setServiceTimezone(state.serviceTimezone as string);
       if (state.serviceSchedules)   setServiceSchedules(state.serviceSchedules as any);
-      if (state.projectionFontSize) setProjectionFontSize(state.projectionFontSize as number);
+      if (state.projectionFontSize) {
+        fontSizeExplicitRef.current = true;
+        setProjectionFontSize(state.projectionFontSize as number);
+      }
     });
 
     window.worshipsync.themes.getDefault().then((t: any) => {
@@ -432,13 +438,13 @@ export default function PresenterDashboard({
           setDefaultThemeBg(s.backgroundPath ?? null);
           defaultScriptureThemeBgRef.current = s.scriptureBackgroundPath ?? null;
           defaultAnnouncementThemeBgRef.current = s.announcementBackgroundPath ?? null;
+          // Seed projectionFontSize from the Themes screen default if the operator
+          // hasn't saved an explicit override via the output bar.
+          if (!fontSizeExplicitRef.current && typeof s.fontSize === 'number') {
+            setProjectionFontSize(s.fontSize);
+          }
         } catch {}
       }
-    });
-    window.worshipsync.themes.getAll().then((all: any[]) => {
-      const c: Record<number, any> = {};
-      all.forEach((t) => { c[t.id] = t; });
-      setThemeCache(c);
     });
 
     const cleanupDisplays = window.worshipsync.window.onDisplaysChanged((d) => {
@@ -505,6 +511,7 @@ export default function PresenterDashboard({
           backgroundPath: null,
           mediaPath: null,
           themeId: null,
+          styleOverrides: null,
           notes: null,
           itemStyle: null,
           imageScaleMode: null,
@@ -523,6 +530,7 @@ export default function PresenterDashboard({
           backgroundPath: null,
           mediaPath: null,
           themeId: null,
+          styleOverrides: null,
           notes: item.notes ?? null,
           itemStyle: null,
           imageScaleMode: null,
@@ -554,6 +562,7 @@ export default function PresenterDashboard({
           backgroundPath: item.overrideBackgroundPath ?? null,
           mediaPath: null,
           themeId: null,
+          styleOverrides: null,
           notes: item.notes ?? null,
           itemStyle: null,
           imageScaleMode: null,
@@ -588,6 +597,7 @@ export default function PresenterDashboard({
           backgroundPath: item.overrideBackgroundPath ?? null,
           mediaPath: null,
           themeId: null,
+          styleOverrides: null,
           notes: item.notes ?? null,
           itemStyle: item.itemStyle ?? null,
           imageScaleMode: null,
@@ -608,6 +618,7 @@ export default function PresenterDashboard({
           backgroundPath: null,
           mediaPath: item.mediaPath ?? null,
           themeId: null,
+          styleOverrides: null,
           notes: item.notes ?? null,
           itemStyle: null,
           imageScaleMode: (item.imageScaleMode as 'cover' | 'contain' | 'stretch') ?? 'contain',
@@ -628,6 +639,7 @@ export default function PresenterDashboard({
           backgroundPath: null,
           mediaPath: null,
           themeId: null,
+          styleOverrides: null,
           notes: item.notes ?? null,
           itemStyle: null,
           imageScaleMode: null,
@@ -644,12 +656,10 @@ export default function PresenterDashboard({
         } catch {}
       }
 
-      // Resolve per-song maxLinesPerSlide from theme
       let maxLines = DEFAULT_THEME.maxLinesPerSlide;
-      const songThemeId = item.song.themeId;
-      if (songThemeId && themeCache[songThemeId]?.settings) {
+      if (defaultTheme?.settings) {
         try {
-          const parsed = JSON.parse(themeCache[songThemeId].settings);
+          const parsed = JSON.parse(defaultTheme.settings);
           if (parsed.maxLinesPerSlide) maxLines = parsed.maxLinesPerSlide;
         } catch {}
       }
@@ -665,6 +675,7 @@ export default function PresenterDashboard({
         backgroundPath: item.overrideBackgroundPath ?? item.song.backgroundPath ?? null,
         mediaPath: null,
         themeId: item.song.themeId ?? null,
+        styleOverrides: item.song.styleOverrides ?? null,
         notes: item.notes ?? null,
         itemStyle: null,
         imageScaleMode: null,
@@ -672,23 +683,22 @@ export default function PresenterDashboard({
       };
     });
     setLiveSongs(built);
-  }, [lineup, themeCache]);
+  }, [lineup, defaultTheme]);
 
 
   // ── Theme + background resolution ────────────────────────────────────────
   const resolveTheme = useCallback(
     (song: LiveSong): ThemeStyle => {
-      const t =
-        (song.themeId ? themeCache[song.themeId] : null) ?? defaultTheme;
       let base = DEFAULT_THEME;
-      if (t?.settings) {
-        try {
-          base = { ...DEFAULT_THEME, ...JSON.parse(t.settings) };
-        } catch {}
+      if (defaultTheme?.settings) {
+        try { base = { ...DEFAULT_THEME, ...JSON.parse(defaultTheme.settings) }; } catch {}
+      }
+      if (song.styleOverrides) {
+        try { base = { ...base, ...JSON.parse(song.styleOverrides) }; } catch {}
       }
       return base;
     },
-    [themeCache, defaultTheme],
+    [defaultTheme],
   );
 
   const resolveBg = useCallback(
@@ -696,19 +706,11 @@ export default function PresenterDashboard({
       if (song.backgroundPath) return song.backgroundPath;
       const isScripture = song.itemType === "scripture";
       const isAnnouncement = song.itemType === "announcement";
-      if (song.themeId && themeCache[song.themeId]) {
-        try {
-          const s = JSON.parse(themeCache[song.themeId].settings);
-          if (isScripture && s.scriptureBackgroundPath) return s.scriptureBackgroundPath;
-          if (isAnnouncement && s.announcementBackgroundPath) return s.announcementBackgroundPath;
-          return s.backgroundPath ?? undefined;
-        } catch {}
-      }
       if (isScripture && defaultScriptureThemeBgRef.current) return defaultScriptureThemeBgRef.current;
       if (isAnnouncement && defaultAnnouncementThemeBgRef.current) return defaultAnnouncementThemeBgRef.current;
       return defaultThemeBg ?? undefined;
     },
-    [themeCache, defaultThemeBg],
+    [defaultThemeBg],
   );
 
   // Sync lineup + resolved bg/theme to PWA controller after every liveSongs/selection change.
@@ -1096,8 +1098,13 @@ export default function PresenterDashboard({
     if (t?.settings) {
       try {
         const s = JSON.parse(t.settings);
+        setDefaultTheme(t);
+        setDefaultThemeBg(s.backgroundPath ?? null);
         defaultScriptureThemeBgRef.current = s.scriptureBackgroundPath ?? null;
         defaultAnnouncementThemeBgRef.current = s.announcementBackgroundPath ?? null;
+        if (!fontSizeExplicitRef.current && typeof s.fontSize === 'number') {
+          setProjectionFontSize(s.fontSize);
+        }
       } catch {}
     }
   };

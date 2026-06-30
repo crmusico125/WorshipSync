@@ -19,6 +19,7 @@ export interface Song {
   copyright: string | null
   backgroundPath: string | null
   themeId: number | null
+  styleOverrides: string | null
   tags: string
   createdAt: string
   updatedAt: string

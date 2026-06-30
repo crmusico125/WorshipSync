@@ -25,8 +25,10 @@ export interface LineupItem {
     key: string | null
     tempo: string | null
     ccliNumber: string | null
+    copyright: string | null
     backgroundPath: string | null
     themeId: number | null
+    styleOverrides: string | null
     sections: { id: number; songId: number; type: string; label: string; lyrics: string; orderIndex: number }[]
   } | null
 }

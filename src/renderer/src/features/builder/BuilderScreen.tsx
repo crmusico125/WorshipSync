@@ -171,7 +171,7 @@ function newCard(): AnnouncementCard {
 
 // ── Duration helpers ─────────────────────────────────────────────────────────
 
-function estimateDuration(item: LineupItemWithSong, themeCache: Record<number, any>): number {
+function estimateDuration(item: LineupItemWithSong, maxLinesPerSlide: number): number {
   if (item.itemType === 'section') return 0
   if (item.itemType === 'countdown') return 300
   if (item.itemType === 'scripture') {
@@ -179,11 +179,7 @@ function estimateDuration(item: LineupItemWithSong, themeCache: Record<number, a
   }
   if (item.itemType === 'media') return 0
   if (!item.song) return 0
-  let maxLines = 2
-  if (item.song.themeId && themeCache[item.song.themeId]?.settings) {
-    try { maxLines = JSON.parse(themeCache[item.song.themeId].settings).maxLinesPerSlide ?? 2 } catch {}
-  }
-  const sc = buildSlides(item.song.sections, maxLines).length
+  const sc = buildSlides(item.song.sections, maxLinesPerSlide).length
   return sc * 15
 }
 
@@ -228,8 +224,8 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
   const [previewSlideIdx, setPreviewSlideIdx] = useState(0)
   const [notesMap, setNotesMap] = useState<Record<number, string>>({})
   const notesTimers = useRef<Record<number, ReturnType<typeof setTimeout>>>({})
-  const themeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingThemeRef = useRef<Partial<ThemeStyle>>({})
+  const themeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const announcementTimers = useRef<{ title?: ReturnType<typeof setTimeout>; content?: ReturnType<typeof setTimeout> }>({})
   const [scripturePasteText, setScripturePasteText] = useState("")
   const [scripturePasteOpen, setScripturePasteOpen] = useState(false)
@@ -276,7 +272,6 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
   const previewVizFrameRef = useRef<number | null>(null)
 
   // Theme data
-  const [themeCache, setThemeCache] = useState<Record<number, any>>({})
   const [defaultTheme, setDefaultTheme] = useState<any>(null)
   const [defaultThemeBg, setDefaultThemeBg] = useState<string | null>(null)
   const [defaultAnnouncementThemeBg, setDefaultAnnouncementThemeBg] = useState<string | null>(null)
@@ -322,11 +317,6 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
         } catch {}
       }
     })
-    window.worshipsync.themes.getAll().then((all: any[]) => {
-      const c: Record<number, any> = {}
-      all.forEach(t => { c[t.id] = t })
-      setThemeCache(c)
-    })
   }, [])
 
   // Stop all preview media on unmount (e.g. switching to live mode)
@@ -365,6 +355,17 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
       setArrangedSectionIds(null)
     }
     setArrangementChanged(false)
+    // Refresh default theme so changes made in ThemesScreen while builder was hidden are picked up
+    window.worshipsync.themes.getDefault().then((t: any) => {
+      setDefaultTheme(t)
+      if (t?.settings) {
+        try {
+          const s = JSON.parse(t.settings)
+          setDefaultThemeBg(s.backgroundPath ?? null)
+          setDefaultAnnouncementThemeBg(s.announcementBackgroundPath ?? null)
+        } catch {}
+      }
+    })
   }, [selectedSongIdx]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Seed notes from DB whenever lineup changes
@@ -379,9 +380,16 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
     ? new Date(selectedService.date + "T00:00:00") < new Date(new Date().toLocaleDateString("en-CA") + "T00:00:00")
     : false
 
+  const defaultMaxLines = useMemo((): number => {
+    if (defaultTheme?.settings) {
+      try { return JSON.parse(defaultTheme.settings).maxLinesPerSlide ?? DEFAULT_THEME.maxLinesPerSlide } catch {}
+    }
+    return DEFAULT_THEME.maxLinesPerSlide
+  }, [defaultTheme])
+
   const totalDurationSec = useMemo(
-    () => lineup.reduce((sum, item) => sum + estimateDuration(item, themeCache), 0),
-    [lineup, themeCache],
+    () => lineup.reduce((sum, item) => sum + estimateDuration(item, defaultMaxLines), 0),
+    [lineup, defaultMaxLines],
   )
 
   const currentItem = lineup[selectedSongIdx] ?? null
@@ -397,14 +405,18 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
     }
   }, [currentItem?.id])
 
+  const songStyleOverrides: Partial<ThemeStyle> = useMemo(() => {
+    if (!currentSong?.styleOverrides) return {}
+    try { return JSON.parse(currentSong.styleOverrides) } catch { return {} }
+  }, [currentSong?.styleOverrides])
+
   const effectiveTheme: ThemeStyle = useMemo(() => {
-    const t = (currentSong?.themeId ? themeCache[currentSong.themeId] : null) ?? defaultTheme
     let base = DEFAULT_THEME
-    if (t?.settings) {
-      try { base = { ...DEFAULT_THEME, ...JSON.parse(t.settings) } } catch {}
+    if (defaultTheme?.settings) {
+      try { base = { ...DEFAULT_THEME, ...JSON.parse(defaultTheme.settings) } } catch {}
     }
-    return { ...base, ...themeOverrides }
-  }, [currentSong, themeCache, defaultTheme, themeOverrides])
+    return { ...base, ...songStyleOverrides, ...themeOverrides }
+  }, [defaultTheme, songStyleOverrides, themeOverrides])
 
   const arrangedSections = useMemo(() => {
     if (!currentSong) return []
@@ -508,12 +520,9 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
     if (bgOverride !== undefined) return bgOverride
     if (currentItem?.overrideBackgroundPath) return currentItem.overrideBackgroundPath
     if (currentSong?.backgroundPath) return currentSong.backgroundPath
-    if (currentSong?.themeId && themeCache[currentSong.themeId]) {
-      try { return JSON.parse(themeCache[currentSong.themeId].settings).backgroundPath ?? null } catch {}
-    }
     if (currentItem?.itemType === 'announcement' && defaultAnnouncementThemeBg) return defaultAnnouncementThemeBg
     return defaultThemeBg
-  }, [currentSong, currentItem, themeCache, defaultThemeBg, defaultAnnouncementThemeBg, bgOverride])
+  }, [currentSong, currentItem, defaultThemeBg, defaultAnnouncementThemeBg, bgOverride])
 
   // ── DnD sensors ──────────────────────────────────────────────────────────
   const sensors = useSensors(useSensor(PointerSensor, {
@@ -650,26 +659,22 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
     if (!currentSong) return
     if (themeTimerRef.current) clearTimeout(themeTimerRef.current)
     themeTimerRef.current = setTimeout(async () => {
-      const overrides = pendingThemeRef.current
-      const base: Partial<ThemeStyle> = currentSong.themeId && themeCache[currentSong.themeId]?.settings
-        ? (() => { try { return JSON.parse(themeCache[currentSong.themeId!].settings) } catch { return {} } })()
+      const existing: Partial<ThemeStyle> = currentSong.styleOverrides
+        ? (() => { try { return JSON.parse(currentSong.styleOverrides) } catch { return {} } })()
         : {}
-      const fullSettings = { ...DEFAULT_THEME, ...base, ...overrides }
-      const settingsJson = JSON.stringify(fullSettings)
-      if (currentSong.themeId) {
-        await window.worshipsync.themes.update(currentSong.themeId, { settings: settingsJson })
-      } else {
-        const newTheme = await window.worshipsync.themes.create({
-          name: currentSong.title, type: 'per-song', isDefault: false, settings: settingsJson,
-        })
-        await window.worshipsync.songs.update(currentSong.id, { themeId: newTheme.id })
-      }
-      const all = await window.worshipsync.themes.getAll()
-      const c: Record<number, any> = {}
-      all.forEach((t: any) => { c[t.id] = t })
-      setThemeCache(c)
+      const merged = { ...existing, ...pendingThemeRef.current }
+      await window.worshipsync.songs.update(currentSong.id, { styleOverrides: JSON.stringify(merged) })
       await loadSongs()
-    }, 800)
+    }, 600)
+  }
+
+  const handleThemeReset = async () => {
+    if (!currentSong) return
+    setThemeOverrides({})
+    pendingThemeRef.current = {}
+    if (themeTimerRef.current) { clearTimeout(themeTimerRef.current); themeTimerRef.current = null }
+    await window.worshipsync.songs.update(currentSong.id, { styleOverrides: null })
+    await loadSongs()
   }
 
   const stopPreviewMedia = () => {
@@ -929,7 +934,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
                             }
                             return items
                           })()
-                          const sectionDurSec = sectionItems.reduce((sum, si) => sum + estimateDuration(si, themeCache), 0)
+                          const sectionDurSec = sectionItems.reduce((sum, si) => sum + estimateDuration(si, defaultMaxLines), 0)
 
                           return (
                             <SortableSectionHeader
@@ -971,7 +976,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
                             colorIdx={underSection[i] ? colorIdx : -1}
                             title={isCountdown ? "Countdown Timer" : isScripture || isMedia || isAnnouncement ? item.title ?? "—" : item.song?.title ?? "—"}
                             subtitle={(() => {
-                              const dur = fmtDur(estimateDuration(item, themeCache))
+                              const dur = fmtDur(estimateDuration(item, defaultMaxLines))
                               const base = isCountdown ? "Countdown"
                                 : isScripture ? "Scripture"
                                 : isMedia ? "Media"
@@ -1444,7 +1449,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
                       <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-2">
                         {scriptureVerses.length} {scriptureVerses.length === 1 ? 'slide' : 'slides'} · click to preview
                       </label>
-                      <div className="grid grid-cols-3 gap-2">
+                      <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))" }}>
                         {scriptureVerses.map((v, i) => {
                           const isPreview = previewSlideIdx === i
                           return (
@@ -1615,7 +1620,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
 
                   {/* Flat slide grid */}
                   <div className="flex-1 overflow-y-auto px-5 py-4">
-                    <div className="grid grid-cols-3 gap-2.5">
+                    <div className="grid gap-2.5" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))" }}>
                       {slides.map((slide, i) => {
                         const isPreview = previewSlideIdx === i
                         return (
@@ -1691,7 +1696,9 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
             annCards={annCards}
             readOnly={isPast}
             isOverridden={(bgOverride !== undefined && bgOverride !== null) || !!currentItem?.overrideBackgroundPath}
+            songStyleOverrides={currentSong ? songStyleOverrides : {}}
             onThemeChange={handleThemeChange}
+            onThemeReset={currentSong ? handleThemeReset : undefined}
             onBgChange={(path) => {
               setBgOverride(path)
               if (currentSong) {
@@ -1824,7 +1831,7 @@ function ItemSettingsPanel({
   currentItem, notes, onNotesChange, onNotesBlur,
   slide, theme, bg, canCustomize, readOnly, isOverridden,
   pendingBg, savingBg, onSaveBgToSong, onSaveBgToService, onDiscardBg,
-  onThemeChange, onBgChange, onScaleModeChange,
+  songStyleOverrides, onThemeChange, onThemeReset, onBgChange, onScaleModeChange,
   annPreviewTitle, annCards,
 }: {
   currentItem: LineupItemWithSong | null
@@ -1842,7 +1849,9 @@ function ItemSettingsPanel({
   onSaveBgToSong?: () => void
   onSaveBgToService?: () => void
   onDiscardBg: () => void
+  songStyleOverrides: Partial<ThemeStyle>
   onThemeChange: (key: keyof ThemeStyle, value: any) => void
+  onThemeReset?: () => void
   onBgChange: (path: string | null) => void
   onScaleModeChange: (mode: 'cover' | 'contain' | 'stretch') => void
   annPreviewTitle?: string
@@ -2073,10 +2082,43 @@ function ItemSettingsPanel({
         {/* Theme Styling */}
         {canCustomize && (
           <div className={`px-4 py-3 ${readOnly ? "pointer-events-none opacity-50" : ""}`}>
-            <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-3">Theme Styling</label>
+            <div className="flex items-center justify-between mb-3">
+              <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Theme Styling</label>
+              {Object.keys(songStyleOverrides).length > 0 && (
+                <span className="text-[9px] font-medium text-amber-500 uppercase tracking-wider">Song overrides active</span>
+              )}
+            </div>
             <div className="space-y-3">
               <div>
-                <p className="text-[10px] text-muted-foreground mb-1.5">Text Layout</p>
+                <div className="flex items-center gap-1 mb-1.5">
+                  <p className="text-[10px] text-muted-foreground">Font Size</p>
+                  {songStyleOverrides.fontSize !== undefined && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" title="Song override" />}
+                </div>
+                <div className="flex items-center gap-2">
+                  <input type="range" className="flex-1 h-1 accent-primary" min={24} max={96} step={2}
+                    value={theme.fontSize} onChange={e => onThemeChange("fontSize", Number(e.target.value))} />
+                  <span className="text-xs text-muted-foreground w-8 text-right">{theme.fontSize}px</span>
+                </div>
+              </div>
+              <div>
+                <div className="flex items-center gap-1 mb-1.5">
+                  <p className="text-[10px] text-muted-foreground">Lines per Slide</p>
+                  {songStyleOverrides.maxLinesPerSlide !== undefined && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" title="Song override" />}
+                </div>
+                <div className="flex gap-1.5">
+                  {([1, 2, 3, 4] as const).map(n => (
+                    <button key={n} onClick={() => onThemeChange("maxLinesPerSlide", n)}
+                      className={`flex-1 h-8 rounded-md border text-xs font-medium transition-colors ${theme.maxLinesPerSlide === n ? "bg-primary/10 text-primary border-primary/30" : "border-input text-muted-foreground hover:text-foreground hover:bg-accent"}`}>
+                      {n}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="flex items-center gap-1 mb-1.5">
+                  <p className="text-[10px] text-muted-foreground">Text Layout</p>
+                  {songStyleOverrides.textAlign !== undefined && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" title="Song override" />}
+                </div>
                 <div className="flex gap-1.5">
                   {(["left", "center", "right"] as const).map(align => (
                     <button key={align} onClick={() => onThemeChange("textAlign", align)}
@@ -2087,7 +2129,10 @@ function ItemSettingsPanel({
                 </div>
               </div>
               <div>
-                <p className="text-[10px] text-muted-foreground mb-1.5">Position</p>
+                <div className="flex items-center gap-1 mb-1.5">
+                  <p className="text-[10px] text-muted-foreground">Position</p>
+                  {songStyleOverrides.textPosition !== undefined && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" title="Song override" />}
+                </div>
                 <div className="flex gap-1.5">
                   {(["top", "middle", "bottom"] as const).map(pos => (
                     <button key={pos} onClick={() => onThemeChange("textPosition", pos)}
@@ -2098,20 +2143,32 @@ function ItemSettingsPanel({
                 </div>
               </div>
               <div>
-                <p className="text-[10px] text-muted-foreground mb-1.5">Font</p>
+                <div className="flex items-center gap-1 mb-1.5">
+                  <p className="text-[10px] text-muted-foreground">Font</p>
+                  {songStyleOverrides.fontFamily !== undefined && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" title="Song override" />}
+                </div>
                 <select className="w-full h-8 rounded-md border border-input bg-background px-2 text-xs"
                   value={theme.fontFamily} onChange={e => onThemeChange("fontFamily", e.target.value)}>
                   {FONT_OPTIONS.map(f => <option key={f.value} value={f.value}>{f.label}</option>)}
                 </select>
               </div>
               <div>
-                <p className="text-[10px] text-muted-foreground mb-1.5">Overlay Opacity</p>
+                <div className="flex items-center gap-1 mb-1.5">
+                  <p className="text-[10px] text-muted-foreground">Overlay Opacity</p>
+                  {songStyleOverrides.overlayOpacity !== undefined && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" title="Song override" />}
+                </div>
                 <div className="flex items-center gap-2">
                   <input type="range" className="flex-1 h-1 accent-primary" min={0} max={100} step={5}
                     value={theme.overlayOpacity} onChange={e => onThemeChange("overlayOpacity", Number(e.target.value))} />
                   <span className="text-xs text-muted-foreground w-10 text-right">{theme.overlayOpacity}%</span>
                 </div>
               </div>
+              {Object.keys(songStyleOverrides).length > 0 && onThemeReset && (
+                <button onClick={onThemeReset}
+                  className="w-full h-8 rounded-md border border-amber-500/40 text-amber-500 text-xs font-medium hover:bg-amber-500/10 transition-colors">
+                  Reset to global theme defaults
+                </button>
+              )}
             </div>
           </div>
         )}

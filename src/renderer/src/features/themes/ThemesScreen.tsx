@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import {
-  Plus, Palette, Star, Trash2, Save, Type, AlignLeft, AlignCenter,
-  AlignRight, Image as ImageIcon, Layers, Eye,
+  Plus, Palette, Trash2, Save, Type, AlignLeft, AlignCenter,
+  AlignRight, Image as ImageIcon, Layers, Eye, Calendar,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -70,10 +70,12 @@ const TEXT_COLORS = [
   { hex: "#4ade80", label: "Green" },
 ]
 
-const TYPE_BADGES: Record<string, { label: string; className: string }> = {
-  global:     { label: "Global",   className: "bg-primary/15 text-primary" },
-  seasonal:   { label: "Seasonal", className: "bg-green-500/15 text-green-500" },
-  "per-song": { label: "Per-song", className: "bg-amber-500/15 text-amber-500" },
+function isSeasonActive(start: string | null, end: string | null): boolean {
+  if (!start || !end) return false
+  const today = new Date().toLocaleDateString("en-CA").slice(5) // "MM-DD"
+  return start <= end
+    ? today >= start && today <= end
+    : today >= start || today <= end // wraps year-end e.g. Dec–Jan
 }
 
 export default function ThemesScreen() {
@@ -81,6 +83,8 @@ export default function ThemesScreen() {
   const [selectedTheme, setSelectedTheme] = useState<Theme | null>(null)
   const [settings, setSettings] = useState<ThemeSettings>(DEFAULT_SETTINGS)
   const [name, setName] = useState("")
+  const [seasonStart, setSeasonStart] = useState("")
+  const [seasonEnd, setSeasonEnd] = useState("")
   const [saving, setSaving] = useState(false)
   const [showNewModal, setShowNewModal] = useState(false)
   const [previewLyric] = useState("You are the way maker\nMiracle worker")
@@ -90,27 +94,20 @@ export default function ThemesScreen() {
   const loadThemes = async () => {
     const list = (await window.worshipsync.themes.getAll()) as Theme[]
     setThemeList(list)
-    if (!selectedTheme && list.length > 0) {
-      selectTheme(list.find((t) => t.isDefault) ?? list[0])
+    // Auto-select base theme if nothing is selected
+    if (!selectedTheme) {
+      const base = list.find((t) => t.type === "global" && t.isDefault) ?? list.find((t) => t.type === "global")
+      if (base) selectTheme(base)
     }
   }
 
   const selectTheme = (theme: Theme) => {
     setSelectedTheme(theme)
     setName(theme.name)
+    setSeasonStart(theme.seasonStart ?? "")
+    setSeasonEnd(theme.seasonEnd ?? "")
     try { setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(theme.settings) }) }
     catch { setSettings(DEFAULT_SETTINGS) }
-  }
-
-  const handleSetDefault = async () => {
-    if (!selectedTheme) return
-    for (const t of themeList) {
-      if (t.isDefault) {
-        await window.worshipsync.themes.update(t.id, { isDefault: false })
-      }
-    }
-    await window.worshipsync.themes.update(selectedTheme.id, { isDefault: true })
-    await loadThemes()
   }
 
   const handleSave = async () => {
@@ -119,22 +116,33 @@ export default function ThemesScreen() {
     await window.worshipsync.themes.update(selectedTheme.id, {
       name,
       settings: JSON.stringify(settings),
+      ...(selectedTheme.type === "seasonal" ? {
+        seasonStart: seasonStart || null,
+        seasonEnd: seasonEnd || null,
+      } : {}),
     })
     await loadThemes()
     setSaving(false)
   }
 
   const handleDelete = async (theme: Theme) => {
-    if (theme.isDefault) return
-    if (!confirm(`Delete theme "${theme.name}"?`)) return
+    if (theme.type !== "seasonal") return
+    if (!confirm(`Delete seasonal theme "${theme.name}"?`)) return
     await window.worshipsync.themes.delete(theme.id)
     setSelectedTheme(null)
     await loadThemes()
+    // Auto-select base theme after deletion
+    const list = (await window.worshipsync.themes.getAll()) as Theme[]
+    const base = list.find((t) => t.type === "global" && t.isDefault) ?? list.find((t) => t.type === "global")
+    if (base) selectTheme(base)
   }
 
   const updateSetting = <K extends keyof ThemeSettings>(key: K, value: ThemeSettings[K]) => {
     setSettings((prev) => ({ ...prev, [key]: value }))
   }
+
+  const baseTheme = themeList.find((t) => t.type === "global" && t.isDefault) ?? themeList.find((t) => t.type === "global") ?? null
+  const seasonalThemes = themeList.filter((t) => t.type === "seasonal")
 
   return (
     <div className="h-full flex overflow-hidden bg-background text-foreground">
@@ -147,51 +155,78 @@ export default function ThemesScreen() {
             className="w-full gap-1.5"
             onClick={() => setShowNewModal(true)}
           >
-            <Plus className="h-3.5 w-3.5" /> New theme
+            <Plus className="h-3.5 w-3.5" /> New seasonal theme
           </Button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-2 py-2">
-          <div className="text-[10px] text-muted-foreground leading-relaxed px-2.5 py-2 mb-1.5 rounded-md bg-muted/40 border-l-2 border-primary">
-            Priority: <span className="text-foreground font-medium">per-song</span> &gt; seasonal &gt; global
-          </div>
+        <div className="flex-1 overflow-y-auto px-2 py-2 space-y-4">
 
-          {themeList.map((theme) => {
-            const badge = TYPE_BADGES[theme.type]
-            const isSelected = selectedTheme?.id === theme.id
-            return (
+          {/* ── Base Theme ── */}
+          <div>
+            <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground px-2.5 mb-1.5">Base Theme</p>
+            {baseTheme ? (
               <button
-                key={theme.id}
-                onClick={() => selectTheme(theme)}
-                className={`w-full text-left px-2.5 py-2 rounded-md mb-1 border transition-colors ${
-                  isSelected
+                onClick={() => selectTheme(baseTheme)}
+                className={`w-full text-left px-2.5 py-2.5 rounded-md border transition-colors ${
+                  selectedTheme?.id === baseTheme.id
                     ? "bg-primary/10 border-primary/30"
                     : "border-transparent hover:bg-accent/50"
                 }`}
               >
-                <div className="flex items-center gap-2 mb-1">
-                  <span className={`text-xs font-semibold truncate flex-1 ${
-                    isSelected ? "text-primary" : "text-foreground"
-                  }`}>
-                    {theme.name}
-                  </span>
-                  {theme.isDefault && (
-                    <Star className="h-3 w-3 text-amber-500 fill-amber-500 shrink-0" />
-                  )}
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded ${badge.className}`}>
-                    {badge.label}
-                  </span>
-                  {theme.seasonStart && (
-                    <span className="text-[9px] text-muted-foreground">
-                      {theme.seasonStart} – {theme.seasonEnd}
-                    </span>
-                  )}
-                </div>
+                <p className={`text-xs font-semibold truncate ${selectedTheme?.id === baseTheme.id ? "text-primary" : "text-foreground"}`}>
+                  {baseTheme.name}
+                </p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">Always active · default look</p>
               </button>
-            )
-          })}
+            ) : (
+              <p className="text-[10px] text-muted-foreground px-2.5">No base theme found</p>
+            )}
+          </div>
+
+          {/* ── Seasonal Themes ── */}
+          <div>
+            <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground px-2.5 mb-1.5">Seasonal</p>
+            {seasonalThemes.length === 0 ? (
+              <p className="text-[10px] text-muted-foreground px-2.5">No seasonal themes yet</p>
+            ) : (
+              seasonalThemes.map((theme) => {
+                const active = isSeasonActive(theme.seasonStart, theme.seasonEnd)
+                const isSelected = selectedTheme?.id === theme.id
+                return (
+                  <button
+                    key={theme.id}
+                    onClick={() => selectTheme(theme)}
+                    className={`w-full text-left px-2.5 py-2.5 rounded-md border mb-1 transition-colors ${
+                      isSelected
+                        ? "bg-primary/10 border-primary/30"
+                        : "border-transparent hover:bg-accent/50"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <p className={`text-xs font-semibold truncate flex-1 ${isSelected ? "text-primary" : "text-foreground"}`}>
+                        {theme.name}
+                      </p>
+                      {active && (
+                        <span className="text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-green-500/15 text-green-400 shrink-0">
+                          Active
+                        </span>
+                      )}
+                    </div>
+                    {(theme.seasonStart && theme.seasonEnd) && (
+                      <p className="text-[10px] text-muted-foreground mt-0.5">
+                        {theme.seasonStart} – {theme.seasonEnd}
+                      </p>
+                    )}
+                  </button>
+                )
+              })
+            )}
+          </div>
+
+          {/* info note */}
+          <div className="text-[10px] text-muted-foreground leading-relaxed px-2.5 py-2 rounded-md bg-muted/40 border-l-2 border-muted-foreground/30">
+            Seasonal themes override the base when active.
+          </div>
         </div>
       </aside>
 
@@ -199,40 +234,58 @@ export default function ThemesScreen() {
       {selectedTheme ? (
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Top bar */}
-          <div className="px-6 py-3 border-b border-border shrink-0 flex items-center gap-3">
-            <Palette className="h-4 w-4 text-muted-foreground shrink-0" />
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="max-w-xs font-semibold"
-              placeholder="Theme name"
-            />
-            <div className="ml-auto flex items-center gap-2">
-              {!selectedTheme.isDefault && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={handleSetDefault}
-                >
-                  <Star className="h-3.5 w-3.5" /> Set as default
+          <div className="px-6 py-3 border-b border-border shrink-0">
+            <div className="flex items-center gap-3">
+              <Palette className="h-4 w-4 text-muted-foreground shrink-0" />
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="max-w-xs font-semibold"
+                placeholder="Theme name"
+              />
+              <div className="ml-auto flex items-center gap-2">
+                {selectedTheme.type === "seasonal" && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-muted-foreground hover:text-destructive gap-1.5"
+                    onClick={() => handleDelete(selectedTheme)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" /> Delete
+                  </Button>
+                )}
+                <Button size="sm" className="gap-1.5" onClick={handleSave} disabled={saving}>
+                  <Save className="h-3.5 w-3.5" />
+                  {saving ? "Saving…" : "Save theme"}
                 </Button>
-              )}
-              {!selectedTheme.isDefault && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-muted-foreground hover:text-destructive gap-1.5"
-                  onClick={() => handleDelete(selectedTheme)}
-                >
-                  <Trash2 className="h-3.5 w-3.5" /> Delete
-                </Button>
-              )}
-              <Button size="sm" className="gap-1.5" onClick={handleSave} disabled={saving}>
-                <Save className="h-3.5 w-3.5" />
-                {saving ? "Saving…" : "Save theme"}
-              </Button>
+              </div>
             </div>
+
+            {/* Seasonal date range row */}
+            {selectedTheme.type === "seasonal" && (
+              <div className="flex items-center gap-3 mt-2.5">
+                <Calendar className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                <span className="text-xs text-muted-foreground shrink-0">Active dates</span>
+                <Input
+                  value={seasonStart}
+                  onChange={(e) => setSeasonStart(e.target.value)}
+                  placeholder="MM-DD"
+                  className="w-24 text-xs"
+                />
+                <span className="text-xs text-muted-foreground">to</span>
+                <Input
+                  value={seasonEnd}
+                  onChange={(e) => setSeasonEnd(e.target.value)}
+                  placeholder="MM-DD"
+                  className="w-24 text-xs"
+                />
+                {isSeasonActive(seasonStart, seasonEnd) && (
+                  <span className="text-[10px] font-semibold text-green-400 bg-green-500/10 px-2 py-0.5 rounded-full">
+                    Active now
+                  </span>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Body */}
@@ -449,11 +502,14 @@ export default function ThemesScreen() {
       )}
 
       {showNewModal && (
-        <NewThemeModal
+        <NewSeasonalThemeModal
           onClose={() => setShowNewModal(false)}
           onSaved={async () => {
-            await loadThemes()
             setShowNewModal(false)
+            const list = (await window.worshipsync.themes.getAll()) as Theme[]
+            setThemeList(list)
+            const newest = list.filter(t => t.type === "seasonal").at(-1)
+            if (newest) selectTheme(newest)
           }}
         />
       )}
@@ -525,16 +581,14 @@ function SegmentedControl({
   )
 }
 
-// ── New Theme Modal ──────────────────────────────────────────────────────
-
-function NewThemeModal({
+// ── New Seasonal Theme Modal ─────────────────────────────────────────────
+function NewSeasonalThemeModal({
   onClose, onSaved,
 }: {
   onClose: () => void
   onSaved: () => void
 }) {
   const [name, setName] = useState("")
-  const [type, setType] = useState<"global" | "seasonal" | "per-song">("global")
   const [seasonStart, setSeasonStart] = useState("")
   const [seasonEnd, setSeasonEnd] = useState("")
   const [saving, setSaving] = useState(false)
@@ -544,21 +598,11 @@ function NewThemeModal({
     setSaving(true)
     await window.worshipsync.themes.create({
       name: name.trim(),
-      type,
+      type: "seasonal",
       isDefault: false,
       seasonStart: seasonStart || null,
       seasonEnd: seasonEnd || null,
-      settings: JSON.stringify({
-        fontFamily: "Montserrat, sans-serif",
-        fontSize: 48,
-        fontWeight: "600",
-        textColor: "#ffffff",
-        textAlign: "center",
-        textPosition: "middle",
-        overlayOpacity: 45,
-        textShadowOpacity: 40,
-        maxLinesPerSlide: 2,
-      }),
+      settings: JSON.stringify(DEFAULT_SETTINGS),
     })
     setSaving(false)
     onSaved()
@@ -573,9 +617,9 @@ function NewThemeModal({
       >
         <div className="flex flex-col bg-background text-foreground">
           <div className="px-6 pt-5 pb-1">
-            <DialogTitle className="text-lg font-bold">New theme</DialogTitle>
+            <DialogTitle className="text-lg font-bold">New seasonal theme</DialogTitle>
             <p className="text-sm text-muted-foreground mt-1">
-              Create a new theme for slide appearance.
+              Overrides the base theme during the active date range.
             </p>
           </div>
 
@@ -584,7 +628,7 @@ function NewThemeModal({
               <label className="text-xs font-medium text-foreground">Name</label>
               <Input
                 autoFocus
-                placeholder="e.g. Christmas, Easter, Default"
+                placeholder="e.g. Christmas, Easter, Advent"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && name.trim() && handleSave()}
@@ -592,38 +636,22 @@ function NewThemeModal({
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-medium text-foreground">Type</label>
-              <SegmentedControl
-                value={type}
-                onChange={(v) => setType(v as typeof type)}
-                options={[
-                  { value: "global",   label: "Global" },
-                  { value: "seasonal", label: "Seasonal" },
-                  { value: "per-song", label: "Per-song" },
-                ]}
-              />
-            </div>
-
-            {type === "seasonal" && (
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-foreground">Season start</label>
-                  <Input
-                    placeholder="MM-DD"
-                    value={seasonStart}
-                    onChange={(e) => setSeasonStart(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-medium text-foreground">Season end</label>
-                  <Input
-                    placeholder="MM-DD"
-                    value={seasonEnd}
-                    onChange={(e) => setSeasonEnd(e.target.value)}
-                  />
-                </div>
+              <label className="text-xs font-medium text-foreground">Active dates <span className="text-muted-foreground font-normal">(MM-DD)</span></label>
+              <div className="flex items-center gap-3">
+                <Input
+                  placeholder="MM-DD"
+                  value={seasonStart}
+                  onChange={(e) => setSeasonStart(e.target.value)}
+                />
+                <span className="text-xs text-muted-foreground shrink-0">to</span>
+                <Input
+                  placeholder="MM-DD"
+                  value={seasonEnd}
+                  onChange={(e) => setSeasonEnd(e.target.value)}
+                />
               </div>
-            )}
+              <p className="text-[10px] text-muted-foreground">Leave blank to activate manually by saving.</p>
+            </div>
           </div>
 
           <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-border">

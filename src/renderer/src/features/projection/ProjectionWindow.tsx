@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import type { SlidePayload } from "../../../../../shared/types";
 import AnnouncementCardsView from "../../components/AnnouncementCardsView";
 import { toFileUrl } from "../../lib/utils";
@@ -17,6 +17,7 @@ const DEFAULT_THEME = {
   maxLinesPerSlide: 2,
   backgroundScaleMode: "cover" as const,
   accentColor: undefined as string | undefined,
+  scriptureRefPosition: undefined as 'top' | 'bottom-right' | 'bottom-center' | 'hidden' | undefined,
 };
 
 // ── Slide frame renderer ──────────────────────────────────────────────────────
@@ -148,7 +149,7 @@ function SlideFrame({
                 fontSize: scaledFontSize,
                 fontWeight: theme.fontWeight,
                 color: theme.textColor,
-                textAlign: "center",
+                textAlign: theme.textAlign ?? "center",
                 lineHeight: 1.4,
                 textShadow: `0 2px 12px rgba(0,0,0,${shadowOpacity}), 0 1px 3px rgba(0,0,0,${shadowOpacity})`,
                 width: "100%",
@@ -160,49 +161,48 @@ function SlideFrame({
             </div>
           </div>
 
-          {/* Reference badge */}
-          {slide.sectionType !== "blank" && (() => {
+          {/* Reference badge — position controlled by theme.scriptureRefPosition */}
+          {(() => {
+            const refPos = theme.scriptureRefPosition ?? "bottom-right";
+            if (slide.sectionType === "blank" || refPos === "hidden") return null;
             const label = slide.sectionLabel ?? "";
             const lastSpace = label.lastIndexOf(" ");
             const hasTranslation = lastSpace > 0 && /^[A-Z0-9]{2,10}$/.test(label.slice(lastSpace + 1));
-            const ref = (hasTranslation ? label.slice(0, lastSpace) : label)
+            const refText = (hasTranslation ? label.slice(0, lastSpace) : label)
               .toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
             const translation = hasTranslation ? label.slice(lastSpace + 1) : null;
             const badgeFontSize = Math.max(32, Math.round(scaledFontSize * 0.58));
-            return (
-              <div style={{
-                position: "absolute", bottom: "4%", right: "6%",
-                display: "flex", alignItems: "center",
-                gap: Math.max(8, Math.round(scaledFontSize * 0.12)),
-                zIndex: 4,
-              }}>
+            const badgeGap = Math.max(8, Math.round(scaledFontSize * 0.12));
+            const inner = (
+              <>
                 <span style={{
-                  fontFamily: theme.fontFamily,
-                  fontSize: badgeFontSize,
-                  fontWeight: "600",
-                  color: "rgba(255,255,255,0.9)",
-                  letterSpacing: "0.03em",
-                  textShadow: "0 1px 6px rgba(0,0,0,0.6)",
+                  fontFamily: theme.fontFamily, fontSize: badgeFontSize,
+                  fontWeight: "600", color: "rgba(255,255,255,0.9)",
+                  letterSpacing: "0.03em", textShadow: "0 1px 6px rgba(0,0,0,0.6)",
                 }}>
-                  {ref}
+                  {refText}
                 </span>
                 {translation && (
                   <>
                     <span style={{ fontSize: badgeFontSize * 0.8, color: "rgba(255,255,255,0.35)", fontWeight: "300" }}>{"·"}</span>
                     <span style={{
-                      fontFamily: theme.fontFamily,
-                      fontSize: badgeFontSize * 0.82,
-                      fontWeight: "700",
-                      letterSpacing: "0.08em",
-                      color: "rgba(255,255,255,0.55)",
-                      textShadow: "0 1px 4px rgba(0,0,0,0.5)",
+                      fontFamily: theme.fontFamily, fontSize: badgeFontSize * 0.82,
+                      fontWeight: "700", letterSpacing: "0.08em",
+                      color: "rgba(255,255,255,0.55)", textShadow: "0 1px 4px rgba(0,0,0,0.5)",
                     }}>
                       {translation}
                     </span>
                   </>
                 )}
-              </div>
+              </>
             );
+            const topStyle: React.CSSProperties = { position: "absolute", top: "6%", left: "10%", zIndex: 4, display: "flex", alignItems: "center", gap: badgeGap };
+            const bottomStyle: React.CSSProperties = {
+              position: "absolute", bottom: "4%", zIndex: 4,
+              display: "flex", alignItems: "center", gap: badgeGap,
+              ...(refPos === "bottom-center" ? { left: "50%", transform: "translateX(-50%)" } : { right: "6%" }),
+            };
+            return <div style={refPos === "top" ? topStyle : bottomStyle}>{inner}</div>;
           })()}
         </div>
 

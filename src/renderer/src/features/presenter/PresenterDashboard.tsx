@@ -390,6 +390,9 @@ export default function PresenterDashboard({
     label: string; timezone?: string;
   }>>([]);
   const [projectionFontSize, setProjectionFontSize] = useState(48);
+  const [scriptureFontSize, setScriptureFontSize]     = useState(48);
+  const [scriptureTextAlign, setScriptureTextAlign]   = useState<'left' | 'center'>('center');
+  const [scriptureRefPosition, setScriptureRefPosition] = useState<'top' | 'bottom-right' | 'bottom-center' | 'hidden'>('bottom-right');
   // True once appState confirms the operator has explicitly saved a font size override.
   // Used to prevent the default theme from overwriting an intentional operator choice.
   const fontSizeExplicitRef = useRef(false);
@@ -428,6 +431,9 @@ export default function PresenterDashboard({
         fontSizeExplicitRef.current = true;
         setProjectionFontSize(state.projectionFontSize as number);
       }
+      if (state.scriptureFontSize)    setScriptureFontSize(state.scriptureFontSize as number);
+      if (state.scriptureTextAlign)   setScriptureTextAlign(state.scriptureTextAlign as 'left' | 'center');
+      if (state.scriptureRefPosition) setScriptureRefPosition(state.scriptureRefPosition as typeof scriptureRefPosition);
     });
 
     window.worshipsync.themes.getDefault().then((t: any) => {
@@ -831,18 +837,18 @@ export default function PresenterDashboard({
           announcementCards: slide.cards,
           theme: {
             fontFamily: theme.fontFamily,
-            fontSize:
-              theme.fontSize !== DEFAULT_THEME.fontSize
-                ? theme.fontSize
-                : projectionFontSize,
+            fontSize: song.itemType === 'scripture'
+              ? scriptureFontSize
+              : (theme.fontSize !== DEFAULT_THEME.fontSize ? theme.fontSize : projectionFontSize),
             fontWeight: theme.fontWeight,
             textColor: theme.textColor,
-            textAlign: theme.textAlign,
+            textAlign: song.itemType === 'scripture' ? scriptureTextAlign : theme.textAlign,
             textPosition: theme.textPosition,
             overlayOpacity: theme.overlayOpacity,
             textShadowOpacity: theme.textShadowOpacity,
             maxLinesPerSlide: theme.maxLinesPerSlide,
             accentColor: theme.accentColor,
+            ...(song.itemType === 'scripture' ? { scriptureRefPosition } : {}),
           },
         });
         // Explicitly broadcast next lines so the confidence monitor receives them
@@ -854,7 +860,7 @@ export default function PresenterDashboard({
         });
       }
     },
-    [liveSongs, resolveTheme, resolveBg, projectionFontSize],
+    [liveSongs, resolveTheme, resolveBg, projectionFontSize, scriptureFontSize, scriptureTextAlign, scriptureRefPosition],
   );
 
   // Refs that always hold the latest projection state — used inside the

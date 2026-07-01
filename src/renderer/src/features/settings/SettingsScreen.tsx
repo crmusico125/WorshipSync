@@ -237,6 +237,9 @@ export default function SettingsScreen() {
   // Display
   const [projectionFontSize, setProjectionFontSize] = useState(48)
   const [slideTransitionMs, setSlideTransitionMs]   = useState(300)
+  const [scriptureFontSize, setScriptureFontSize]   = useState(48)
+  const [scriptureTextAlign, setScriptureTextAlign] = useState<'left' | 'center'>('center')
+  const [scriptureRefPosition, setScriptureRefPosition] = useState<'top' | 'bottom-right' | 'bottom-center' | 'hidden'>('bottom-right')
   const [displays, setDisplays] = useState<{ id: number; label: string; width: number; height: number; isPrimary: boolean }[]>([])
   const [outputDisplayId, setOutputDisplayId]           = useState<number | undefined>(undefined)
   const [confidenceDisplayId, setConfidenceDisplayId]   = useState<number | undefined>(undefined)
@@ -305,6 +308,9 @@ export default function SettingsScreen() {
       }
       if (state.projectionFontSize) setProjectionFontSize(state.projectionFontSize)
       if (state.slideTransitionMs !== undefined) setSlideTransitionMs(state.slideTransitionMs)
+      if (state.scriptureFontSize)    setScriptureFontSize(state.scriptureFontSize as number)
+      if (state.scriptureTextAlign)   setScriptureTextAlign(state.scriptureTextAlign as typeof scriptureTextAlign)
+      if (state.scriptureRefPosition) setScriptureRefPosition(state.scriptureRefPosition as typeof scriptureRefPosition)
       if (state.controllerPin !== undefined)     setControllerPin(state.controllerPin ?? "")
       setDisplays(d)
       const fallback = d.find((x: typeof d[0]) => !x.isPrimary)?.id ?? d[0]?.id
@@ -793,8 +799,8 @@ export default function SettingsScreen() {
               <SectionCard>
                 <SectionHeader
                   icon={Monitor}
-                  title="Projection display"
-                  description="Controls how slides appear on the audience screen. Changes apply to new slides immediately."
+                  title="Song Lyrics"
+                  description="Controls how song lyrics appear on the audience screen. Changes apply to new slides immediately."
                 />
 
                 {/* Font size */}
@@ -869,6 +875,122 @@ export default function SettingsScreen() {
                     }}
                   />
                 </SettingRow>
+              </SectionCard>
+
+              {/* Scripture projection settings */}
+              <SectionCard>
+                <SectionHeader
+                  icon={BookOpen}
+                  title="Scripture"
+                  description="Separate projection settings for Bible verses. Applied whenever a scripture item is projected."
+                />
+
+                {/* Reference position */}
+                <SettingRow
+                  label="Reference position"
+                  description='Where the verse reference (e.g. "John 3:16 · NIV") appears on screen.'
+                >
+                  <SegmentedControl
+                    options={[
+                      { label: "Top", value: "top" as const },
+                      { label: "Bottom right", value: "bottom-right" as const },
+                      { label: "Bottom center", value: "bottom-center" as const },
+                      { label: "Hidden", value: "hidden" as const },
+                    ]}
+                    value={scriptureRefPosition}
+                    onChange={(v) => {
+                      setScriptureRefPosition(v as typeof scriptureRefPosition)
+                      queueSave({ scriptureRefPosition: v })
+                    }}
+                  />
+                </SettingRow>
+
+                {/* Text alignment */}
+                <SettingRow
+                  label="Text alignment"
+                  description="Left works better for longer prose; center matches song lyric style."
+                >
+                  <SegmentedControl
+                    options={[
+                      { label: "Left", value: "left" as const },
+                      { label: "Center", value: "center" as const },
+                    ]}
+                    value={scriptureTextAlign}
+                    onChange={(v) => {
+                      setScriptureTextAlign(v as typeof scriptureTextAlign)
+                      queueSave({ scriptureTextAlign: v })
+                    }}
+                  />
+                </SettingRow>
+
+                {/* Font size */}
+                <div className="px-5 py-4">
+                  <div className="flex items-start justify-between gap-4 mb-3">
+                    <div>
+                      <p className="text-sm font-medium">Font size</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Independent from the song lyrics size. Text auto-scales down for longer verses.
+                      </p>
+                    </div>
+                    <span className="text-xs font-mono font-semibold text-muted-foreground shrink-0 mt-0.5">
+                      {scriptureFontSize}px
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3 mb-3">
+                    <SegmentedControl
+                      options={[
+                        { label: "S", value: 32 },
+                        { label: "M", value: 48 },
+                        { label: "L", value: 64 },
+                        { label: "XL", value: 80 },
+                      ]}
+                      value={[32, 48, 64, 80].includes(scriptureFontSize) ? scriptureFontSize : -1}
+                      onChange={(v) => {
+                        setScriptureFontSize(v as number)
+                        queueSave({ scriptureFontSize: v })
+                      }}
+                    />
+                  </div>
+                  <input
+                    type="range" min={24} max={96} step={2}
+                    value={scriptureFontSize}
+                    onChange={(e) => {
+                      const v = Number(e.target.value)
+                      setScriptureFontSize(v)
+                      queueSave({ scriptureFontSize: v })
+                    }}
+                    className="w-full accent-primary"
+                  />
+                  <div className="flex justify-between text-[10px] text-muted-foreground mt-1">
+                    <span>24px</span><span>96px</span>
+                  </div>
+                  {/* Live preview */}
+                  <div className="mt-4 rounded-xl bg-black/60 border border-border/50 overflow-hidden flex flex-col justify-center gap-1 px-4" style={{ height: "90px" }}>
+                    <p
+                      className="text-white leading-snug"
+                      style={{
+                        fontSize: `${Math.min(scriptureFontSize * 0.42, 40)}px`,
+                        fontWeight: 600,
+                        textAlign: scriptureTextAlign,
+                      }}
+                    >
+                      For God so loved the world…
+                    </p>
+                    {scriptureRefPosition !== "hidden" && (
+                      <p
+                        className="text-white/55 font-semibold"
+                        style={{
+                          fontSize: `${Math.min(scriptureFontSize * 0.24, 22)}px`,
+                          textAlign: scriptureRefPosition === "bottom-center" ? "center"
+                            : scriptureRefPosition === "top" ? "left"
+                            : "right",
+                        }}
+                      >
+                        John 3:16 · NIV
+                      </p>
+                    )}
+                  </div>
+                </div>
               </SectionCard>
 
             </div>

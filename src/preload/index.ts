@@ -265,5 +265,6 @@ interface SlidePayload {
     textShadowOpacity: number
     maxLinesPerSlide: number
     accentColor?: string
+    scriptureRefPosition?: 'top' | 'bottom-right' | 'bottom-center' | 'hidden'
   }
 }

@@ -73,5 +73,6 @@ export interface SlidePayload {
     maxLinesPerSlide: number
     backgroundScaleMode?: 'cover' | 'contain' | 'stretch'
     accentColor?: string
+    scriptureRefPosition?: 'top' | 'bottom-right' | 'bottom-center' | 'hidden'
   }
 }

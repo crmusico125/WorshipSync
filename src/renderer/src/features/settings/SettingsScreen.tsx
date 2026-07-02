@@ -136,9 +136,12 @@ const TIMEZONES = [
 
 // ── Shared UI primitives ──────────────────────────────────────────────────────
 
-function SectionCard({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+function SectionCard({ children, className = "", accentColor }: { children: React.ReactNode; className?: string; accentColor?: string }) {
   return (
-    <div className={`rounded-2xl border border-border bg-card shadow-sm ${className}`}>
+    <div
+      className={`rounded-2xl border border-border bg-card shadow-sm ${className}`}
+      style={accentColor ? { borderTopColor: accentColor, borderTopWidth: 3 } : undefined}
+    >
       {children}
     </div>
   )
@@ -155,9 +158,9 @@ function SectionHeader({ icon: Icon, title, description }: {
         <Icon className="h-4 w-4 text-primary" />
       </div>
       <div className="min-w-0 flex-1">
-        <h2 className="text-sm font-semibold">{title}</h2>
+        <h2 className="text-[13px] font-semibold">{title}</h2>
         {description && (
-          <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{description}</p>
+          <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">{description}</p>
         )}
       </div>
     </div>
@@ -173,8 +176,8 @@ function SettingRow({ label, description, children, last = false }: {
   return (
     <div className={`flex items-center justify-between gap-6 px-5 py-4 ${!last ? "border-b border-border" : ""}`}>
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium">{label}</p>
-        {description && <p className="text-xs text-muted-foreground mt-0.5 leading-snug">{description}</p>}
+        <p className="text-[13px] font-medium">{label}</p>
+        {description && <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">{description}</p>}
       </div>
       <div className="shrink-0">{children}</div>
     </div>
@@ -797,7 +800,7 @@ export default function SettingsScreen() {
                 </SettingRow>
               </SectionCard>
 
-              <SectionCard>
+              <SectionCard accentColor="#3b82f6">
                 <SectionHeader
                   icon={Monitor}
                   title="Song Lyrics"
@@ -808,12 +811,12 @@ export default function SettingsScreen() {
                 <div className="px-5 py-4 border-b border-border">
                   <div className="flex items-start justify-between gap-4 mb-3">
                     <div>
-                      <p className="text-sm font-medium">Lyrics font size</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
+                      <p className="text-[13px] font-medium">Lyrics font size</p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
                         Text auto-scales down for longer lines but never exceeds this size.
                       </p>
                     </div>
-                    <span className="text-xs font-mono font-semibold text-muted-foreground shrink-0 mt-0.5">
+                    <span className="text-[11px] font-mono font-semibold text-muted-foreground shrink-0 mt-0.5">
                       {projectionFontSize}px
                     </span>
                   </div>
@@ -862,24 +865,25 @@ export default function SettingsScreen() {
                   description="Crossfade duration when switching slides. Off = instant cut."
                   last
                 >
-                  <SegmentedControl
-                    options={[
-                      { label: "Off", value: 0 },
-                      { label: "Fast", value: 150 },
-                      { label: "Normal", value: 300 },
-                      { label: "Slow", value: 500 },
-                    ]}
+                  <select
                     value={slideTransitionMs}
-                    onChange={(v) => {
-                      setSlideTransitionMs(v as number)
+                    onChange={(e) => {
+                      const v = Number(e.target.value)
+                      setSlideTransitionMs(v)
                       queueSave({ slideTransitionMs: v })
                     }}
-                  />
+                    className="bg-input text-[13px] text-foreground border border-border rounded-md px-3 py-1.5 outline-none cursor-pointer"
+                  >
+                    <option value={0}>Off (instant)</option>
+                    <option value={150}>Fast — 150ms</option>
+                    <option value={300}>Normal — 300ms</option>
+                    <option value={500}>Slow — 500ms</option>
+                  </select>
                 </SettingRow>
               </SectionCard>
 
               {/* Scripture projection settings */}
-              <SectionCard>
+              <SectionCard accentColor="#f59e0b">
                 <SectionHeader
                   icon={BookOpen}
                   title="Scripture"
@@ -928,12 +932,12 @@ export default function SettingsScreen() {
                 <div className="px-5 py-4">
                   <div className="flex items-start justify-between gap-4 mb-3">
                     <div>
-                      <p className="text-sm font-medium">Font size</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
+                      <p className="text-[13px] font-medium">Font size</p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
                         Independent from the song lyrics size. Text auto-scales down for longer verses.
                       </p>
                     </div>
-                    <span className="text-xs font-mono font-semibold text-muted-foreground shrink-0 mt-0.5">
+                    <span className="text-[11px] font-mono font-semibold text-muted-foreground shrink-0 mt-0.5">
                       {scriptureFontSize}px
                     </span>
                   </div>

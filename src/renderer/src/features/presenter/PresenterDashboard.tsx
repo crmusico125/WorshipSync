@@ -2928,39 +2928,24 @@ export default function PresenterDashboard({
               </div>
             </div>
 
-            {/* Slide grid — 4 columns */}
+            {/* Slide grid */}
             <div ref={slideGridRef} className="flex-1 overflow-y-auto p-3">
-              <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))" }}>
+              <div className="grid gap-x-3 gap-y-4" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(160px, 190px))" }}>
                 {currentSong.slides.map((slide, i) => {
                   const isActive = activeSlideIdx === i;
                   const isNextSlide = activeSlideIdx >= 0 && i === activeSlideIdx + 1;
                   const bg = resolveBg(currentSong);
-                  const abbrev = SECTION_ABBREVS[slide.sectionType] ?? slide.sectionLabel[0];
                   return (
-                    <div key={i} data-slide-idx={i} className="flex flex-col gap-1">
-                      {/* Label row */}
-                      <div className="flex items-center justify-between gap-1 px-0.5 h-4">
-                        <div className="flex items-center gap-1 min-w-0">
-                          {currentSong.itemType !== "scripture" && slide.sectionType !== "blank" && (
-                            <span className={`text-[9px] font-bold px-1 py-0.5 rounded leading-none shrink-0 ${isActive ? "bg-red-500 text-white" : isNextSlide ? "bg-green-500 text-white" : "bg-muted-foreground text-background"}`}>
-                              {abbrev}
-                            </span>
-                          )}
-                          <span className={`text-[10px] font-semibold truncate ${isActive ? "text-red-400" : isNextSlide ? "text-green-400" : "text-muted-foreground"}`}>
-                            {slide.sectionLabel}
-                          </span>
-                        </div>
-                        {isActive && <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-red-500/20 text-red-400 leading-none shrink-0">LIVE</span>}
-                        {isNextSlide && <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-green-500/20 text-green-300 leading-none shrink-0">NEXT</span>}
-                      </div>
+                    <div key={i} data-slide-idx={i} className="flex flex-col gap-1.5">
+                      {/* Thumbnail tile — border color signals state */}
                       <button
                         onClick={(e) => { e.currentTarget.blur(); sendSlide(selectedSongIdx, i); }}
-                        className={`relative w-full overflow-hidden rounded-md focus:outline-none border-2 transition-all duration-150 ${
+                        className={`relative w-full overflow-hidden rounded-lg focus:outline-none transition-all duration-150 ${
                           isActive
-                            ? "border-red-500 ring-2 ring-red-500/25 scale-[1.015]"
+                            ? "ring-2 ring-red-500 scale-[1.015]"
                             : isNextSlide
-                            ? "border-green-500/60"
-                            : "border-transparent hover:border-muted-foreground/30"
+                            ? "ring-1 ring-green-500/60"
+                            : "ring-1 ring-transparent hover:ring-white/15"
                         }`}
                         style={{ outline: "none" }}
                       >
@@ -3003,7 +2988,6 @@ export default function PresenterDashboard({
                               </div>
                             )
                           })() : (
-                            /* Songs / other: original centered layout */
                             <div className="absolute inset-0 flex items-center justify-center px-2">
                               <p className="relative z-10 text-center font-bold text-[11px] leading-snug whitespace-pre-wrap"
                                 style={{ color: effectiveTheme.textColor, fontFamily: effectiveTheme.fontFamily, textShadow: effectiveTheme.textShadowOpacity > 0 ? `0 1px 3px rgba(0,0,0,${effectiveTheme.textShadowOpacity / 100})` : "none" }}>
@@ -3013,6 +2997,24 @@ export default function PresenterDashboard({
                           )}
                         </div>
                       </button>
+
+                      {/* Caption row — below the tile */}
+                      <div className="flex items-center justify-between gap-1 px-0.5">
+                        <span className={`text-[11px] font-medium truncate leading-none ${
+                          isActive ? "text-red-400" : isNextSlide ? "text-green-400" : "text-muted-foreground/70"
+                        }`}>
+                          {slide.sectionLabel}
+                        </span>
+                        {isActive && (
+                          <span className="flex items-center gap-1 shrink-0">
+                            <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse" />
+                            <span className="text-[9px] font-bold text-red-400 leading-none">LIVE</span>
+                          </span>
+                        )}
+                        {isNextSlide && (
+                          <span className="text-[9px] font-semibold text-green-400 leading-none shrink-0">NEXT</span>
+                        )}
+                      </div>
                     </div>
                   );
                 })}

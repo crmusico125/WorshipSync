@@ -271,6 +271,7 @@ export default function SettingsScreen() {
   const pendingSave = useRef<Record<string, any>>({})
 
   function queueSave(updates: Record<string, any>) {
+    window.dispatchEvent(new CustomEvent('worshipsync:settings-change', { detail: updates }))
     pendingSave.current = { ...pendingSave.current, ...updates }
     if (saveTimer.current) clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(async () => {

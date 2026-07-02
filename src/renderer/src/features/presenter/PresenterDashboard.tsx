@@ -502,6 +502,19 @@ export default function PresenterDashboard({
     };
   }, []);
 
+  // ── Sync settings changes from SettingsScreen in real time ───────────────
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<Record<string, any>>).detail
+      if (detail.scriptureFontSize   !== undefined) setScriptureFontSize(detail.scriptureFontSize as number)
+      if (detail.scriptureTextAlign  !== undefined) setScriptureTextAlign(detail.scriptureTextAlign as 'left' | 'center')
+      if (detail.scriptureRefPosition !== undefined) setScriptureRefPosition(detail.scriptureRefPosition as 'top' | 'bottom-right' | 'bottom-center' | 'hidden')
+      if (detail.projectionFontSize  !== undefined) setProjectionFontSize(detail.projectionFontSize as number)
+    }
+    window.addEventListener('worshipsync:settings-change', handler)
+    return () => window.removeEventListener('worshipsync:settings-change', handler)
+  }, [])
+
   // ── Build live songs ─────────────────────────────────────────────────────
   useEffect(() => {
     const built: LiveSong[] = lineup.map((item) => {
@@ -549,9 +562,10 @@ export default function PresenterDashboard({
         let verses: { label: string; text: string }[] = [];
         try { verses = JSON.parse(item.scriptureRef ?? "{}").verses ?? []; } catch {}
         let globalIdx = 0;
+        const toTitleCase = (s: string) => s.replace(/\b\w/g, c => c.toUpperCase())
         const scriptureSlides: Slide[] = verses.map(v => ({
           lines: [v.text],
-          sectionLabel: v.label,
+          sectionLabel: toTitleCase(v.label),
           sectionType: "verse",
           sectionId: globalIdx,
           globalIndex: globalIdx++,
@@ -958,6 +972,17 @@ export default function PresenterDashboard({
       sendSlide(selectedSongIdx, 0)
     }
   }, [selectedSongIdx, liveSongs, sendSlide])
+
+  // Re-send the live scripture slide whenever scripture display settings change
+  // so the projection updates immediately without needing to click the slide again.
+  useEffect(() => {
+    const liveIdx  = liveItemIdxRef.current
+    const slideIdx = liveSlideIdxRef.current
+    if (liveIdx < 0 || slideIdx < 0) return
+    const song = liveSongs[liveIdx]
+    if (song?.itemType !== 'scripture') return
+    sendSlide(liveIdx, slideIdx)
+  }, [scriptureFontSize, scriptureTextAlign, scriptureRefPosition, liveSongs, sendSlide])
 
   const jumpToItem = useCallback((idx: number) => {
     const item = liveSongs[idx];
@@ -2816,20 +2841,27 @@ export default function PresenterDashboard({
                     </span>
                   </div>
                 ) : currentSlide && !isBlank ? (
-                  currentSlide.sectionType === "verse" && currentSong?.itemType === "scripture" ? (
-                    <div className="absolute inset-0 flex flex-col px-3 pt-2 pb-1.5">
-                      <div className="flex-1 flex items-center justify-center min-h-0">
-                        <p className="text-center font-bold leading-snug whitespace-pre-wrap relative z-10 w-full"
-                          style={{ fontSize: "4.5cqw", color: effectiveTheme.textColor, fontFamily: effectiveTheme.fontFamily }}>
-                          {isTextCleared ? "" : currentSlide.lines.join("\n")}
-                        </p>
-                      </div>
-                      <p className="text-center font-semibold relative z-10 shrink-0 truncate"
+                  currentSlide.sectionType === "verse" && currentSong?.itemType === "scripture" ? (() => {
+                    const refPos = scriptureRefPosition ?? 'bottom-right'
+                    const refEl = !isTextCleared && refPos !== 'hidden' ? (
+                      <p className={`font-semibold relative z-10 shrink-0 truncate ${refPos === 'bottom-center' ? 'text-center' : refPos === 'top' ? 'text-left' : 'text-right'}`}
                         style={{ fontSize: "2.2cqw", color: "rgba(255,255,255,0.65)", fontFamily: effectiveTheme.fontFamily }}>
-                        {isTextCleared ? "" : currentSlide.sectionLabel}
+                        {currentSlide.sectionLabel}
                       </p>
-                    </div>
-                  ) : (
+                    ) : null
+                    return (
+                      <div className="absolute inset-0 flex flex-col px-3 pt-2 pb-1.5">
+                        {refPos === 'top' && refEl}
+                        <div className="flex-1 flex items-center justify-center min-h-0">
+                          <p className={`${scriptureTextAlign === 'left' ? 'text-left' : 'text-center'} font-bold leading-snug whitespace-pre-wrap relative z-10 w-full`}
+                            style={{ fontSize: "4.5cqw", color: effectiveTheme.textColor, fontFamily: effectiveTheme.fontFamily }}>
+                            {isTextCleared ? "" : currentSlide.lines.join("\n")}
+                          </p>
+                        </div>
+                        {refPos !== 'top' && refEl}
+                      </div>
+                    )
+                  })() : (
                     <div className="absolute inset-0 flex items-center justify-center px-3">
                       <p className="text-center font-bold leading-snug whitespace-pre-wrap relative z-10 w-full"
                         style={{ fontSize: "5cqw", color: effectiveTheme.textColor, fontFamily: effectiveTheme.fontFamily, textAlign: effectiveTheme.textAlign, textShadow: effectiveTheme.textShadowOpacity > 0 ? `0 1px 3px rgba(0,0,0,${effectiveTheme.textShadowOpacity / 100})` : "none" }}>
@@ -2950,21 +2982,27 @@ export default function PresenterDashboard({
                             <div className="absolute inset-0 bg-black" />
                           )}
 
-                          {slide.sectionType === "verse" && currentSong.itemType === "scripture" ? (
-                            /* Scripture: verse text centered + reference at bottom */
-                            <div className="absolute inset-0 flex flex-col px-2 pt-2 pb-1.5">
-                              <div className="flex-1 flex items-center justify-center min-h-0">
-                                <p className="text-center font-bold text-[10px] leading-snug whitespace-pre-wrap relative z-10"
-                                  style={{ color: effectiveTheme.textColor, fontFamily: effectiveTheme.fontFamily }}>
-                                  {slide.lines.join("\n")}
-                                </p>
-                              </div>
-                              <p className="text-center text-[9px] font-semibold relative z-10 shrink-0 truncate"
+                          {slide.sectionType === "verse" && currentSong.itemType === "scripture" ? (() => {
+                            const refPos = scriptureRefPosition ?? 'bottom-right'
+                            const refEl = refPos !== 'hidden' ? (
+                              <p className={`text-[9px] font-semibold relative z-10 shrink-0 truncate ${refPos === 'bottom-center' ? 'text-center' : refPos === 'top' ? 'text-left' : 'text-right'}`}
                                 style={{ color: "rgba(255,255,255,0.6)", fontFamily: effectiveTheme.fontFamily }}>
                                 {slide.sectionLabel}
                               </p>
-                            </div>
-                          ) : (
+                            ) : null
+                            return (
+                              <div className="absolute inset-0 flex flex-col px-2 pt-2 pb-1.5">
+                                {refPos === 'top' && refEl}
+                                <div className="flex-1 flex items-center justify-center min-h-0">
+                                  <p className={`${scriptureTextAlign === 'left' ? 'text-left' : 'text-center'} font-bold text-[10px] leading-snug whitespace-pre-wrap relative z-10`}
+                                    style={{ color: effectiveTheme.textColor, fontFamily: effectiveTheme.fontFamily }}>
+                                    {slide.lines.join("\n")}
+                                  </p>
+                                </div>
+                                {refPos !== 'top' && refEl}
+                              </div>
+                            )
+                          })() : (
                             /* Songs / other: original centered layout */
                             <div className="absolute inset-0 flex items-center justify-center px-2">
                               <p className="relative z-10 text-center font-bold text-[11px] leading-snug whitespace-pre-wrap"
@@ -3117,20 +3155,27 @@ export default function PresenterDashboard({
                     </>
                   )
                 )}
-                {nextUp.slide.sectionType === "verse" && nextUpSong?.itemType === "scripture" ? (
-                  <div className="absolute inset-0 flex flex-col px-2 pt-1.5 pb-1">
-                    <div className="flex-1 flex items-center justify-center min-h-0">
-                      <p className="text-center font-bold leading-snug whitespace-pre-wrap relative z-10 w-full"
-                        style={{ fontSize: "4.5cqw", color: nextUpTheme.textColor, fontFamily: nextUpTheme.fontFamily }}>
-                        {nextUp.slide.lines.join("\n")}
-                      </p>
-                    </div>
-                    <p className="text-center font-semibold relative z-10 shrink-0 truncate"
+                {nextUp.slide.sectionType === "verse" && nextUpSong?.itemType === "scripture" ? (() => {
+                  const refPos = scriptureRefPosition ?? 'bottom-right'
+                  const refEl = refPos !== 'hidden' ? (
+                    <p className={`font-semibold relative z-10 shrink-0 truncate ${refPos === 'bottom-center' ? 'text-center' : refPos === 'top' ? 'text-left' : 'text-right'}`}
                       style={{ fontSize: "2.2cqw", color: "rgba(255,255,255,0.65)" }}>
                       {nextUp.slide.sectionLabel}
                     </p>
-                  </div>
-                ) : (
+                  ) : null
+                  return (
+                    <div className="absolute inset-0 flex flex-col px-2 pt-1.5 pb-1">
+                      {refPos === 'top' && refEl}
+                      <div className="flex-1 flex items-center justify-center min-h-0">
+                        <p className={`${scriptureTextAlign === 'left' ? 'text-left' : 'text-center'} font-bold leading-snug whitespace-pre-wrap relative z-10 w-full`}
+                          style={{ fontSize: "4.5cqw", color: nextUpTheme.textColor, fontFamily: nextUpTheme.fontFamily }}>
+                          {nextUp.slide.lines.join("\n")}
+                        </p>
+                      </div>
+                      {refPos !== 'top' && refEl}
+                    </div>
+                  )
+                })() : (
                   <div className="absolute inset-0 flex items-center justify-center px-2">
                     <p className="text-center font-bold leading-snug whitespace-pre-wrap relative z-10 w-full"
                       style={{ fontSize: "5cqw", color: nextUpTheme.textColor, fontFamily: nextUpTheme.fontFamily, textAlign: nextUpTheme.textAlign }}>
@@ -3388,11 +3433,33 @@ export default function PresenterDashboard({
                   <div style={{ fontSize: 5, color: "rgba(255,255,255,0.55)", marginTop: 5, textAlign: "center" }}>Please find your seats</div>
                 </div>
               ) : liveSlide && liveSlide.sectionType !== "blank" ? (
+                liveSong?.itemType === "scripture" ? (() => {
+                  const refPos = scriptureRefPosition ?? 'bottom-right'
+                  const refEl = refPos !== 'hidden' ? (
+                    <p className={`text-[7px] font-semibold shrink-0 truncate px-2 pb-1.5 ${refPos === 'bottom-center' ? 'text-center' : refPos === 'top' ? 'text-left' : 'text-right'}`}
+                      style={{ color: "rgba(255,255,255,0.55)" }}>
+                      {liveSlide.sectionLabel}
+                    </p>
+                  ) : null
+                  return (
+                    <div className="absolute inset-0 flex flex-col">
+                      {refPos === 'top' && refEl}
+                      <div className="flex-1 flex items-center justify-center p-2 min-h-0">
+                        <p className={`text-[9px] font-medium leading-snug line-clamp-4 whitespace-pre-wrap w-full ${scriptureTextAlign === 'left' ? 'text-left' : 'text-center'}`}
+                          style={{ color: liveTheme.textColor }}>
+                          {liveSlide.lines.join("\n")}
+                        </p>
+                      </div>
+                      {refPos !== 'top' && refEl}
+                    </div>
+                  )
+                })() : (
                 <div className="absolute inset-0 flex items-center justify-center p-2">
                   <p className="text-[9px] text-white/90 font-medium text-center leading-snug line-clamp-4 whitespace-pre-wrap" style={{ color: liveTheme.textColor }}>
                     {liveSlide.lines.join("\n")}
                   </p>
                 </div>
+                )
               ) : (
                 <div className="absolute inset-0 bg-zinc-950 flex items-center justify-center">
                   <span className="text-[9px] text-muted-foreground/30">Nothing live</span>
@@ -3491,16 +3558,37 @@ export default function PresenterDashboard({
                   )}
                 </div>
               ) : liveSlide && liveSlide.sectionType !== "blank" && liveSlide.lines.filter(Boolean).length > 0 ? (
+                liveSong?.itemType === "scripture" ? (() => {
+                  const refPos = scriptureRefPosition ?? 'bottom-right'
+                  const refEl = refPos !== 'hidden' ? (
+                    <p className={`text-[7px] font-semibold shrink-0 truncate px-2 pb-1 ${refPos === 'bottom-center' ? 'text-center' : refPos === 'top' ? 'text-left' : 'text-right'}`}
+                      style={{ color: "rgba(255,255,255,0.55)" }}>
+                      {liveSlide.sectionLabel}
+                    </p>
+                  ) : null
+                  return (
+                    <div className="absolute inset-0 flex flex-col">
+                      {refPos === 'top' && refEl}
+                      <div className="flex-1 flex items-center justify-center px-2 pt-1.5 min-h-0 overflow-hidden">
+                        <p className={`text-[8px] font-bold leading-snug line-clamp-4 whitespace-pre-wrap w-full ${scriptureTextAlign === 'left' ? 'text-left' : 'text-center'}`}
+                          style={{ color: "#ffffff" }}>
+                          {liveSlide.lines.filter(Boolean).join("\n")}
+                        </p>
+                      </div>
+                      {refPos !== 'top' && refEl}
+                    </div>
+                  )
+                })() : (
                 <div className="absolute inset-0 flex flex-col">
-                  {/* Text — left-aligned for scripture, centered for lyrics */}
                   <div className="flex-1 flex items-center justify-center px-2 pt-1.5 min-h-0 overflow-hidden">
-                    <p className={`text-[8px] font-bold leading-snug line-clamp-4 whitespace-pre-wrap w-full ${liveSong?.itemType === "scripture" ? "text-left" : "text-center"}`} style={{ color: "#ffffff" }}>
+                    <p className="text-[8px] font-bold leading-snug line-clamp-4 whitespace-pre-wrap w-full text-center" style={{ color: "#ffffff" }}>
                       {liveSlide.lines.filter(Boolean).join("\n")}
                     </p>
                   </div>
-                  {/* Next panel — hidden for scripture, matches the trailing blank-slide preview */}
+                  {/* Next panel — shown only for non-scripture items */}
                   {showLiveNextPanel && liveNextPanel}
                 </div>
+                )
               ) : (
                 <div className="absolute inset-0 flex items-center justify-center">
                   <span className="text-[7px]" style={{ color: "rgba(255,255,255,0.18)" }}>Waiting for slides…</span>

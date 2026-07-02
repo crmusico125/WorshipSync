@@ -235,6 +235,15 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
   const [bibleError, setBibleError] = useState<string | null>(null)
   const [bibleApiKey, setBibleApiKey] = useState<string | null>(null)
   const [availableTranslations, setAvailableTranslations] = useState<BibleTranslation[]>(FREE_TRANSLATIONS)
+  const [scriptureTextAlign, setScriptureTextAlign]     = useState<'left' | 'center'>('center')
+  const [scriptureRefPosition, setScriptureRefPosition] = useState<'top' | 'bottom-right' | 'bottom-center' | 'hidden'>('bottom-right')
+
+  useEffect(() => {
+    window.worshipsync.appState.get().then((state: Record<string, any>) => {
+      if (state.scriptureTextAlign)   setScriptureTextAlign(state.scriptureTextAlign as 'left' | 'center')
+      if (state.scriptureRefPosition) setScriptureRefPosition(state.scriptureRefPosition as 'top' | 'bottom-right' | 'bottom-center' | 'hidden')
+    }).catch(() => {})
+  }, [])
 
   useEffect(() => {
     window.worshipsync.appState.getBibleApiKey().then(async key => {
@@ -511,7 +520,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
     if (currentItem?.itemType === 'scripture') {
       const v = scriptureVerses[previewSlideIdx]
       if (!v) return null
-      return { lines: [v.text], sectionLabel: v.label, sectionType: 'verse', sectionId: previewSlideIdx }
+      return { lines: [v.text], sectionLabel: v.label.replace(/\b\w/g, c => c.toUpperCase()), sectionType: 'verse', sectionId: previewSlideIdx }
     }
     return slides[previewSlideIdx] ?? null
   }, [currentItem, scriptureVerses, slides, previewSlideIdx])
@@ -1464,7 +1473,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
                                   <p className="text-[8px] text-white text-center leading-relaxed line-clamp-4">{v.text}</p>
                                 </div>
                                 <div className="px-2 pb-1.5 text-center">
-                                  <p className="text-[7px] text-white/60 font-semibold truncate tracking-wide">{v.label}</p>
+                                  <p className="text-[7px] text-white/60 font-semibold truncate tracking-wide">{v.label.replace(/\b\w/g, c => c.toUpperCase())}</p>
                                 </div>
                               </div>
                               <button
@@ -1694,6 +1703,8 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
             canCustomize={!!currentSong || currentItem?.itemType === 'scripture' || currentItem?.itemType === 'announcement'}
             annPreviewTitle={annPreviewTitle}
             annCards={annCards}
+            scriptureTextAlign={scriptureTextAlign}
+            scriptureRefPosition={scriptureRefPosition}
             readOnly={isPast}
             isOverridden={(bgOverride !== undefined && bgOverride !== null) || !!currentItem?.overrideBackgroundPath}
             songStyleOverrides={currentSong ? songStyleOverrides : {}}
@@ -1832,7 +1843,7 @@ function ItemSettingsPanel({
   slide, theme, bg, canCustomize, readOnly, isOverridden,
   pendingBg, savingBg, onSaveBgToSong, onSaveBgToService, onDiscardBg,
   songStyleOverrides, onThemeChange, onThemeReset, onBgChange, onScaleModeChange,
-  annPreviewTitle, annCards,
+  annPreviewTitle, annCards, scriptureTextAlign, scriptureRefPosition,
 }: {
   currentItem: LineupItemWithSong | null
   notes: string
@@ -1856,6 +1867,8 @@ function ItemSettingsPanel({
   onScaleModeChange: (mode: 'cover' | 'contain' | 'stretch') => void
   annPreviewTitle?: string
   annCards?: AnnouncementCard[]
+  scriptureTextAlign?: 'left' | 'center'
+  scriptureRefPosition?: 'top' | 'bottom-right' | 'bottom-center' | 'hidden'
 }) {
   const [showBgPicker, setShowBgPicker] = useState(false)
 
@@ -1946,21 +1959,27 @@ function ItemSettingsPanel({
                   </div>
                 )
               })() : slide ? (
-                currentItem?.itemType === "scripture" ? (
-                  /* Scripture layout */
-                  <div className="absolute inset-0 flex flex-col p-3">
-                    <div className="flex-1 flex items-center justify-center min-h-0">
-                      <p className="text-xs leading-relaxed whitespace-pre-wrap text-center"
-                        style={{ color: theme.textColor, fontFamily: theme.fontFamily, fontWeight: Number(theme.fontWeight) || 600, textShadow: theme.textShadowOpacity > 0 ? `0 2px 4px rgba(0,0,0,${theme.textShadowOpacity / 100})` : "none" }}>
-                        {slide.lines.join("\n")}
-                      </p>
-                    </div>
-                    <p className="text-center text-[9px] font-semibold tracking-wide shrink-0 pb-0.5"
+                currentItem?.itemType === "scripture" ? (() => {
+                  const refPos = scriptureRefPosition ?? 'bottom-right'
+                  const refEl = refPos !== 'hidden' ? (
+                    <p className={`text-[9px] font-semibold tracking-wide shrink-0 pb-0.5 ${refPos === 'bottom-center' ? 'text-center' : refPos === 'top' ? 'text-left' : 'text-right'}`}
                       style={{ color: "rgba(255,255,255,0.65)", fontFamily: theme.fontFamily }}>
                       {slide.sectionLabel}
                     </p>
-                  </div>
-                ) : (
+                  ) : null
+                  return (
+                    <div className="absolute inset-0 flex flex-col p-3">
+                      {refPos === 'top' && refEl}
+                      <div className="flex-1 flex items-center justify-center min-h-0">
+                        <p className={`text-xs leading-relaxed whitespace-pre-wrap ${scriptureTextAlign === 'left' ? 'text-left' : 'text-center'}`}
+                          style={{ color: theme.textColor, fontFamily: theme.fontFamily, fontWeight: Number(theme.fontWeight) || 600, textShadow: theme.textShadowOpacity > 0 ? `0 2px 4px rgba(0,0,0,${theme.textShadowOpacity / 100})` : "none" }}>
+                          {slide.lines.join("\n")}
+                        </p>
+                      </div>
+                      {refPos !== 'top' && refEl}
+                    </div>
+                  )
+                })() : (
                   /* Song / other */
                   <div className={`absolute inset-0 flex p-4 ${
                     theme.textPosition === "top" ? "items-start" : theme.textPosition === "bottom" ? "items-end" : "items-center"

@@ -590,24 +590,6 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
     }
   }
 
-  const handleAddScripture = async (
-    title: string,
-    verses: { number: number; text: string }[],
-    ref: { book: string; chapter: number; translation: string }
-  ) => {
-    const prevLen = useServiceStore.getState().lineup.length
-    const scriptureRef = JSON.stringify({
-      verses: verses.map(v => ({
-        label: `${ref.book} ${ref.chapter}:${v.number} ${ref.translation}`,
-        text: v.text,
-      }))
-    })
-    await addScriptureToLineup({ title, scriptureRef })
-    if (insertAfterSectionIdx !== null) {
-      await repositionAfterSection(insertAfterSectionIdx, prevLen)
-    }
-  }
-
   const handleAddMedia = async (path: string) => {
     const prevLen = useServiceStore.getState().lineup.length
     const filename = path.split("/").pop() ?? "Media"
@@ -1762,7 +1744,6 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
             await addCountdownToLineup()
             if (insertAfterSectionIdx !== null) await repositionAfterSection(insertAfterSectionIdx, prevLen)
           }}
-          onAddScripture={handleAddScripture}
           onAddMedia={handleAddMedia}
           onAddAnnouncement={async (title, content) => {
             const prevLen = useServiceStore.getState().lineup.length

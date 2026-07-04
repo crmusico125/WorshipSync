@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react"
-import { Search, Music2, Timer, Upload, Trash2, Check, Image as ImageIcon, Play, Volume2, Calendar, BookOpen, ChevronDown, ChevronUp, Megaphone } from "lucide-react"
-import { parseBibleGatewayText } from "../lib/parseBibleGateway"
+import { Search, Music2, Timer, Upload, Trash2, Check, Image as ImageIcon, Play, Volume2, Calendar, BookOpen, Megaphone, Loader2 } from "lucide-react"
+import { FREE_TRANSLATIONS, type BibleTranslation, type BibleApiResult, fetchBiblePassage } from "../lib/bibleApi"
 import { toFileUrl } from "../lib/utils"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import ScriptureBrowser, { type ScriptureVerse } from "./ScriptureBrowser"
+import TranslationPicker from "./TranslationPicker"
 
 interface SongRow {
   id: number
@@ -37,13 +37,17 @@ interface Props {
   onClose: () => void
   onAdd: (songIds: number[]) => void
   onAddCountdown?: () => void
-  onAddScripture?: (title: string, verses: ScriptureVerse[], ref: { book: string; chapter: number; translation: string }) => void
   onAddMedia?: (path: string) => void
   onAddAnnouncement?: (title: string, content: string) => void
   excludeIds?: number[]
+  availableTranslations?: BibleTranslation[]
+  defaultTranslation?: string
+  recentScriptures?: { query: string; translationId: string; translationLabel: string; reference: string }[]
+  onAddScriptureByRef?: (query: string, translationId: string) => Promise<void>
+  onTranslationChange?: (id: string) => void
 }
 
-export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScripture, onAddMedia, onAddAnnouncement, excludeIds = [] }: Props) {
+export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddMedia, onAddAnnouncement, excludeIds = [], availableTranslations, defaultTranslation, recentScriptures, onAddScriptureByRef, onTranslationChange }: Props) {
   const [tab, setTab] = useState("songs")
   const [songs, setSongs] = useState<SongRow[]>([])
   const [selectedIds, setSelectedIds] = useState<number[]>([])
@@ -52,6 +56,54 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScri
   const [search, setSearch] = useState("")
   const [loading, setLoading] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
+
+  // ── Scripture lookup state (lifted here so top search bar drives it) ──────
+  const [scriptureTranslation, setScriptureTranslation] = useState(defaultTranslation ?? "web")
+  const [scriptureLoading, setScriptureLoading] = useState(false)
+  const [scriptureError, setScriptureError] = useState<string | null>(null)
+  const [bibleApiKey, setBibleApiKey] = useState<string | null>(null)
+  const [previewResult, setPreviewResult] = useState<BibleApiResult | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewError, setPreviewError] = useState<string | null>(null)
+
+  // Fetch API key once on mount
+  useEffect(() => {
+    window.worshipsync.appState.getBibleApiKey().then((k: string | null) => setBibleApiKey(k)).catch(() => {})
+  }, [])
+
+  // Debounced scripture preview
+  useEffect(() => {
+    if (tab !== "scriptures") return
+    if (!search.trim()) { setPreviewResult(null); setPreviewError(null); return }
+    setPreviewLoading(true)
+    setPreviewError(null)
+    const timer = setTimeout(async () => {
+      try {
+        const result = await fetchBiblePassage(search.trim(), scriptureTranslation, bibleApiKey)
+        setPreviewResult(result)
+        setPreviewError(null)
+      } catch (err) {
+        setPreviewResult(null)
+        setPreviewError(err instanceof Error ? err.message : "Not found")
+      } finally {
+        setPreviewLoading(false)
+      }
+    }, 700)
+    return () => { clearTimeout(timer); setPreviewLoading(false) }
+  }, [search, scriptureTranslation, tab, bibleApiKey])
+
+  const submitScriptureByRef = useCallback(async () => {
+    if (!search.trim() || !onAddScriptureByRef || scriptureLoading) return
+    setScriptureLoading(true)
+    setScriptureError(null)
+    try {
+      await onAddScriptureByRef(search.trim(), scriptureTranslation)
+      onClose()
+    } catch (err) {
+      setScriptureError(err instanceof Error ? err.message : "Not found")
+      setScriptureLoading(false)
+    }
+  }, [search, scriptureTranslation, onAddScriptureByRef, scriptureLoading, onClose])
 
   // Initial load
   useEffect(() => {
@@ -63,8 +115,9 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScri
     })()
   }, [])
 
-  // Debounced search
+  // Debounced search — only for songs tab
   useEffect(() => {
+    if (tab === "scriptures") return
     const timer = setTimeout(async () => {
       setLoading(true)
       const result = search.trim()
@@ -74,7 +127,7 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScri
       setLoading(false)
     }, 150)
     return () => clearTimeout(timer)
-  }, [search])
+  }, [search, tab])
 
   // Load detail on preview change
   useEffect(() => {
@@ -215,7 +268,13 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScri
                       : "Search songs, scriptures, media..."
                 }
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => { setSearch(e.target.value); setScriptureError(null) }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && tab === "scriptures") {
+                    e.preventDefault()
+                    submitScriptureByRef()
+                  }
+                }}
               />
             </div>
           </div>
@@ -340,11 +399,17 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScri
                 />
               ) : tab === "scriptures" ? (
                 <ScriptureTab
-                  search={search}
-                  onAddScripture={(title, verses, ref) => {
-                    onAddScripture?.(title, verses, ref)
-                    onClose()
+                  translation={scriptureTranslation}
+                  availableTranslations={availableTranslations}
+                  recentScriptures={recentScriptures}
+                  onSetSearch={(val) => { setSearch(val); setScriptureError(null) }}
+                  onTranslationChange={(id) => {
+                    setScriptureTranslation(id)
+                    onTranslationChange?.(id)
                   }}
+                  previewResult={previewResult}
+                  previewLoading={previewLoading}
+                  previewError={previewError}
                 />
               ) : tab === "media" ? (
                 <div className="flex-1 flex min-h-0 overflow-hidden">
@@ -538,33 +603,54 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScri
 
           {/* ── Footer ─────────────────────────────────────────────── */}
           <div className="flex items-center gap-3 px-5 py-3 border-t border-border bg-muted/40 shrink-0">
-            <span className="flex-1 text-xs text-muted-foreground">
-              {tab === "media"
-                ? mediaSelectedPaths.size > 0
-                  ? `${mediaSelectedPaths.size} ${mediaSelectedPaths.size === 1 ? "file" : "files"} selected`
-                  : "No files selected"
-                : selectionLabel}
-            </span>
-            <Button variant="outline" size="sm" onClick={onClose}>
-              Cancel
-            </Button>
-            {tab === "media" ? (
-              <Button
-                size="sm"
-                disabled={mediaSelectedPaths.size === 0}
-                onClick={() => {
-                  for (const path of mediaSelectedPaths) {
-                    onAddMedia?.(path)
+            {tab === "scriptures" ? (
+              <>
+                <div className="flex-1 min-w-0">
+                  {scriptureError
+                    ? <p className="text-xs text-red-400 truncate">{scriptureError}</p>
+                    : <p className="text-xs text-muted-foreground">Type a reference above and press Enter</p>
                   }
-                  onClose()
-                }}
-              >
-                + Add {mediaSelectedPaths.size > 1 ? `${mediaSelectedPaths.size} Files` : "to Lineup"}
-              </Button>
+                </div>
+                <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+                <Button
+                  size="sm"
+                  disabled={!search.trim() || scriptureLoading || !onAddScriptureByRef}
+                  onClick={submitScriptureByRef}
+                  className="gap-1.5"
+                >
+                  {scriptureLoading && <Loader2 className="h-3 w-3 animate-spin" />}
+                  + Add to Lineup
+                </Button>
+              </>
+            ) : tab === "media" ? (
+              <>
+                <span className="flex-1 text-xs text-muted-foreground">
+                  {mediaSelectedPaths.size > 0
+                    ? `${mediaSelectedPaths.size} ${mediaSelectedPaths.size === 1 ? "file" : "files"} selected`
+                    : "No files selected"}
+                </span>
+                <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+                <Button
+                  size="sm"
+                  disabled={mediaSelectedPaths.size === 0}
+                  onClick={() => {
+                    for (const path of mediaSelectedPaths) {
+                      onAddMedia?.(path)
+                    }
+                    onClose()
+                  }}
+                >
+                  + Add {mediaSelectedPaths.size > 1 ? `${mediaSelectedPaths.size} Files` : "to Lineup"}
+                </Button>
+              </>
             ) : (
-              <Button size="sm" disabled={selectedIds.length === 0} onClick={handleAdd}>
-                + Add to Lineup
-              </Button>
+              <>
+                <span className="flex-1 text-xs text-muted-foreground">{selectionLabel}</span>
+                <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+                <Button size="sm" disabled={selectedIds.length === 0} onClick={handleAdd}>
+                  + Add to Lineup
+                </Button>
+              </>
             )}
           </div>
 
@@ -574,68 +660,95 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddScri
   )
 }
 
-// ── ScriptureTab — paste from BibleGateway first, browse as secondary ─────────
+// ── ScriptureTab ─────────────────────────────────────────────────────────────
 
-function ScriptureTab({ search, onAddScripture }: {
-  search: string
-  onAddScripture: (title: string, verses: { number: number; text: string }[], ref: { book: string; chapter: number; translation: string }) => void
+function ScriptureTab({ translation, availableTranslations, recentScriptures, onSetSearch, onTranslationChange, previewResult, previewLoading, previewError }: {
+  translation: string
+  availableTranslations?: BibleTranslation[]
+  recentScriptures?: { query: string; translationId: string; translationLabel: string; reference: string }[]
+  onSetSearch: (val: string) => void
+  onTranslationChange?: (id: string) => void
+  previewResult: BibleApiResult | null
+  previewLoading: boolean
+  previewError: string | null
 }) {
-  const [pasteText, setPasteText] = useState("")
-  const [showBrowse, setShowBrowse] = useState(false)
-
-  const parsed = useMemo(() => {
-    if (!pasteText.trim()) return null
-    return parseBibleGatewayText(pasteText)
-  }, [pasteText])
-
-  const handleAdd = () => {
-    if (!parsed) return
-    onAddScripture(parsed.title, parsed.verses, { book: parsed.book, chapter: parsed.chapter, translation: parsed.version })
-    setPasteText("")
-  }
-
   return (
-    <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-      {/* Paste panel */}
-      <div className="p-4 border-b border-border shrink-0 flex flex-col gap-3">
-        <div className="flex items-center gap-2">
-          <BookOpen className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-          <span className="text-xs font-semibold">Paste from BibleGateway</span>
+    <div className="flex-1 flex min-h-0 overflow-hidden">
+      {/* Left: options panel */}
+      <div className="w-64 shrink-0 border-r border-border flex flex-col min-h-0 overflow-y-auto">
+
+        {/* Translation picker */}
+        <div className="p-4 border-b border-border shrink-0 flex flex-col gap-2">
+          <span className="text-xs font-semibold">Translation</span>
+          <TranslationPicker
+            translations={availableTranslations ?? FREE_TRANSLATIONS}
+            value={translation}
+            onChange={id => onTranslationChange?.(id)}
+          />
         </div>
-        <textarea
-          value={pasteText}
-          onChange={e => setPasteText(e.target.value)}
-          placeholder={"Copy a passage from biblegateway.com and paste it here.\n\nExample:\nJohn 3:16\nNew International Version\n16 For God so loved the world…"}
-          className="w-full h-28 text-xs bg-input border border-border rounded-md px-3 py-2 resize-none focus:outline-none focus:border-primary/50 placeholder:text-muted-foreground/50 font-mono leading-relaxed"
-        />
-        {pasteText.trim() && (
-          parsed ? (
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-xs font-semibold text-foreground truncate">{parsed.title}</p>
-                <p className="text-[10px] text-muted-foreground">{parsed.verses.length} verse{parsed.verses.length !== 1 ? "s" : ""} parsed</p>
-              </div>
-              <Button size="sm" className="h-7 text-xs shrink-0 gap-1.5" onClick={handleAdd}>
-                <Check className="h-3 w-3" />Add Scripture
-              </Button>
-            </div>
-          ) : (
-            <p className="text-[11px] text-amber-500">Could not parse — make sure you copy the full passage including the reference line from BibleGateway.</p>
-          )
+
+        {/* Recent scriptures */}
+        {recentScriptures && recentScriptures.length > 0 && (
+          <div className="p-4 shrink-0 flex flex-col gap-1.5">
+            <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground/50">Recent</span>
+            {recentScriptures.map(r => (
+              <button
+                key={r.query + r.translationId}
+                onClick={() => { onSetSearch(r.query); onTranslationChange?.(r.translationId) }}
+                className="w-full text-left px-2 py-1.5 rounded hover:bg-accent/50 transition-colors"
+              >
+                <p className="text-[11px] font-medium truncate">{r.reference}</p>
+                <p className="text-[10px] text-muted-foreground">{r.translationLabel}</p>
+              </button>
+            ))}
+          </div>
         )}
       </div>
 
-      {/* Browse accordion */}
-      <button
-        onClick={() => setShowBrowse(v => !v)}
-        className="flex items-center justify-between px-4 py-2.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-accent/30 transition-colors shrink-0 border-b border-border"
-      >
-        <span>Browse by book &amp; chapter</span>
-        {showBrowse ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-      </button>
-      {showBrowse && (
-        <ScriptureBrowser search={search} onAddScripture={onAddScripture} />
-      )}
+      {/* Right: preview panel */}
+      <div className="flex-1 flex flex-col min-h-0 bg-card">
+        {previewLoading ? (
+          <div className="flex-1 flex items-center justify-center gap-2 text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span className="text-sm">Looking up passage…</span>
+          </div>
+        ) : previewError ? (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center">
+              <BookOpen className="h-8 w-8 text-muted-foreground/20 mx-auto mb-2" />
+              <p className="text-sm text-muted-foreground">Passage not found</p>
+              <p className="text-xs text-muted-foreground/60 mt-1">{previewError}</p>
+            </div>
+          </div>
+        ) : previewResult ? (
+          <ScrollArea className="flex-1">
+            <div className="p-6">
+              <div className="flex items-start justify-between gap-3 mb-4">
+                <h2 className="text-lg font-bold leading-snug">{previewResult.reference}</h2>
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground bg-muted px-2 py-0.5 rounded shrink-0 mt-0.5">
+                  {previewResult.translation_id.toUpperCase()}
+                </span>
+              </div>
+              <div className="space-y-2">
+                {previewResult.verses.map(v => (
+                  <p key={v.verse} className="text-sm leading-relaxed text-secondary-foreground">
+                    <span className="text-[10px] font-bold text-muted-foreground/60 mr-1.5 align-top leading-5">{v.verse}</span>
+                    {v.text}
+                  </p>
+                ))}
+              </div>
+            </div>
+          </ScrollArea>
+        ) : (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center">
+              <BookOpen className="h-10 w-10 text-muted-foreground/20 mx-auto mb-3" />
+              <p className="text-sm text-muted-foreground">Type a reference in the search bar above</p>
+              <p className="text-xs text-muted-foreground/60 mt-1">e.g. John 3:16 · Psalm 23 · Romans 8:28-39</p>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

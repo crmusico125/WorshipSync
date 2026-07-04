@@ -36,7 +36,6 @@ import {
   Layers,
   CheckCircle2,
   Circle,
-  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -46,7 +45,6 @@ import BackgroundPickerPanel from "../../components/BackgroundPickerPanel";
 import EditLyricsModal from "../../components/EditLyricsModal";
 import type { AnnouncementCard } from "../../../../../shared/types";
 import { fetchBiblePassage, bibleResultToScriptureRef, FREE_TRANSLATIONS, fetchApiBibleTranslations, type BibleTranslation } from "../../lib/bibleApi";
-import TranslationPicker from "../../components/TranslationPicker";
 import { toFileUrl } from "../../lib/utils";
 
 
@@ -273,17 +271,8 @@ export default function PresenterDashboard({
   // ── Scripture picker ─────────────────────────────────────────────────────
 
 
-  // ── Run-of-show inline search ────────────────────────────────────────────
-  const [rosTab, setRosTab] = useState<"song" | "scripture">("song")
-  const [rosSearch, setRosSearch] = useState("")
-  const [rosResults, setRosResults] = useState<{ id: number; title: string; artist: string }[]>([])
-  const rosSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  // ── Quick-add scripture ──────────────────────────────────────────────────
-  const [scriptureQuery, setScriptureQuery] = useState("")
+  // ── Scripture / Bible API ────────────────────────────────────────────────
   const [scriptureTranslation, setScriptureTranslation] = useState("web")
-  const [scriptureQueryLoading, setScriptureQueryLoading] = useState(false)
-  const [scriptureQueryError, setScriptureQueryError] = useState<string | null>(null)
   const [bibleApiKey, setBibleApiKey] = useState<string | null>(null)
   const [availableTranslations, setAvailableTranslations] = useState<BibleTranslation[]>(FREE_TRANSLATIONS)
   const [recentScriptures, setRecentScriptures] = useState<{ query: string; translationId: string; translationLabel: string; reference: string }[]>([])
@@ -321,39 +310,28 @@ export default function PresenterDashboard({
     }).catch(() => {})
   }, [])
 
-  const handleRosSearch = useCallback((q: string) => {
-    setRosSearch(q)
-    if (rosSearchTimer.current) clearTimeout(rosSearchTimer.current)
-    if (!q.trim()) { setRosResults([]); return }
-    rosSearchTimer.current = setTimeout(async () => {
-      const results = await window.worshipsync.songs.search(q)
-      setRosResults(results as { id: number; title: string; artist: string }[])
-    }, 200)
-  }, [])
 
-  async function handleScriptureQuickAdd(e: React.FormEvent) {
-    e.preventDefault()
-    if (!scriptureQuery.trim() || scriptureQueryLoading) return
-    setScriptureQueryLoading(true)
-    setScriptureQueryError(null)
-    try {
-      const result = await fetchBiblePassage(scriptureQuery.trim(), scriptureTranslation, bibleApiKey)
-      await refreshDefaultScriptureBg()
-      const prevLen = useServiceStore.getState().lineup.length
-      await addScriptureToLineup({ title: result.reference, scriptureRef: bibleResultToScriptureRef(result) })
-      const translationLabel = availableTranslations.find(t => t.id === scriptureTranslation)?.label ?? scriptureTranslation.toUpperCase()
-      const entry = { query: scriptureQuery.trim(), translationId: scriptureTranslation, translationLabel, reference: result.reference }
-      const updated = [entry, ...recentScriptures.filter(r => r.query !== entry.query || r.translationId !== entry.translationId)].slice(0, 5)
-      setRecentScriptures(updated)
-      window.worshipsync.appState.set({ lastBibleTranslation: scriptureTranslation, recentScriptures: updated }).catch(() => {})
-      setScriptureQuery("")
-      autoProjectRef.current = true
-      setSelectedSongIdx(prevLen)
-    } catch (err) {
-      setScriptureQueryError(err instanceof Error ? err.message : 'Not found')
-    } finally {
-      setScriptureQueryLoading(false)
+  const handleScriptureByRef = async (query: string, translationId: string) => {
+    const result = await fetchBiblePassage(query, translationId, bibleApiKey)
+    await refreshDefaultScriptureBg()
+    const prevLen = useServiceStore.getState().lineup.length
+    await addScriptureToLineup({ title: result.reference, scriptureRef: bibleResultToScriptureRef(result) })
+    const translationLabel = availableTranslations.find(t => t.id === translationId)?.label ?? translationId.toUpperCase()
+    const entry = { query, translationId, translationLabel, reference: result.reference }
+    const updated = [entry, ...recentScriptures.filter(r => r.query !== entry.query || r.translationId !== entry.translationId)].slice(0, 5)
+    setRecentScriptures(updated)
+    window.worshipsync.appState.set({ lastBibleTranslation: translationId, recentScriptures: updated }).catch(() => {})
+    let selectIdx = prevLen
+    if (insertAfterSectionId !== null) {
+      const newItemId = useServiceStore.getState().lineup[prevLen]?.id
+      await repositionAfterSection(insertAfterSectionId, prevLen)
+      if (newItemId !== undefined) {
+        const newPos = useServiceStore.getState().lineup.findIndex(item => item.id === newItemId)
+        if (newPos >= 0) selectIdx = newPos
+      }
     }
+    autoProjectRef.current = true
+    setSelectedSongIdx(selectIdx)
   }
 
   // ── Service switcher ─────────────────────────────────────────────────────
@@ -1181,24 +1159,16 @@ export default function PresenterDashboard({
   const handleLibraryAdd = async (songIds: number[]) => {
     const prevLen = useServiceStore.getState().lineup.length;
     for (const id of songIds) await addSongToLineup(id);
-    if (insertAfterSectionId !== null) await repositionAfterSection(insertAfterSectionId, prevLen);
-  };
-
-  const handleAddScripture = async (
-    title: string,
-    verses: { number: number; text: string }[],
-    ref: { book: string; chapter: number; translation: string },
-  ) => {
-    const scriptureRef = JSON.stringify({
-      verses: verses.map(v => ({
-        label: `${ref.book} ${ref.chapter}:${v.number} ${ref.translation}`,
-        text: v.text,
-      }))
-    });
-    await refreshDefaultScriptureBg();
-    const prevLen = useServiceStore.getState().lineup.length;
-    await addScriptureToLineup({ title, scriptureRef });
-    if (insertAfterSectionId !== null) await repositionAfterSection(insertAfterSectionId, prevLen);
+    let selectIdx = prevLen;
+    if (insertAfterSectionId !== null) {
+      const firstNewItemId = useServiceStore.getState().lineup[prevLen]?.id
+      await repositionAfterSection(insertAfterSectionId, prevLen);
+      if (firstNewItemId !== undefined) {
+        const newPos = useServiceStore.getState().lineup.findIndex(item => item.id === firstNewItemId)
+        if (newPos >= 0) selectIdx = newPos
+      }
+    }
+    setSelectedSongIdx(selectIdx);
   };
 
   const handleAddMedia = async (path: string) => {
@@ -2052,117 +2022,6 @@ export default function PresenterDashboard({
             <Plus className="h-3 w-3" />Add
           </button>
         </div>
-
-        {/* Tab bar */}
-        <div className="flex shrink-0 border-b border-border">
-          <button
-            onClick={() => setRosTab("song")}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[11px] font-semibold transition-colors border-b-2 -mb-px ${
-              rosTab === "song"
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <Music className="h-3 w-3" />
-            Song
-          </button>
-          <button
-            onClick={() => setRosTab("scripture")}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-[11px] font-semibold transition-colors border-b-2 -mb-px ${
-              rosTab === "scripture"
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <BookOpen className="h-3 w-3" />
-            Scripture
-          </button>
-        </div>
-
-        {/* Tab content */}
-        {rosTab === "song" ? (
-          <div className="px-2 py-2 border-b border-border shrink-0">
-            <div className="relative">
-              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
-              <input
-                value={rosSearch}
-                onChange={e => handleRosSearch(e.target.value)}
-                placeholder="Search songs…"
-                className="w-full pl-6 pr-6 py-1.5 text-xs bg-input border border-border rounded focus:outline-none focus:border-primary/50 transition-colors placeholder:text-muted-foreground/50"
-              />
-              {rosSearch && (
-                <button
-                  onClick={() => { setRosSearch(""); setRosResults([]); }}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              )}
-            </div>
-            {rosResults.length > 0 && (
-              <div className="mt-1.5 border border-border rounded-md bg-background shadow-lg overflow-hidden">
-                {rosResults.slice(0, 6).map(song => (
-                  <button
-                    key={song.id}
-                    onClick={async () => {
-                      await addSongToLineup(song.id)
-                      setRosSearch("")
-                      setRosResults([])
-                      setSelectedSongIdx(liveSongs.length)
-                    }}
-                    className="w-full flex items-center gap-2 px-2.5 py-2 hover:bg-accent/40 transition-colors border-b border-border last:border-0 text-left"
-                  >
-                    <Music className="h-3 w-3 text-muted-foreground shrink-0" />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[11px] font-medium truncate">{song.title}</p>
-                      <p className="text-[10px] text-muted-foreground truncate">{song.artist || "Unknown"}</p>
-                    </div>
-                    <Plus className="h-3 w-3 text-primary shrink-0" />
-                  </button>
-                ))}
-              </div>
-            )}
-            {rosSearch.trim() && rosResults.length === 0 && (
-              <p className="text-[10px] text-muted-foreground mt-1.5 px-1">No songs found</p>
-            )}
-          </div>
-        ) : (
-          <form onSubmit={handleScriptureQuickAdd} className="px-2 pt-2 pb-1.5 border-b border-border shrink-0">
-            <div className="relative">
-              <BookOpen className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
-              <input
-                value={scriptureQuery}
-                onChange={e => { setScriptureQuery(e.target.value); setScriptureQueryError(null) }}
-                placeholder="e.g. John 3:16 — press Enter"
-                disabled={scriptureQueryLoading}
-                className="w-full pl-6 pr-6 py-1.5 text-xs bg-input border border-border rounded focus:outline-none focus:border-primary/50 transition-colors placeholder:text-muted-foreground/50 disabled:opacity-70"
-              />
-              {scriptureQueryLoading
-                ? <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 h-3 w-3 animate-spin text-muted-foreground" />
-                : scriptureQuery
-                  ? <button type="button" onClick={() => { setScriptureQuery(""); setScriptureQueryError(null) }}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-                      <X className="h-3 w-3" />
-                    </button>
-                  : null
-              }
-            </div>
-            {/* Translation selector */}
-            <div className="mt-1.5">
-              <TranslationPicker
-                translations={availableTranslations}
-                value={scriptureTranslation}
-                onChange={id => {
-                  setScriptureTranslation(id)
-                  window.worshipsync.appState.set({ lastBibleTranslation: id }).catch(() => {})
-                }}
-              />
-            </div>
-            {scriptureQueryError && (
-              <p className="text-[10px] text-red-400 mt-1 px-1">{scriptureQueryError}</p>
-            )}
-          </form>
-        )}
 
         <div className="flex-1 overflow-y-auto">
           {liveSongs.map((song, i) => {
@@ -3860,7 +3719,6 @@ export default function PresenterDashboard({
             await addCountdownToLineup();
             if (insertAfterSectionId !== null) await repositionAfterSection(insertAfterSectionId, prevLen);
           }}
-          onAddScripture={handleAddScripture}
           onAddMedia={handleAddMedia}
           onAddAnnouncement={async (title, content) => {
             const prevLen = useServiceStore.getState().lineup.length;
@@ -3870,6 +3728,14 @@ export default function PresenterDashboard({
           excludeIds={liveSongs
             .filter((s) => s.itemType === "song")
             .map((s) => s.songId)}
+          availableTranslations={availableTranslations}
+          defaultTranslation={scriptureTranslation}
+          recentScriptures={recentScriptures}
+          onAddScriptureByRef={handleScriptureByRef}
+          onTranslationChange={id => {
+            setScriptureTranslation(id)
+            window.worshipsync.appState.set({ lastBibleTranslation: id }).catch(() => {})
+          }}
         />
       )}
 

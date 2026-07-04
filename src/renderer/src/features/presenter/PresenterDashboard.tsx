@@ -400,6 +400,11 @@ export default function PresenterDashboard({
     null,
   );
 
+  // Stage display status
+  const [stageRunning, setStageRunning] = useState(false);
+  const [stagePort, setStagePort] = useState(4040);
+  const [stageClients, setStageClients] = useState(0);
+
   // Live runtime timer
   const liveStartRef = useRef<number>(0);
   const [liveRuntime, setLiveRuntime] = useState("00:00:00");
@@ -513,6 +518,20 @@ export default function PresenterDashboard({
     }
     window.addEventListener('worshipsync:settings-change', handler)
     return () => window.removeEventListener('worshipsync:settings-change', handler)
+  }, [])
+
+  // ── Stage display status polling ─────────────────────────────────────────
+  useEffect(() => {
+    const poll = () => {
+      window.worshipsync.stageDisplay.getStatus().then((s: { running: boolean; port: number; clients: number }) => {
+        setStageRunning(s.running)
+        setStagePort(s.port)
+        setStageClients(s.clients)
+      }).catch(() => {})
+    }
+    poll()
+    const id = setInterval(poll, 3000)
+    return () => clearInterval(id)
   }, [])
 
   // ── Build live songs ─────────────────────────────────────────────────────
@@ -3022,8 +3041,22 @@ export default function PresenterDashboard({
             </div>
           </>
         ) : (
-          <div className="flex-1 flex items-center justify-center">
-            <p className="text-sm text-muted-foreground">Select an item from the lineup</p>
+          <div className="flex-1 flex flex-col items-center justify-center gap-3 px-8 text-center">
+            <div className="h-12 w-12 rounded-2xl bg-muted/60 flex items-center justify-center mb-1">
+              <MonitorOff className="h-6 w-6 text-muted-foreground/40" />
+            </div>
+            <div>
+              <p className="text-[13px] font-semibold text-foreground/70">Select an item to present</p>
+              <p className="text-[11px] text-muted-foreground mt-1">Click any item in the lineup on the left</p>
+            </div>
+            {liveSongs.length > 0 && (
+              <button
+                onClick={() => jumpToItem(0)}
+                className="mt-1 text-[12px] font-medium text-primary hover:text-primary/80 transition-colors flex items-center gap-1.5"
+              >
+                <Play className="h-3 w-3" /> Start with first item
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -3373,113 +3406,138 @@ export default function PresenterDashboard({
 
       ) : (
 
-        /* ── Expanded: full 116px bar ── */
-        <div className="shrink-0 border-t border-border bg-card flex" style={{ height: 125 }}>
+        /* ── Expanded outputs bar ── */
+        <div className="shrink-0 border-t border-border bg-card flex flex-col" style={{ height: 180 }}>
 
-          {/* ─ Main Projection ─ */}
-          <div className="flex-1 flex items-center gap-3 px-4 border-r border-border min-w-0">
-            <div className="shrink-0 rounded-md overflow-hidden border border-border bg-black relative" style={{ width: 180, height: 101 }}>
-              {/* Background layer */}
-              {!isBlank && !isLogo && liveBg && liveSlide?.sectionType !== "blank" && (
-                liveBg.startsWith("color:") ? (
-                  <div className="absolute inset-0" style={{ background: liveBg.replace("color:", "") }} />
-                ) : /\.(mp4|webm|mov)$/i.test(liveBg) ? (
-                  <video src={`${toFileUrl(liveBg)}`} className="absolute inset-0 w-full h-full object-cover" muted preload="metadata" />
-                ) : (
-                  <>
-                    <img src={`${toFileUrl(liveBg)}`} className="absolute inset-0 w-full h-full object-cover" alt="" />
-                    <div className="absolute inset-0" style={{ background: `rgba(0,0,0,${liveTheme.overlayOpacity / 100})` }} />
-                  </>
-                )
-              )}
-              {/* Content / state overlay */}
-              {isLogo ? (
-                <div className="absolute inset-0 bg-gradient-to-br from-zinc-900 to-black flex flex-col items-center justify-center gap-1">
-                  <Tv className="h-4 w-4 text-muted-foreground/40" />
-                  <span className="text-[8px] font-bold uppercase tracking-widest text-muted-foreground/40">Logo</span>
-                </div>
-              ) : isBlank ? (
-                <div className="absolute inset-0 bg-black flex flex-col items-center justify-center gap-1">
-                  <MonitorOff className="h-4 w-4 text-muted-foreground/25" />
-                  <span className="text-[8px] font-bold uppercase tracking-widest text-muted-foreground/25">Blank</span>
-                </div>
-              ) : countdownRunning ? (
-                <div className="absolute inset-0 flex flex-col items-center justify-center" style={{ background: "linear-gradient(to bottom, rgba(0,0,0,0.52) 0%, rgba(0,0,0,0.62) 100%), linear-gradient(135deg, #1a1a2e 0%, #16213e 60%, #0f3460 100%)" }}>
-                  <div style={{ fontSize: 7, fontWeight: 800, letterSpacing: "0.3em", textTransform: "uppercase", color: "#fff", marginBottom: 2 }}>Welcome</div>
-                  <div style={{ fontSize: 5, color: "rgba(255,255,255,0.7)", marginBottom: 5 }}>Our Sunday Service will begin in</div>
-                  {(() => {
-                    const hasDays = countdownDisplay.includes("d");
-                    const timePart = hasDays ? (countdownDisplay.split(" ")[1] ?? "00:00:00") : countdownDisplay;
-                    const dayVal = hasDays ? (countdownDisplay.split(" ")[0] ?? "").replace("d", "") : null;
-                    const segs = timePart.split(":");
-                    const showHours = hasDays || Number(segs[0]) > 0;
-                    const segments: { v: string; lbl: string }[] = [];
-                    if (dayVal && Number(dayVal) > 0) segments.push({ v: dayVal, lbl: "Days" });
-                    if (showHours) segments.push({ v: segs[0] ?? "00", lbl: "Hrs" });
-                    segments.push({ v: segs[segs.length - 2] ?? "00", lbl: "Min" });
-                    segments.push({ v: segs[segs.length - 1] ?? "00", lbl: "Sec" });
-                    return (
-                      <div style={{ display: "flex", alignItems: "flex-end", gap: 0 }}>
-                        {segments.map((seg, i) => (
-                          <div key={seg.lbl} style={{ display: "flex", alignItems: "flex-end" }}>
-                            {i > 0 && <span style={{ fontSize: 14, fontWeight: 800, color: "rgba(255,255,255,0.4)", lineHeight: 1, paddingBottom: 6, margin: "0 1px" }}>:</span>}
-                            <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-                              <span style={{ fontSize: 20, fontWeight: 800, color: "#fff", lineHeight: 1, fontVariantNumeric: "tabular-nums", letterSpacing: "0.03em" }}>{seg.v}</span>
-                              <span style={{ fontSize: 4, fontWeight: 600, color: "rgba(255,255,255,0.5)", letterSpacing: "0.2em", textTransform: "uppercase", marginTop: 2 }}>{seg.lbl}</span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    );
-                  })()}
-                  <div style={{ fontSize: 5, color: "rgba(255,255,255,0.55)", marginTop: 5, textAlign: "center" }}>Please find your seats</div>
-                </div>
-              ) : liveSlide && liveSlide.sectionType !== "blank" ? (
-                liveSong?.itemType === "scripture" ? (() => {
-                  const refPos = scriptureRefPosition ?? 'bottom-right'
-                  const refEl = refPos !== 'hidden' ? (
-                    <p className={`text-[7px] font-semibold shrink-0 truncate px-2 pb-1.5 ${refPos === 'bottom-center' ? 'text-center' : refPos === 'top' ? 'text-left' : 'text-right'}`}
-                      style={{ color: "rgba(255,255,255,0.55)" }}>
-                      {liveSlide.sectionLabel}
-                    </p>
-                  ) : null
-                  return (
-                    <div className="absolute inset-0 flex flex-col">
-                      {refPos === 'top' && refEl}
-                      <div className="flex-1 flex items-center justify-center p-2 min-h-0">
-                        <p className={`text-[9px] font-medium leading-snug line-clamp-4 whitespace-pre-wrap w-full ${scriptureTextAlign === 'left' ? 'text-left' : 'text-center'}`}
-                          style={{ color: liveTheme.textColor }}>
-                          {liveSlide.lines.join("\n")}
-                        </p>
-                      </div>
-                      {refPos !== 'top' && refEl}
-                    </div>
-                  )
-                })() : (
-                <div className="absolute inset-0 flex items-center justify-center p-2">
-                  <p className="text-[9px] text-white/90 font-medium text-center leading-snug line-clamp-4 whitespace-pre-wrap" style={{ color: liveTheme.textColor }}>
-                    {liveSlide.lines.join("\n")}
-                  </p>
-                </div>
-                )
-              ) : (
-                <div className="absolute inset-0 bg-zinc-950 flex items-center justify-center">
-                  <span className="text-[9px] text-muted-foreground/30">Nothing live</span>
-                </div>
+          {/* Header strip */}
+          <div className="flex items-center justify-between px-3 shrink-0" style={{ height: 20 }}>
+            <div className="flex items-center gap-1.5">
+              <Tv className="h-2.5 w-2.5 text-muted-foreground/40" />
+              <span className="text-[7px] font-black uppercase tracking-[0.2em] text-muted-foreground/40">Outputs</span>
+            </div>
+            <button
+              onClick={() => setOutputBarCollapsed(true)}
+              title="Collapse output bar"
+              className="flex items-center h-4 px-1 rounded text-muted-foreground/50 hover:text-foreground hover:bg-accent/50 transition-colors"
+            >
+              <ChevronDown className="h-3 w-3" />
+            </button>
+          </div>
+
+          {/* Column area — flex row of 3 columns */}
+          <div className="flex flex-1 min-h-0 border-t border-border">
+
+          {/* ─ Main Projection (~48%) ─ */}
+          <div className="flex flex-col px-3 pt-2 pb-2 min-w-0" style={{ flex: '0 0 48%' }}>
+            {/* Column header */}
+            <div className="flex items-center gap-1.5 mb-1 shrink-0">
+              <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${!isBlank && !isLogo && (countdownRunning || liveSlideIdxRef.current >= 0) ? "bg-green-500" : "bg-muted-foreground/30"}`} />
+              <span className="text-[9px] font-black uppercase tracking-wider text-muted-foreground">Main Projection</span>
+              {selectedDisplayId !== undefined && !displays.find(d => d.id === selectedDisplayId) && (
+                <span className="flex items-center gap-1 text-[8px] font-bold text-red-400 bg-red-500/10 border border-red-500/25 px-1 py-0.5 rounded-full leading-none ml-auto">
+                  <AlertCircle className="h-2 w-2 shrink-0" /> Disconnected
+                </span>
               )}
             </div>
-            <div className="flex-1 min-w-0 flex flex-col justify-center gap-1.5">
-              <div className="flex items-center gap-1.5">
-                <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${!isBlank && !isLogo && (countdownRunning || liveSlideIdxRef.current >= 0) ? "bg-green-500" : "bg-muted-foreground/30"}`} />
-                <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Main Projection</span>
-                {selectedDisplayId !== undefined && !displays.find(d => d.id === selectedDisplayId) && (
-                  <span className="ml-auto flex items-center gap-1 text-[9px] font-bold text-red-400 bg-red-500/10 border border-red-500/25 px-1.5 py-0.5 rounded-full leading-none">
-                    <AlertCircle className="h-2.5 w-2.5 shrink-0" /> Disconnected
-                  </span>
+            {/* Thumbnail — 16:9, height-driven */}
+            <div className="flex-1 flex items-center min-h-0 mb-1">
+              <div className="h-full aspect-video max-w-full relative rounded overflow-hidden border border-border bg-black">
+                {/* Background layer */}
+                {!isBlank && !isLogo && liveBg && liveSlide?.sectionType !== "blank" && (
+                  liveBg.startsWith("color:") ? (
+                    <div className="absolute inset-0" style={{ background: liveBg.replace("color:", "") }} />
+                  ) : /\.(mp4|webm|mov)$/i.test(liveBg) ? (
+                    <video src={`${toFileUrl(liveBg)}`} className="absolute inset-0 w-full h-full object-cover" muted preload="metadata" />
+                  ) : (
+                    <>
+                      <img src={`${toFileUrl(liveBg)}`} className="absolute inset-0 w-full h-full object-cover" alt="" />
+                      <div className="absolute inset-0" style={{ background: `rgba(0,0,0,${liveTheme.overlayOpacity / 100})` }} />
+                    </>
+                  )
+                )}
+                {/* Content / state overlay */}
+                {isLogo ? (
+                  <div className="absolute inset-0 bg-gradient-to-br from-zinc-900 to-black flex flex-col items-center justify-center gap-1">
+                    <Tv className="h-4 w-4 text-muted-foreground/40" />
+                    <span className="text-[8px] font-bold uppercase tracking-widest text-muted-foreground/40">Logo</span>
+                  </div>
+                ) : isBlank ? (
+                  <div className="absolute inset-0 bg-black flex flex-col items-center justify-center gap-1">
+                    <MonitorOff className="h-4 w-4 text-muted-foreground/25" />
+                    <span className="text-[8px] font-bold uppercase tracking-widest text-muted-foreground/25">Blank</span>
+                  </div>
+                ) : countdownRunning ? (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center" style={{ background: "linear-gradient(to bottom, rgba(0,0,0,0.52) 0%, rgba(0,0,0,0.62) 100%), linear-gradient(135deg, #1a1a2e 0%, #16213e 60%, #0f3460 100%)" }}>
+                    <div style={{ fontSize: 7, fontWeight: 800, letterSpacing: "0.3em", textTransform: "uppercase", color: "#fff", marginBottom: 2 }}>Welcome</div>
+                    <div style={{ fontSize: 5, color: "rgba(255,255,255,0.7)", marginBottom: 5 }}>Our Sunday Service will begin in</div>
+                    {(() => {
+                      const hasDays = countdownDisplay.includes("d");
+                      const timePart = hasDays ? (countdownDisplay.split(" ")[1] ?? "00:00:00") : countdownDisplay;
+                      const dayVal = hasDays ? (countdownDisplay.split(" ")[0] ?? "").replace("d", "") : null;
+                      const segs = timePart.split(":");
+                      const showHours = hasDays || Number(segs[0]) > 0;
+                      const segments: { v: string; lbl: string }[] = [];
+                      if (dayVal && Number(dayVal) > 0) segments.push({ v: dayVal, lbl: "Days" });
+                      if (showHours) segments.push({ v: segs[0] ?? "00", lbl: "Hrs" });
+                      segments.push({ v: segs[segs.length - 2] ?? "00", lbl: "Min" });
+                      segments.push({ v: segs[segs.length - 1] ?? "00", lbl: "Sec" });
+                      return (
+                        <div style={{ display: "flex", alignItems: "flex-end", gap: 0 }}>
+                          {segments.map((seg, i) => (
+                            <div key={seg.lbl} style={{ display: "flex", alignItems: "flex-end" }}>
+                              {i > 0 && <span style={{ fontSize: 14, fontWeight: 800, color: "rgba(255,255,255,0.4)", lineHeight: 1, paddingBottom: 6, margin: "0 1px" }}>:</span>}
+                              <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                                <span style={{ fontSize: 20, fontWeight: 800, color: "#fff", lineHeight: 1, fontVariantNumeric: "tabular-nums", letterSpacing: "0.03em" }}>{seg.v}</span>
+                                <span style={{ fontSize: 4, fontWeight: 600, color: "rgba(255,255,255,0.5)", letterSpacing: "0.2em", textTransform: "uppercase", marginTop: 2 }}>{seg.lbl}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
+                    <div style={{ fontSize: 5, color: "rgba(255,255,255,0.55)", marginTop: 5, textAlign: "center" }}>Please find your seats</div>
+                  </div>
+                ) : liveSlide && liveSlide.sectionType !== "blank" ? (
+                  liveSong?.itemType === "scripture" ? (() => {
+                    const refPos = scriptureRefPosition ?? 'bottom-right'
+                    const refEl = refPos !== 'hidden' ? (
+                      <p className={`text-[7px] font-semibold shrink-0 truncate px-2 pb-1.5 ${refPos === 'bottom-center' ? 'text-center' : refPos === 'top' ? 'text-left' : 'text-right'}`}
+                        style={{ color: "rgba(255,255,255,0.55)" }}>
+                        {liveSlide.sectionLabel}
+                      </p>
+                    ) : null
+                    return (
+                      <div className="absolute inset-0 flex flex-col">
+                        {refPos === 'top' && refEl}
+                        <div className="flex-1 flex items-center justify-center p-2 min-h-0">
+                          <p className={`text-[9px] font-medium leading-snug line-clamp-4 whitespace-pre-wrap w-full ${scriptureTextAlign === 'left' ? 'text-left' : 'text-center'}`}
+                            style={{ color: liveTheme.textColor }}>
+                            {liveSlide.lines.join("\n")}
+                          </p>
+                        </div>
+                        {refPos !== 'top' && refEl}
+                      </div>
+                    )
+                  })() : (
+                  <div className="absolute inset-0 flex items-center justify-center p-2">
+                    <p className="text-[9px] text-white/90 font-medium text-center leading-snug line-clamp-4 whitespace-pre-wrap" style={{ color: liveTheme.textColor }}>
+                      {liveSlide.lines.join("\n")}
+                    </p>
+                  </div>
+                  )
+                ) : (
+                  <div className="absolute inset-0 bg-zinc-950 flex flex-col items-center justify-center gap-1">
+                    <MonitorOff className="h-3.5 w-3.5 text-muted-foreground/20" />
+                    <span className="text-[8px] font-medium text-muted-foreground/25">Nothing live</span>
+                    <span className="text-[7px] text-muted-foreground/18">Click a slide to begin</span>
+                  </div>
                 )}
               </div>
+            </div>
+            {/* Controls row */}
+            <div className="shrink-0">
               <select
-                className={`w-full bg-input text-[11px] text-foreground border rounded px-2 py-1.5 outline-none cursor-pointer ${
+                className={`w-full bg-input text-[10px] text-foreground border rounded px-1.5 py-1 outline-none cursor-pointer ${
                   selectedDisplayId !== undefined && !displays.find(d => d.id === selectedDisplayId)
                     ? "border-red-500/50"
                     : "border-border"
@@ -3497,9 +3555,7 @@ export default function PresenterDashboard({
                 }}
               >
                 {selectedDisplayId !== undefined && !displays.find(d => d.id === selectedDisplayId) && (
-                  <option value={selectedDisplayId} disabled>
-                    Saved display (not connected)
-                  </option>
+                  <option value={selectedDisplayId} disabled>Saved display (not connected)</option>
                 )}
                 {displays.map((d) => (
                   <option key={d.id} value={d.id}>
@@ -3510,17 +3566,47 @@ export default function PresenterDashboard({
             </div>
           </div>
 
-          {/* ─ Confidence Monitor ─ */}
-          <div className="flex-1 flex items-center gap-3 px-4 border-r border-border min-w-0">
-            {/* Miniature confidence monitor — matches the actual window's look */}
-            <div
-              className="shrink-0 rounded-md overflow-hidden border relative"
-              style={{
-                width: 180, height: 101,
-                background: "#080810",
-                borderColor: confidenceOpen ? "rgba(139,92,246,0.35)" : "rgba(255,255,255,0.08)",
-              }}
-            >
+          {/* Column divider */}
+          <div className="w-px bg-border my-2 shrink-0" />
+
+          {/* ─ Confidence Monitor (~32%) ─ */}
+          <div className="flex flex-col px-3 pt-2 pb-2 min-w-0" style={{ flex: '0 0 32%' }}>
+            {/* Column header */}
+            <div className="flex items-center gap-1.5 mb-1 shrink-0">
+              <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${confidenceOpen ? "bg-amber-400" : "bg-muted-foreground/30"}`} />
+              <span className="text-[9px] font-black uppercase tracking-wider text-muted-foreground">Confidence</span>
+              {confidenceOpen && selectedConfidenceDisplayId !== undefined && !displays.find(d => d.id === selectedConfidenceDisplayId) && (
+                <span className="flex items-center gap-1 text-[8px] font-bold text-red-400 bg-red-500/10 border border-red-500/25 px-1 py-0.5 rounded-full leading-none">
+                  <AlertCircle className="h-2 w-2 shrink-0" /> Disc.
+                </span>
+              )}
+              <button
+                onClick={() => {
+                  const next = !confidenceOpen;
+                  if (confidenceOpen) { window.worshipsync.confidence.close(); setConfidenceOpen(false); }
+                  else { window.worshipsync.confidence.open(selectedConfidenceDisplayId); setConfidenceOpen(true); }
+                  if (confidenceSaveTimerRef.current) clearTimeout(confidenceSaveTimerRef.current);
+                  setConfidenceSaveToast(next);
+                  confidenceSaveTimerRef.current = setTimeout(() => setConfidenceSaveToast(null), 5000);
+                }}
+                className={`ml-auto text-[9px] font-bold px-1.5 py-0.5 rounded-full transition-colors ${
+                  confidenceOpen
+                    ? "bg-amber-500/20 text-amber-400 hover:bg-red-500/15 hover:text-red-400"
+                    : "bg-muted text-muted-foreground hover:bg-primary/20 hover:text-primary"
+                }`}
+              >
+                {confidenceOpen ? "ON" : "OFF"}
+              </button>
+            </div>
+            {/* Thumbnail — 16:9, height-driven */}
+            <div className="flex-1 flex items-center min-h-0 mb-1">
+              <div
+                className="h-full aspect-video max-w-full relative rounded overflow-hidden border"
+                style={{
+                  background: "#080810",
+                  borderColor: confidenceOpen ? "rgba(139,92,246,0.35)" : "rgba(255,255,255,0.08)",
+                }}
+              >
               {!confidenceOpen ? (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
                   <MonitorOff className="h-3.5 w-3.5" style={{ color: "rgba(255,255,255,0.15)" }} />
@@ -3596,36 +3682,12 @@ export default function PresenterDashboard({
                   <span className="text-[7px]" style={{ color: "rgba(255,255,255,0.18)" }}>Waiting for slides…</span>
                 </div>
               )}
-            </div>
-            <div className="flex-1 min-w-0 flex flex-col justify-center gap-1.5">
-              <div className="flex items-center gap-1.5">
-                <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${confidenceOpen ? "bg-amber-400" : "bg-muted-foreground/30"}`} />
-                <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Confidence</span>
-                {confidenceOpen && selectedConfidenceDisplayId !== undefined && !displays.find(d => d.id === selectedConfidenceDisplayId) && (
-                  <span className="flex items-center gap-1 text-[9px] font-bold text-red-400 bg-red-500/10 border border-red-500/25 px-1.5 py-0.5 rounded-full leading-none">
-                    <AlertCircle className="h-2.5 w-2.5 shrink-0" /> Disconnected
-                  </span>
-                )}
-                <button
-                  onClick={() => {
-                    const next = !confidenceOpen;
-                    if (confidenceOpen) { window.worshipsync.confidence.close(); setConfidenceOpen(false); }
-                    else { window.worshipsync.confidence.open(selectedConfidenceDisplayId); setConfidenceOpen(true); }
-                    if (confidenceSaveTimerRef.current) clearTimeout(confidenceSaveTimerRef.current);
-                    setConfidenceSaveToast(next);
-                    confidenceSaveTimerRef.current = setTimeout(() => setConfidenceSaveToast(null), 5000);
-                  }}
-                  className={`ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full transition-colors ${
-                    confidenceOpen
-                      ? "bg-amber-500/20 text-amber-400 hover:bg-red-500/15 hover:text-red-400"
-                      : "bg-muted text-muted-foreground hover:bg-primary/20 hover:text-primary"
-                  }`}
-                >
-                  {confidenceOpen ? "ON" : "OFF"}
-                </button>
               </div>
+            </div>
+            {/* Controls row */}
+            <div className="shrink-0">
               <select
-                className={`w-full bg-input text-[11px] text-foreground border rounded px-2 py-1.5 outline-none cursor-pointer ${
+                className={`w-full bg-input text-[10px] text-foreground border rounded px-1.5 py-1 outline-none cursor-pointer ${
                   confidenceOpen && selectedConfidenceDisplayId !== undefined && !displays.find(d => d.id === selectedConfidenceDisplayId)
                     ? "border-red-500/50"
                     : "border-border"
@@ -3643,9 +3705,7 @@ export default function PresenterDashboard({
                 }}
               >
                 {selectedConfidenceDisplayId !== undefined && !displays.find(d => d.id === selectedConfidenceDisplayId) && (
-                  <option value={selectedConfidenceDisplayId} disabled>
-                    Saved display (not connected)
-                  </option>
+                  <option value={selectedConfidenceDisplayId} disabled>Saved display (not connected)</option>
                 )}
                 {displays.map((d) => (
                   <option key={d.id} value={d.id}>
@@ -3656,17 +3716,46 @@ export default function PresenterDashboard({
             </div>
           </div>
 
-          {/* ─ Outputs label + collapse ─ */}
-          <div
-            className="shrink-0 flex flex-col items-center justify-center self-stretch border-l border-border gap-1.5 px-3 cursor-pointer hover:bg-accent/20 transition-colors group"
-            onClick={() => setOutputBarCollapsed(true)}
-            title="Collapse output bar"
-          >
-            <Tv className="h-3.5 w-3.5 text-muted-foreground/50 group-hover:text-muted-foreground transition-colors" />
-            <span className="text-[7px] font-black uppercase tracking-[0.15em] text-muted-foreground/40 group-hover:text-muted-foreground/60 transition-colors">Outputs</span>
-            <ChevronDown className="h-3 w-3 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors" />
+          {/* Column divider */}
+          <div className="w-px bg-border my-2 shrink-0" />
+
+          {/* ─ Stage Display (~20%) ─ */}
+          <div className="flex flex-col px-3 pt-2 pb-2 flex-1 min-w-0">
+            {/* Column header */}
+            <div className="flex items-center gap-1.5 mb-1 shrink-0">
+              <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${stageRunning ? "bg-green-500" : "bg-muted-foreground/30"}`} />
+              <span className="text-[9px] font-black uppercase tracking-wider text-muted-foreground">Stage Display</span>
+            </div>
+            {/* Content */}
+            <div className="flex-1 flex flex-col justify-center gap-2 min-h-0">
+              <div className="flex items-center gap-2">
+                <span className="text-[9px] text-muted-foreground/60 uppercase tracking-wider">Port</span>
+                <span className="text-[10px] font-mono font-bold text-foreground">{stagePort}</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${stageClients > 0 ? "bg-green-500" : "bg-muted-foreground/25"}`} />
+                <span className="text-[9px] text-muted-foreground">{stageClients} connected</span>
+              </div>
+              <button
+                onClick={() => {
+                  if (stageRunning) {
+                    window.worshipsync.stageDisplay.stop().then(() => { setStageRunning(false); setStageClients(0); }).catch(() => {})
+                  } else {
+                    window.worshipsync.stageDisplay.start(stagePort).then(() => setStageRunning(true)).catch(() => {})
+                  }
+                }}
+                className={`text-[9px] font-bold px-3 py-1 rounded transition-colors w-full ${
+                  stageRunning
+                    ? "bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/25"
+                    : "bg-primary/10 text-primary hover:bg-primary/20 border border-primary/25"
+                }`}
+              >
+                {stageRunning ? "Stop" : "Start"}
+              </button>
+            </div>
           </div>
 
+          </div>{/* end column area */}
         </div>
       )}
 

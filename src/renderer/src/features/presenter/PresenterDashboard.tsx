@@ -2277,7 +2277,7 @@ export default function PresenterDashboard({
               if (preview) { preview.loop = videoLoop; preview.play(); }
               setVideoPlaying(true);
               if (videoTimerRef.current) clearInterval(videoTimerRef.current);
-              videoTimerRef.current = setInterval(() => { setVideoCurrentTime(videoPreviewRef.current?.currentTime ?? 0); }, 100);
+              videoTimerRef.current = setInterval(() => { setVideoCurrentTime(videoPreviewRef.current?.currentTime ?? 0); }, 250);
               window.worshipsync.pwa?.broadcastVideoState?.({ isPlaying: true, currentTime: 0, duration: dur, lineupItemId: currentSong.lineupItemId });
             };
             const handlePause = () => {
@@ -2298,7 +2298,7 @@ export default function PresenterDashboard({
               videoPreviewRef.current?.play().catch(() => {});
               setVideoPlaying(true);
               if (videoTimerRef.current) clearInterval(videoTimerRef.current);
-              videoTimerRef.current = setInterval(() => setVideoCurrentTime(videoPreviewRef.current?.currentTime ?? 0), 100);
+              videoTimerRef.current = setInterval(() => setVideoCurrentTime(videoPreviewRef.current?.currentTime ?? 0), 250);
               window.worshipsync.pwa?.broadcastVideoState?.({ isPlaying: true, currentTime: syncTime, duration: videoPreviewRef.current?.duration || videoDuration, lineupItemId: currentSong.lineupItemId });
             };
             // Expose to PWA command handler
@@ -2354,7 +2354,7 @@ export default function PresenterDashboard({
                           window.worshipsync.slide.videoSeek(seekTo);
                           v.play().catch(() => {});
                           if (videoTimerRef.current) clearInterval(videoTimerRef.current);
-                          videoTimerRef.current = setInterval(() => setVideoCurrentTime(videoPreviewRef.current?.currentTime ?? 0), 100);
+                          videoTimerRef.current = setInterval(() => setVideoCurrentTime(videoPreviewRef.current?.currentTime ?? 0), 250);
                         } else {
                           v.currentTime = videoCurrentTime || 0.001;
                         }
@@ -3306,7 +3306,7 @@ export default function PresenterDashboard({
                   liveBg.startsWith("color:") ? (
                     <div className="absolute inset-0" style={{ background: liveBg.replace("color:", "") }} />
                   ) : /\.(mp4|webm|mov)$/i.test(liveBg) ? (
-                    <video src={`${toFileUrl(liveBg)}`} className="absolute inset-0 w-full h-full object-cover" muted preload="metadata" />
+                    <video src={`${toFileUrl(liveBg)}`} className="absolute inset-0 w-full h-full object-cover" muted preload="none" />
                   ) : (
                     <>
                       <img src={`${toFileUrl(liveBg)}`} className="absolute inset-0 w-full h-full object-cover" alt="" />

@@ -84,6 +84,7 @@ function SlideFrame({
             ref={videoRef}
             key={bp}
             playsInline
+            preload="auto"
             style={{
               position: "absolute", inset: 0, zIndex: 1,
               width: "100%", height: "100%",
@@ -538,10 +539,15 @@ export default function ProjectionWindow() {
             />
           )}
 
-          {/* Incoming frame — fades in over the outgoing frame */}
+          {/* Incoming frame — fades in over the outgoing frame.
+               For video backgrounds, key on the file path instead of frameKey so the
+               <video> element is not remounted on every lyric slide change — that was
+               restarting the video from the beginning each time. */}
           {currentFrame && (
             <SlideFrame
-              key={`curr-${frameKey}`}
+              key={currentFrame.backgroundPath && /\.(mp4|webm|mov)$/i.test(currentFrame.backgroundPath)
+                ? `curr-video-${currentFrame.backgroundPath}`
+                : `curr-${frameKey}`}
               slide={currentFrame}
               zIndex={4}
               animationName={prevFrame ? "wsSlideIn" : undefined}

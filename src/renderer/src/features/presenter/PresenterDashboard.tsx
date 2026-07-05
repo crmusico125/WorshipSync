@@ -2094,7 +2094,7 @@ export default function PresenterDashboard({
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className={`text-[12px] font-medium truncate ${isCurrent ? "text-red-400 font-semibold" : isFinished ? "text-muted-foreground" : "text-foreground"}`}>
-                    {song.title}
+                    {isMedia && song.mediaPath ? song.mediaPath.split("/").pop() ?? song.title : song.title}
                   </p>
                   <p className="text-[10px] text-muted-foreground truncate">
                     {isCountdown ? "Countdown" : isScripture ? "Scripture" : isMedia ? (isVideoItem ? "Video" : isAudioItem ? "Audio" : "Image") : isAnnouncement ? "Announcement" : song.artist || "Song"}
@@ -2317,10 +2317,11 @@ export default function PresenterDashboard({
                 {/* Header */}
                 <div className="px-5 py-3 border-b border-border bg-card flex items-center justify-between gap-4 shrink-0">
                   <div className="min-w-0">
-                    <h1 className="text-base font-semibold truncate">{currentSong.title}</h1>
+                    <h1 className="text-base font-semibold truncate">{bg.split("/").pop()}</h1>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
                       <span>Video</span><span>·</span><span className="tabular-nums">{fmt(videoDuration)}</span><span>·</span><span>{ext}</span>
                     </div>
+                    <p className="text-[10px] text-muted-foreground/60 truncate mt-0.5">{bg.substring(0, bg.lastIndexOf("/"))}</p>
                   </div>
                   <Button variant="secondary" size="sm" className="gap-1.5 h-8 text-xs shrink-0" onClick={() => setShowLibrary(true)}>
                     <RefreshCw className="h-3.5 w-3.5" /> Replace
@@ -2516,10 +2517,11 @@ export default function PresenterDashboard({
                 {/* Header */}
                 <div className="px-5 py-3 border-b border-border bg-card flex items-center justify-between gap-4 shrink-0">
                   <div className="min-w-0">
-                    <h1 className="text-base font-semibold truncate">{currentSong.title}</h1>
+                    <h1 className="text-base font-semibold truncate">{bg.split("/").pop()}</h1>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
                       <span>Audio</span><span>·</span><span className="tabular-nums">{fmt(audioDuration)}</span><span>·</span><span>{ext}</span>
                     </div>
+                    <p className="text-[10px] text-muted-foreground/60 truncate mt-0.5">{bg.substring(0, bg.lastIndexOf("/"))}</p>
                   </div>
                   <Button variant="secondary" size="sm" className="gap-1.5 h-8 text-xs shrink-0" onClick={() => setShowLibrary(true)}>
                     <RefreshCw className="h-3.5 w-3.5" /> Replace

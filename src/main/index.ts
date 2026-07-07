@@ -3,6 +3,13 @@ import { app, BrowserWindow } from 'electron'
 // Must be called before app.ready — disables Chromium's autoplay policy so
 // video audio plays in the projection window without requiring a user click.
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
+// Removes the 60fps compositor cap so the projection window can render at the
+// monitor's native refresh rate (important for smooth video on secondary displays).
+app.commandLine.appendSwitch('disable-frame-rate-limit')
+// Force the GPU rasterizer on — Windows sometimes falls back to software
+// rendering on secondary monitors, causing video stutter.
+app.commandLine.appendSwitch('enable-gpu-rasterization')
+app.commandLine.appendSwitch('ignore-gpu-blocklist')
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import { screen } from 'electron'
 import { runMigrations } from './db/migrate'

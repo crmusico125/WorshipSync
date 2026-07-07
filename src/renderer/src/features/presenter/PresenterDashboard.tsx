@@ -2478,13 +2478,22 @@ export default function PresenterDashboard({
                 lineupItemId: currentSong.lineupItemId,
               });
               const audio = ensureAudio();
-              audioContextRef.current?.resume();
-              audio.play();
               setAudioPlaying(true);
               if (audioTimerRef.current) clearInterval(audioTimerRef.current);
               audioTimerRef.current = setInterval(() => setAudioCurrentTime(audioRef.current?.currentTime ?? 0), 100);
-              startViz();
-              window.worshipsync.pwa?.broadcastAudioState?.({ isPlaying: true, currentTime: audioRef.current?.currentTime ?? 0, duration: audioRef.current?.duration || audioDuration, lineupItemId: currentSong.lineupItemId });
+              // On Windows the AudioContext starts suspended; audio.play() must not
+              // be called until the context is running or the output graph is silent.
+              const ctx = audioContextRef.current;
+              const startPlayback = () => {
+                audio.play().catch(() => {});
+                startViz();
+                window.worshipsync.pwa?.broadcastAudioState?.({ isPlaying: true, currentTime: audioRef.current?.currentTime ?? 0, duration: audioRef.current?.duration || audioDuration, lineupItemId: currentSong.lineupItemId });
+              };
+              if (ctx && ctx.state !== 'running') {
+                ctx.resume().then(startPlayback).catch(startPlayback);
+              } else {
+                startPlayback();
+              }
             };
             const handlePause = () => {
               audioRef.current?.pause();

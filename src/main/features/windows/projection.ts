@@ -32,6 +32,7 @@ export function createProjectionWindow(displayId?: number): void {
       nodeIntegration: false,
       webSecurity: false,           // allows file:// image loading
       autoplayPolicy: 'no-user-gesture-required',  // allows video audio without a click
+      backgroundThrottling: false,  // prevent Chromium from throttling video on secondary monitors
     },
     show: false
   })

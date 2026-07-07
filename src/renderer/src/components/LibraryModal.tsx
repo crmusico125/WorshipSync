@@ -47,6 +47,40 @@ interface Props {
   onTranslationChange?: (id: string) => void
 }
 
+// ── Book name autocomplete ────────────────────────────────────────────────────
+
+const BIBLE_BOOKS = [
+  "Genesis","Exodus","Leviticus","Numbers","Deuteronomy",
+  "Joshua","Judges","Ruth","1 Samuel","2 Samuel",
+  "1 Kings","2 Kings","1 Chronicles","2 Chronicles",
+  "Ezra","Nehemiah","Esther","Job","Psalms","Proverbs",
+  "Ecclesiastes","Song of Solomon","Isaiah","Jeremiah",
+  "Lamentations","Ezekiel","Daniel","Hosea","Joel","Amos",
+  "Obadiah","Jonah","Micah","Nahum","Habakkuk","Zephaniah",
+  "Haggai","Zechariah","Malachi",
+  "Matthew","Mark","Luke","John","Acts","Romans",
+  "1 Corinthians","2 Corinthians","Galatians","Ephesians",
+  "Philippians","Colossians","1 Thessalonians","2 Thessalonians",
+  "1 Timothy","2 Timothy","Titus","Philemon","Hebrews",
+  "James","1 Peter","2 Peter","1 John","2 John","3 John",
+  "Jude","Revelation",
+]
+
+function getBookSuggestions(query: string): string[] {
+  if (!query) return []
+  // Once the user has typed a full "Book Chapter" pattern, hide suggestions
+  const qt = query.trim().toLowerCase()
+  for (const book of BIBLE_BOOKS) {
+    if (qt.startsWith(book.toLowerCase())) {
+      const after = query.trim().slice(book.length)
+      if (/^\s+\d/.test(after)) return []
+    }
+  }
+  // Use the raw (untrimmed) query so that "Ezekiel " (trailing space) returns []
+  // — no book name starts with "Ezekiel " — hiding the dropdown naturally after selection.
+  return BIBLE_BOOKS.filter(b => b.toLowerCase().startsWith(query.toLowerCase())).slice(0, 6)
+}
+
 export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddMedia, onAddAnnouncement, excludeIds = [], availableTranslations, defaultTranslation, recentScriptures, onAddScriptureByRef, onTranslationChange }: Props) {
   const [tab, setTab] = useState("songs")
   const [songs, setSongs] = useState<SongRow[]>([])
@@ -56,6 +90,15 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddMedi
   const [search, setSearch] = useState("")
   const [loading, setLoading] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
+  const [bookHighlight, setBookHighlight] = useState(-1)
+  const [hideSuggestions, setHideSuggestions] = useState(false)
+
+  const bookSuggestions = useMemo(
+    () => tab === "scriptures" && !hideSuggestions ? getBookSuggestions(search) : [],
+    [tab, search, hideSuggestions],
+  )
+  // Reset highlight whenever the suggestion list changes
+  useEffect(() => setBookHighlight(-1), [bookSuggestions])
 
   // ── Scripture lookup state (lifted here so top search bar drives it) ──────
   const [scriptureTranslation, setScriptureTranslation] = useState(defaultTranslation ?? "web")
@@ -268,14 +311,71 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddMedi
                       : "Search songs, scriptures, media..."
                 }
                 value={search}
-                onChange={(e) => { setSearch(e.target.value); setScriptureError(null) }}
+                onChange={(e) => {
+                  setSearch(e.target.value)
+                  setScriptureError(null)
+                  setHideSuggestions(false)
+                }}
                 onKeyDown={(e) => {
+                  if (bookSuggestions.length > 0) {
+                    if (e.key === "ArrowDown") {
+                      e.preventDefault()
+                      setBookHighlight(h => Math.min(h + 1, bookSuggestions.length - 1))
+                      return
+                    }
+                    if (e.key === "ArrowUp") {
+                      e.preventDefault()
+                      setBookHighlight(h => Math.max(h - 1, 0))
+                      return
+                    }
+                    if (e.key === "Escape") {
+                      e.preventDefault()
+                      setHideSuggestions(true)
+                      return
+                    }
+                    if (e.key === "Tab" || (e.key === "Enter" && bookHighlight >= 0)) {
+                      e.preventDefault()
+                      const chosen = bookSuggestions[bookHighlight >= 0 ? bookHighlight : 0]
+                      setSearch(chosen + " ")
+                      setHideSuggestions(true)
+                      setScriptureError(null)
+                      return
+                    }
+                  }
                   if (e.key === "Enter" && tab === "scriptures") {
                     e.preventDefault()
                     submitScriptureByRef()
                   }
                 }}
               />
+
+              {/* Book name autocomplete dropdown */}
+              {bookSuggestions.length > 0 && (
+                <ul className="absolute top-full left-0 right-0 z-50 mt-1 bg-card border border-border rounded-lg shadow-lg overflow-hidden">
+                  {bookSuggestions.map((book, i) => (
+                    <li key={book}>
+                      <button
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault()
+                          setSearch(book + " ")
+                          setHideSuggestions(true)
+                          setScriptureError(null)
+                          searchRef.current?.focus()
+                        }}
+                        onMouseEnter={() => setBookHighlight(i)}
+                        className={`w-full text-left px-3 py-2 text-sm transition-colors ${
+                          i === bookHighlight
+                            ? "bg-primary/10 text-primary"
+                            : "text-foreground hover:bg-accent"
+                        }`}
+                      >
+                        {book}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           </div>
 

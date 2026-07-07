@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useMemo } from "react"
 import {
   BookOpen, Search, Radio, X, Loader2, ChevronRight,
   MonitorPlay, BookMarked, ArrowLeft, History, Clock,
@@ -60,6 +60,39 @@ const QUICK_PASSAGES = [
   { ref: "Matthew 11:28",   label: "Matthew 11:28"       },
   { ref: "Proverbs 3:5-6",  label: "Proverbs 3:5–6"      },
 ]
+
+// ── Book name autocomplete ─────────────────────────────────────────────────────
+
+const BIBLE_BOOKS = [
+  "Genesis","Exodus","Leviticus","Numbers","Deuteronomy",
+  "Joshua","Judges","Ruth","1 Samuel","2 Samuel",
+  "1 Kings","2 Kings","1 Chronicles","2 Chronicles",
+  "Ezra","Nehemiah","Esther","Job","Psalms","Proverbs",
+  "Ecclesiastes","Song of Solomon","Isaiah","Jeremiah",
+  "Lamentations","Ezekiel","Daniel","Hosea","Joel","Amos",
+  "Obadiah","Jonah","Micah","Nahum","Habakkuk","Zephaniah",
+  "Haggai","Zechariah","Malachi",
+  "Matthew","Mark","Luke","John","Acts","Romans",
+  "1 Corinthians","2 Corinthians","Galatians","Ephesians",
+  "Philippians","Colossians","1 Thessalonians","2 Thessalonians",
+  "1 Timothy","2 Timothy","Titus","Philemon","Hebrews",
+  "James","1 Peter","2 Peter","1 John","2 John","3 John",
+  "Jude","Revelation",
+]
+
+function getBookSuggestions(query: string): string[] {
+  if (!query) return []
+  const qt = query.trim().toLowerCase()
+  for (const book of BIBLE_BOOKS) {
+    if (qt.startsWith(book.toLowerCase())) {
+      const after = query.trim().slice(book.length)
+      if (/^\s+\d/.test(after)) return []
+    }
+  }
+  // Use raw (untrimmed) query so "Ezekiel " (trailing space) returns []
+  // — no book starts with "Ezekiel " — hiding the dropdown naturally after selection.
+  return BIBLE_BOOKS.filter(b => b.toLowerCase().startsWith(query.toLowerCase())).slice(0, 6)
+}
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
 
@@ -215,6 +248,15 @@ export default function BibleScreen({ projectionOpen }: Props) {
   const scrollToVerseRef = useRef<number | null>(null)
   // Mirrors activeVerseIndex for reads inside event handlers (avoids stale closures on rapid keypresses)
   const activeIdxRef     = useRef(0)
+
+  const [bookHighlight, setBookHighlight]     = useState(-1)
+  const [hideSuggestions, setHideSuggestions] = useState(false)
+
+  const bookSuggestions = useMemo(
+    () => hideSuggestions ? [] : getBookSuggestions(query),
+    [query, hideSuggestions],
+  )
+  useEffect(() => setBookHighlight(-1), [bookSuggestions])
 
   // ── Bootstrap ────────────────────────────────────────────────────────────────
 
@@ -437,18 +479,59 @@ export default function BibleScreen({ projectionOpen }: Props) {
                 <input
                   ref={inputRef}
                   value={query}
-                  onChange={e => { setQuery(e.target.value); setError(null) }}
+                  onChange={e => { setQuery(e.target.value); setError(null); setHideSuggestions(false) }}
+                  onKeyDown={e => {
+                    if (bookSuggestions.length > 0) {
+                      if (e.key === "ArrowDown") { e.preventDefault(); setBookHighlight(h => Math.min(h + 1, bookSuggestions.length - 1)); return }
+                      if (e.key === "ArrowUp")   { e.preventDefault(); setBookHighlight(h => Math.max(h - 1, 0)); return }
+                      if (e.key === "Escape")    { e.preventDefault(); setHideSuggestions(true); return }
+                      if (e.key === "Tab" || (e.key === "Enter" && bookHighlight >= 0)) {
+                        e.preventDefault()
+                        const chosen = bookSuggestions[bookHighlight >= 0 ? bookHighlight : 0]
+                        setQuery(chosen + " ")
+                        setHideSuggestions(true)
+                        return
+                      }
+                    }
+                  }}
                   placeholder="John 3:16, Psalm 23, Romans 8:28–39…"
                   className="w-full h-9 pl-9 pr-8 text-sm bg-input border border-border rounded-lg focus:outline-none focus:border-primary/50 transition-colors placeholder:text-muted-foreground/50"
                 />
                 {query && (
                   <button
                     type="button"
-                    onClick={() => { setQuery(""); setResult(null); setError(null); inputRef.current?.focus() }}
+                    onClick={() => { setQuery(""); setResult(null); setError(null); setHideSuggestions(false); inputRef.current?.focus() }}
                     className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>
+                )}
+
+                {/* Book name autocomplete dropdown */}
+                {bookSuggestions.length > 0 && (
+                  <ul className="absolute top-full left-0 right-0 z-50 mt-1 bg-card border border-border rounded-lg shadow-lg overflow-hidden">
+                    {bookSuggestions.map((book, i) => (
+                      <li key={book}>
+                        <button
+                          type="button"
+                          onMouseDown={e => {
+                            e.preventDefault()
+                            setQuery(book + " ")
+                            setHideSuggestions(true)
+                            inputRef.current?.focus()
+                          }}
+                          onMouseEnter={() => setBookHighlight(i)}
+                          className={`w-full text-left px-3 py-2 text-sm transition-colors ${
+                            i === bookHighlight
+                              ? "bg-primary/10 text-primary"
+                              : "text-foreground hover:bg-accent"
+                          }`}
+                        >
+                          {book}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
                 )}
               </div>
               <button

@@ -1,16 +1,17 @@
 import { useState, useEffect, useRef, useMemo } from "react"
 import {
-  BookOpen, Search, Radio, X, Loader2, ChevronRight,
-  MonitorPlay, BookMarked, ArrowLeft, History, Clock,
+  BookOpen, Search, X, Loader2, ChevronLeft, ChevronRight,
+  Play, Clock, MonitorPlay,
 } from "lucide-react"
 import {
   fetchBiblePassage, fetchApiBibleTranslations,
   FREE_TRANSLATIONS,
-  type BibleApiResult, type BibleApiVerse, type BibleTranslation,
+  type BibleApiVerse, type BibleTranslation,
 } from "../../lib/bibleApi"
 import TranslationPicker from "../../components/TranslationPicker"
+import { toFileUrl } from "../../lib/utils"
 
-// ── Types ──────────────────────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 interface ResolvedTheme {
   fontFamily: string
@@ -49,216 +50,181 @@ interface RecentPassage {
   reference: string
 }
 
-// Popular passages shown when no chapter is open
-const QUICK_PASSAGES = [
-  { ref: "John 3:16",       label: "John 3:16"          },
-  { ref: "Psalm 23",        label: "Psalm 23"            },
-  { ref: "Romans 8:28",     label: "Romans 8:28"         },
-  { ref: "Philippians 4:13",label: "Philippians 4:13"    },
-  { ref: "Isaiah 40:31",    label: "Isaiah 40:31"        },
-  { ref: "Jeremiah 29:11",  label: "Jeremiah 29:11"      },
-  { ref: "Matthew 11:28",   label: "Matthew 11:28"       },
-  { ref: "Proverbs 3:5-6",  label: "Proverbs 3:5–6"      },
-]
+// ── Bible data ────────────────────────────────────────────────────────────────
 
-// ── Book name autocomplete ─────────────────────────────────────────────────────
-
-const BIBLE_BOOKS = [
-  "Genesis","Exodus","Leviticus","Numbers","Deuteronomy",
-  "Joshua","Judges","Ruth","1 Samuel","2 Samuel",
-  "1 Kings","2 Kings","1 Chronicles","2 Chronicles",
-  "Ezra","Nehemiah","Esther","Job","Psalms","Proverbs",
-  "Ecclesiastes","Song of Solomon","Isaiah","Jeremiah",
-  "Lamentations","Ezekiel","Daniel","Hosea","Joel","Amos",
-  "Obadiah","Jonah","Micah","Nahum","Habakkuk","Zephaniah",
-  "Haggai","Zechariah","Malachi",
-  "Matthew","Mark","Luke","John","Acts","Romans",
-  "1 Corinthians","2 Corinthians","Galatians","Ephesians",
-  "Philippians","Colossians","1 Thessalonians","2 Thessalonians",
-  "1 Timothy","2 Timothy","Titus","Philemon","Hebrews",
-  "James","1 Peter","2 Peter","1 John","2 John","3 John",
-  "Jude","Revelation",
+const OT_BOOKS = [
+  "Genesis","Exodus","Leviticus","Numbers","Deuteronomy","Joshua","Judges","Ruth",
+  "1 Samuel","2 Samuel","1 Kings","2 Kings","1 Chronicles","2 Chronicles",
+  "Ezra","Nehemiah","Esther","Job","Psalms","Proverbs","Ecclesiastes",
+  "Song of Solomon","Isaiah","Jeremiah","Lamentations","Ezekiel","Daniel",
+  "Hosea","Joel","Amos","Obadiah","Jonah","Micah","Nahum","Habakkuk",
+  "Zephaniah","Haggai","Zechariah","Malachi",
 ]
+const NT_BOOKS = [
+  "Matthew","Mark","Luke","John","Acts","Romans","1 Corinthians","2 Corinthians",
+  "Galatians","Ephesians","Philippians","Colossians","1 Thessalonians","2 Thessalonians",
+  "1 Timothy","2 Timothy","Titus","Philemon","Hebrews","James","1 Peter","2 Peter",
+  "1 John","2 John","3 John","Jude","Revelation",
+]
+const BIBLE_BOOKS = [...OT_BOOKS, ...NT_BOOKS]
+
+const CHAPTER_COUNTS: Record<string, number> = {
+  Genesis:50,Exodus:40,Leviticus:27,Numbers:36,Deuteronomy:34,Joshua:24,Judges:21,Ruth:4,
+  "1 Samuel":31,"2 Samuel":24,"1 Kings":22,"2 Kings":25,"1 Chronicles":29,"2 Chronicles":36,
+  Ezra:10,Nehemiah:13,Esther:10,Job:42,Psalms:150,Proverbs:31,Ecclesiastes:12,
+  "Song of Solomon":8,Isaiah:66,Jeremiah:52,Lamentations:5,Ezekiel:48,Daniel:12,
+  Hosea:14,Joel:3,Amos:9,Obadiah:1,Jonah:4,Micah:7,Nahum:3,Habakkuk:3,
+  Zephaniah:3,Haggai:2,Zechariah:14,Malachi:4,
+  Matthew:28,Mark:16,Luke:24,John:21,Acts:28,Romans:16,
+  "1 Corinthians":16,"2 Corinthians":13,Galatians:6,Ephesians:6,Philippians:4,
+  Colossians:4,"1 Thessalonians":5,"2 Thessalonians":3,"1 Timothy":6,"2 Timothy":4,
+  Titus:3,Philemon:1,Hebrews:13,James:5,"1 Peter":5,"2 Peter":3,
+  "1 John":5,"2 John":1,"3 John":1,Jude:1,Revelation:22,
+}
+
+const BOOK_ABBREVIATIONS: Record<string, string> = {
+  // OT
+  gen:"Genesis", ex:"Exodus", exo:"Exodus", lev:"Leviticus",
+  num:"Numbers", deut:"Deuteronomy", dt:"Deuteronomy",
+  josh:"Joshua", jdg:"Judges", judg:"Judges",
+  ru:"Ruth", rth:"Ruth",
+  "1sa":"1 Samuel","1sam":"1 Samuel","2sa":"2 Samuel","2sam":"2 Samuel",
+  "1ki":"1 Kings","1kgs":"1 Kings","2ki":"2 Kings","2kgs":"2 Kings",
+  "1ch":"1 Chronicles","1chr":"1 Chronicles","1chron":"1 Chronicles",
+  "2ch":"2 Chronicles","2chr":"2 Chronicles","2chron":"2 Chronicles",
+  ezr:"Ezra", neh:"Nehemiah", est:"Esther", esth:"Esther",
+  ps:"Psalms", psa:"Psalms", psalm:"Psalms",
+  prov:"Proverbs", pro:"Proverbs", pr:"Proverbs",
+  eccl:"Ecclesiastes", ecc:"Ecclesiastes",
+  sos:"Song of Solomon", song:"Song of Solomon", ss:"Song of Solomon",
+  isa:"Isaiah", jer:"Jeremiah", lam:"Lamentations",
+  ezek:"Ezekiel", eze:"Ezekiel", dan:"Daniel", hos:"Hosea",
+  am:"Amos", ob:"Obadiah", oba:"Obadiah",
+  jon:"Jonah", mic:"Micah", nah:"Nahum", hab:"Habakkuk",
+  zeph:"Zephaniah", hag:"Haggai", zech:"Zechariah", zec:"Zechariah",
+  mal:"Malachi",
+  // NT
+  mt:"Matthew", matt:"Matthew", mk:"Mark", mar:"Mark",
+  lk:"Luke", luk:"Luke", jn:"John", joh:"John",
+  ac:"Acts", act:"Acts",
+  ro:"Romans", rom:"Romans",
+  "1co":"1 Corinthians","1cor":"1 Corinthians",
+  "2co":"2 Corinthians","2cor":"2 Corinthians",
+  gal:"Galatians", eph:"Ephesians",
+  php:"Philippians", phil:"Philippians",
+  col:"Colossians",
+  "1th":"1 Thessalonians","1thes":"1 Thessalonians","1thess":"1 Thessalonians",
+  "2th":"2 Thessalonians","2thes":"2 Thessalonians","2thess":"2 Thessalonians",
+  "1ti":"1 Timothy","1tim":"1 Timothy",
+  "2ti":"2 Timothy","2tim":"2 Timothy",
+  tit:"Titus", phm:"Philemon", phlm:"Philemon",
+  heb:"Hebrews",
+  jas:"James", jam:"James",
+  "1pe":"1 Peter","1pet":"1 Peter","1pt":"1 Peter",
+  "2pe":"2 Peter","2pet":"2 Peter","2pt":"2 Peter",
+  "1jn":"1 John","1jo":"1 John",
+  "2jn":"2 John","2jo":"2 John",
+  "3jn":"3 John","3jo":"3 John",
+  jud:"Jude",
+  rev:"Revelation",
+}
+
+function resolveBook(name: string): string | null {
+  const lower = name.toLowerCase().trim()
+  const exact = BIBLE_BOOKS.find(b => b.toLowerCase() === lower)
+  if (exact) return exact
+  const abbr = BOOK_ABBREVIATIONS[lower]
+  if (abbr) return abbr
+  return BIBLE_BOOKS.find(b => b.toLowerCase().startsWith(lower)) ?? null
+}
 
 function getBookSuggestions(query: string): string[] {
   if (!query) return []
   const qt = query.trim().toLowerCase()
+  // Suppress suggestions once the user has typed a full book name + chapter number
   for (const book of BIBLE_BOOKS) {
     if (qt.startsWith(book.toLowerCase())) {
       const after = query.trim().slice(book.length)
       if (/^\s+\d/.test(after)) return []
     }
   }
-  // Use raw (untrimmed) query so "Ezekiel " (trailing space) returns []
-  // — no book starts with "Ezekiel " — hiding the dropdown naturally after selection.
-  return BIBLE_BOOKS.filter(b => b.toLowerCase().startsWith(query.toLowerCase())).slice(0, 6)
+  // Also suppress when an abbreviation resolves and is followed by a chapter
+  const m = qt.match(/^(\S+)\s+\d/)
+  if (m && (BOOK_ABBREVIATIONS[m[1]] || BIBLE_BOOKS.find(b => b.toLowerCase() === m[1]))) return []
+  const byPrefix = BIBLE_BOOKS.filter(b => b.toLowerCase().startsWith(qt))
+  if (byPrefix.length) return byPrefix.slice(0, 6)
+  // Fall back to abbreviation matches when no prefix hit
+  const abbr = BOOK_ABBREVIATIONS[qt]
+  return abbr ? [abbr] : []
 }
 
-// ── Sub-components ─────────────────────────────────────────────────────────────
+// ── Main component ────────────────────────────────────────────────────────────
 
-function ProjectButton({
-  isLive,
-  isProjected,
-  onClick,
-}: {
-  isLive: boolean
-  isProjected: boolean
-  onClick: () => void
-}) {
-  if (!isLive) {
-    return (
-      <button
-        disabled
-        title="Start a live show to project"
-        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border border-border text-muted-foreground/40 cursor-not-allowed shrink-0"
-      >
-        <MonitorPlay className="h-3.5 w-3.5" />
-        Project
-      </button>
-    )
-  }
-
-  if (isProjected) {
-    return (
-      <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-red-500/10 text-red-400 border border-red-500/25 shrink-0">
-        <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse" />
-        On Screen
-      </div>
-    )
-  }
-
-  return (
-    <button
-      onClick={onClick}
-      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-red-600 hover:bg-red-500 text-white transition-colors shrink-0"
-    >
-      <Radio className="h-3 w-3" />
-      Project
-    </button>
-  )
-}
-
-function VerseCard({
-  verse,
-  translationLabel,
-  isLive,
-  isProjected,
-  onProject,
-}: {
-  verse: BibleApiVerse
-  translationLabel: string
-  isLive: boolean
-  isProjected: boolean
-  onProject: () => void
-}) {
-  return (
-    <div className={`rounded-xl border transition-colors ${
-      isProjected
-        ? "border-red-500/40 bg-red-500/5"
-        : "border-border bg-card"
-    }`}>
-      <div className="flex items-center justify-between gap-3 px-4 pt-3.5 pb-1">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="text-xs font-bold text-foreground">
-            {verse.book_name} {verse.chapter}:{verse.verse}
-          </span>
-          <span className="text-[10px] font-semibold text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
-            {translationLabel}
-          </span>
-        </div>
-        <ProjectButton isLive={isLive} isProjected={isProjected} onClick={onProject} />
-      </div>
-      <p className="px-4 pb-4 text-sm leading-relaxed text-foreground/90">
-        {verse.text}
-      </p>
-    </div>
-  )
-}
-
-function ChapterVerseRow({
-  verse,
-  isLive,
-  isProjected,
-  isActive,
-  onProject,
-}: {
-  verse: BibleApiVerse
-  isLive: boolean
-  isProjected: boolean
-  isActive: boolean
-  onProject: () => void
-}) {
-  return (
-    <div className={`group flex items-start gap-3 px-4 py-2.5 transition-colors rounded-lg cursor-pointer ${
-      isProjected
-        ? "bg-red-500/8 border border-red-500/20"
-        : isActive
-          ? "bg-primary/8 border border-primary/25"
-          : "hover:bg-accent/30 border border-transparent"
-    }`} onClick={onProject}>
-      <span className={`text-[11px] font-bold mt-0.5 w-6 shrink-0 text-right ${
-        isProjected ? "text-red-400" : isActive ? "text-primary" : "text-muted-foreground/60"
-      }`}>
-        {verse.verse}
-      </span>
-      <p className="flex-1 text-sm leading-relaxed text-foreground/90">
-        {verse.text}
-      </p>
-      <div className="shrink-0 mt-0.5">
-        <ProjectButton isLive={isLive} isProjected={isProjected} onClick={onProject} />
-      </div>
-    </div>
-  )
-}
-
-// ── Main Screen ────────────────────────────────────────────────────────────────
-
-interface Props {
-  projectionOpen: boolean
-}
+interface Props { projectionOpen: boolean }
 
 export default function BibleScreen({ projectionOpen }: Props) {
-  const [query, setQuery]                           = useState("")
-  const [translation, setTranslation]               = useState("web")
+
+  // Translation
+  const [translation, setTranslation]                     = useState("web")
   const [availableTranslations, setAvailableTranslations] = useState<BibleTranslation[]>(FREE_TRANSLATIONS)
-  const [bibleApiKey, setBibleApiKey]               = useState<string | null>(null)
-  const [translationsLoading, setTranslationsLoading] = useState(false)
-  const [translationsError, setTranslationsError]   = useState<string | null>(null)
+  const [bibleApiKey, setBibleApiKey]                     = useState<string | null>(null)
+  const [translationsLoading, setTranslationsLoading]     = useState(false)
+  const [translationsError, setTranslationsError]         = useState<string | null>(null)
 
-  const [result, setResult]                         = useState<BibleApiResult | null>(null)
-  const [loading, setLoading]                       = useState(false)
-  const [error, setError]                           = useState<string | null>(null)
+  // Browse navigation
+  const [activeBook, setActiveBook]       = useState<string | null>(null)
+  const [activeChapter, setActiveChapter] = useState<number | null>(null)
+  const [bookFilter, setBookFilter]       = useState("")
+  const [panelTab, setPanelTab]           = useState<"browse" | "history">("browse")
 
-  const [chapterResult, setChapterResult]           = useState<BibleApiResult | null>(null)
-  const [chapterLoading, setChapterLoading]         = useState(false)
-  const [chapterError, setChapterError]             = useState<string | null>(null)
+  // Chapter verses
+  const [chapterVerses, setChapterVerses]   = useState<BibleApiVerse[]>([])
+  const [chapterLoading, setChapterLoading] = useState(false)
+  const [chapterError, setChapterError]     = useState<string | null>(null)
 
-  const [projectedLabel, setProjectedLabel]         = useState<string | null>(null)
-  const [sessionHistory, setSessionHistory]         = useState<SessionEntry[]>([])
-  const [recentPassages, setRecentPassages]         = useState<RecentPassage[]>([])
+  // Selected verse (for preview + project) and optional range highlight
+  const [selectedIdx, setSelectedIdx]                   = useState<number | null>(null)
+  const selectedIdxRef                                  = useRef<number | null>(null)
+  const [highlightedVerseNums, setHighlightedVerseNums] = useState<Set<number>>(new Set())
 
+  // When a history re-project fires, override the preview with that verse
+  // without disrupting the browse navigation (cleared on any verse click or chapter load)
+  const [historyPreview, setHistoryPreview] = useState<{ verse: BibleApiVerse; translationLabel: string } | null>(null)
+
+  // Search jump-to bar
+  const [searchQuery, setSearchQuery]       = useState("")
+  const [searchHidden, setSearchHidden]     = useState(false)
+  const [searchHighlight, setSearchHighlight] = useState(-1)
+
+  // Projection state
+  const [projectedLabel, setProjectedLabel] = useState<string | null>(null)
+  const [sessionHistory, setSessionHistory] = useState<SessionEntry[]>([])
+  const recentPassagesRef                   = useRef<RecentPassage[]>([])
+
+  // Theme / background
   const [scriptureBackgroundPath, setScriptureBackgroundPath] = useState<string | null>(null)
   const [defaultThemeBg, setDefaultThemeBg]                   = useState<string | null>(null)
   const [resolvedTheme, setResolvedTheme]                     = useState<ResolvedTheme>(DEFAULT_THEME)
 
-  const [activeVerseIndex, setActiveVerseIndex] = useState(0)
-  const [jumpInput, setJumpInput]               = useState("")
+  // Scripture-specific display settings (loaded from appState, same as PresenterDashboard)
+  const [scriptureFontSize, setScriptureFontSize]         = useState(48)
+  const [scriptureTextAlign, setScriptureTextAlign]       = useState<"left" | "center">("center")
+  const [scriptureRefPosition, setScriptureRefPosition]   = useState<"top" | "bottom-right" | "bottom-center" | "hidden">("bottom-right")
 
-  const inputRef         = useRef<HTMLInputElement>(null)
-  const scrollToVerseRef = useRef<number | null>(null)
-  // Mirrors activeVerseIndex for reads inside event handlers (avoids stale closures on rapid keypresses)
-  const activeIdxRef     = useRef(0)
+  const searchRef       = useRef<HTMLInputElement>(null)
+  const verseListRef    = useRef<HTMLDivElement>(null)
+  const projectVerseRef = useRef<(verse: BibleApiVerse, tLabel?: string) => void>(() => {})
 
-  const [bookHighlight, setBookHighlight]     = useState(-1)
-  const [hideSuggestions, setHideSuggestions] = useState(false)
+  // Keep selectedIdxRef in sync
+  useEffect(() => { selectedIdxRef.current = selectedIdx }, [selectedIdx])
 
   const bookSuggestions = useMemo(
-    () => hideSuggestions ? [] : getBookSuggestions(query),
-    [query, hideSuggestions],
+    () => searchHidden ? [] : getBookSuggestions(searchQuery),
+    [searchQuery, searchHidden],
   )
-  useEffect(() => setBookHighlight(-1), [bookSuggestions])
+  useEffect(() => setSearchHighlight(-1), [bookSuggestions])
 
-  // ── Bootstrap ────────────────────────────────────────────────────────────────
+  // ── Bootstrap ──────────────────────────────────────────────────────────────
 
   useEffect(() => {
     window.worshipsync.appState.getBibleApiKey().then(async (key: string | null) => {
@@ -271,13 +237,10 @@ export default function BibleScreen({ projectionOpen }: Props) {
           const keyedLabels = new Set(keyed.map(t => t.label))
           const free = FREE_TRANSLATIONS.filter(t => !keyedLabels.has(t.label.toUpperCase()))
           setAvailableTranslations([...keyed, ...free])
-          // Pre-select NIV if available, otherwise first keyed translation
           const preferred = keyed.find(t => t.label === "NIV" || t.label.startsWith("NIV")) ?? keyed[0]
           if (preferred) setTranslation(preferred.id)
         } catch (err) {
-          setTranslationsError(
-            err instanceof Error ? err.message : "Failed to load translations from API.Bible"
-          )
+          setTranslationsError(err instanceof Error ? err.message : "Failed to load translations from API.Bible")
         } finally {
           setTranslationsLoading(false)
         }
@@ -299,132 +262,115 @@ export default function BibleScreen({ projectionOpen }: Props) {
       if (state.projectionFontSize) {
         setResolvedTheme(prev => ({ ...prev, fontSize: state.projectionFontSize }))
       }
+      if (state.scriptureFontSize)    setScriptureFontSize(state.scriptureFontSize as number)
+      if (state.scriptureTextAlign)   setScriptureTextAlign(state.scriptureTextAlign as "left" | "center")
+      if (state.scriptureRefPosition) setScriptureRefPosition(state.scriptureRefPosition as typeof scriptureRefPosition)
       if (Array.isArray(state.recentScriptures)) {
-        setRecentPassages(state.recentScriptures as RecentPassage[])
+        recentPassagesRef.current = state.recentScriptures as RecentPassage[]
       }
     }).catch(() => {})
   }, [])
 
-  // ── Handlers ─────────────────────────────────────────────────────────────────
-
-  const handleSearch = async (e?: React.FormEvent, overrideQuery?: string) => {
-    e?.preventDefault()
-    const q = (overrideQuery ?? query).trim()
-    if (!q) return
-    setLoading(true)
-    setError(null)
-    setResult(null)
-    setChapterResult(null)
-    try {
-      const r = await fetchBiblePassage(q, translation, bibleApiKey)
-      setResult(r)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to fetch passage")
-    } finally {
-      setLoading(false)
+  // Sync scripture settings changed live from SettingsScreen
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<Record<string, any>>).detail
+      if (detail.scriptureFontSize    !== undefined) setScriptureFontSize(detail.scriptureFontSize as number)
+      if (detail.scriptureTextAlign   !== undefined) setScriptureTextAlign(detail.scriptureTextAlign as "left" | "center")
+      if (detail.scriptureRefPosition !== undefined) setScriptureRefPosition(detail.scriptureRefPosition as typeof scriptureRefPosition)
     }
-  }
+    window.addEventListener("worshipsync:settings-change", handler)
+    return () => window.removeEventListener("worshipsync:settings-change", handler)
+  }, [])
 
-  const handleReadChapter = async () => {
-    if (!result?.verses[0]) return
-    const { book_name, chapter, verse } = result.verses[0]
-    const ref = `${book_name} ${chapter}`
-    scrollToVerseRef.current = verse
+  // Reload chapter when translation changes
+  useEffect(() => {
+    if (activeBook && activeChapter !== null) {
+      doLoadChapter(activeBook, activeChapter)
+    }
+  }, [translation]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Chapter loading ────────────────────────────────────────────────────────
+
+  const doLoadChapter = async (book: string, chapter: number): Promise<BibleApiVerse[]> => {
     setChapterLoading(true)
     setChapterError(null)
+    setChapterVerses([])
+    setSelectedIdx(null)
+    setHighlightedVerseNums(new Set())
+    setHistoryPreview(null)
     try {
-      const r = await fetchBiblePassage(ref, translation, bibleApiKey)
-      setChapterResult(r)
+      const r = await fetchBiblePassage(`${book} ${chapter}`, translation, bibleApiKey)
+      setChapterVerses(r.verses)
+      return r.verses
     } catch (err) {
       setChapterError(err instanceof Error ? err.message : "Failed to load chapter")
+      return []
     } finally {
       setChapterLoading(false)
     }
   }
 
-  // Scroll to originating verse and initialise active index after chapter renders
-  useEffect(() => {
-    if (!chapterResult) { activeIdxRef.current = 0; setActiveVerseIndex(0); return }
-    const targetVerse = scrollToVerseRef.current
-    scrollToVerseRef.current = null
-    const idx = targetVerse != null
-      ? Math.max(0, chapterResult.verses.findIndex(v => v.verse === targetVerse))
-      : 0
-    activeIdxRef.current = idx
-    setActiveVerseIndex(idx)
-    if (targetVerse != null) {
-      requestAnimationFrame(() => {
-        document.getElementById(`chapter-verse-${targetVerse}`)?.scrollIntoView({ behavior: "smooth", block: "center" })
-      })
-    }
-  }, [chapterResult])
+  // ── Navigation ─────────────────────────────────────────────────────────────
 
-  // Arrow-key navigation through chapter verses
-  useEffect(() => {
-    if (!chapterResult) return
-    const handler = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement).tagName
-      if (tag === "INPUT" || tag === "TEXTAREA") return
-      let next: number | null = null
-      if (e.key === "ArrowDown") { e.preventDefault(); next = Math.min(activeIdxRef.current + 1, chapterResult.verses.length - 1) }
-      else if (e.key === "ArrowUp") { e.preventDefault(); next = Math.max(activeIdxRef.current - 1, 0) }
-      if (next == null || next === activeIdxRef.current) return
-      activeIdxRef.current = next
-      setActiveVerseIndex(next)
-      const verse = chapterResult.verses[next]
-      document.getElementById(`chapter-verse-${verse.verse}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" })
-      if (projectionOpen) projectVerse(verse)
-    }
-    document.addEventListener("keydown", handler)
-    return () => document.removeEventListener("keydown", handler)
-  }, [chapterResult, projectionOpen])
-
-  const handleQuickPassage = (ref: string) => {
-    setQuery(ref)
-    handleSearch(undefined, ref)
+  const selectBook = (book: string) => {
+    setActiveBook(book)
+    setActiveChapter(null)
+    setChapterVerses([])
+    setSelectedIdx(null)
+    setChapterError(null)
+    setBookFilter("")
   }
 
-  const handleJumpToVerse = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!chapterResult) return
-    const num = parseInt(jumpInput.trim())
-    if (isNaN(num)) return
-    const idx = chapterResult.verses.findIndex(v => v.verse === num)
-    if (idx < 0) return
-    activeIdxRef.current = idx
-    setActiveVerseIndex(idx)
-    setJumpInput("")
-    const verse = chapterResult.verses[idx]
-    document.getElementById(`chapter-verse-${verse.verse}`)?.scrollIntoView({ behavior: "smooth", block: "center" })
-    if (projectionOpen) projectVerse(verse)
+  const selectChapter = async (chapter: number) => {
+    if (!activeBook) return
+    setActiveChapter(chapter)
+    await doLoadChapter(activeBook, chapter)
+    verseListRef.current?.scrollTo({ top: 0 })
   }
 
-  const handleRecentPassage = (recent: RecentPassage) => {
-    setTranslation(recent.translationId)
-    setQuery(recent.query)
-    handleSearch(undefined, recent.query)
+  const prevChapter = () => {
+    if (!activeBook || !activeChapter || activeChapter <= 1) return
+    const ch = activeChapter - 1
+    setActiveChapter(ch)
+    doLoadChapter(activeBook, ch)
+    verseListRef.current?.scrollTo({ top: 0 })
   }
+
+  const nextChapter = () => {
+    if (!activeBook || activeChapter === null) return
+    const total = CHAPTER_COUNTS[activeBook] ?? 1
+    if (activeChapter >= total) return
+    const ch = activeChapter + 1
+    setActiveChapter(ch)
+    doLoadChapter(activeBook, ch)
+    verseListRef.current?.scrollTo({ top: 0 })
+  }
+
+  const selectVerse = (idx: number) => {
+    setHistoryPreview(null)
+    setHighlightedVerseNums(new Set())
+    setSelectedIdx(prev => prev === idx ? null : idx)
+  }
+
+  // ── Projection ─────────────────────────────────────────────────────────────
 
   const projectVerse = (verse: BibleApiVerse, tLabel?: string) => {
     const translationLabel = tLabel ?? availableTranslations.find(t => t.id === translation)?.label ?? translation.toUpperCase()
     const label = `${verse.book_name} ${verse.chapter}:${verse.verse} ${translationLabel}`
     setProjectedLabel(label)
 
-    // Update session history — deduplicate by label, most recent first
     setSessionHistory(prev => {
       const entry: SessionEntry = { verse, translationLabel, label }
-      return [entry, ...prev.filter(e => e.label !== label)]
+      return [entry, ...prev.filter(e => e.label !== label)].slice(0, 20)
     })
 
-    // Persist to recentScriptures (shared with presenter)
     const reference = `${verse.book_name} ${verse.chapter}:${verse.verse}`
-    const query = reference
-    const entry: RecentPassage = { query, translationId: translation, translationLabel, reference }
-    setRecentPassages(prev => {
-      const updated = [entry, ...prev.filter(r => r.reference !== reference || r.translationId !== translation)].slice(0, 8)
-      window.worshipsync.appState.set({ recentScriptures: updated, lastBibleTranslation: translation }).catch(() => {})
-      return updated
-    })
+    const rpEntry: RecentPassage = { query: reference, translationId: translation, translationLabel, reference }
+    const prev = recentPassagesRef.current
+    const updated = [rpEntry, ...prev.filter(r => r.reference !== reference || r.translationId !== translation)].slice(0, 8)
+    recentPassagesRef.current = updated
+    window.worshipsync.appState.set({ recentScriptures: updated, lastBibleTranslation: translation }).catch(() => {})
 
     const bg = scriptureBackgroundPath ?? defaultThemeBg
     window.worshipsync.slide.show({
@@ -434,390 +380,691 @@ export default function BibleScreen({ projectionOpen }: Props) {
       sectionType: "verse",
       itemType: "scripture",
       backgroundPath: bg,
-      theme: { ...resolvedTheme, fontSize: Math.max(96, resolvedTheme.fontSize), maxLinesPerSlide: 1 },
+      theme: {
+        ...resolvedTheme,
+        fontSize: scriptureFontSize,
+        textAlign: scriptureTextAlign,
+        maxLinesPerSlide: 1,
+        scriptureRefPosition,
+      },
     })
   }
 
-  const translationLabel = availableTranslations.find(t => t.id === translation)?.label
-    ?? translation.toUpperCase()
+  // Keep ref current so keyboard handler always calls the latest version
+  projectVerseRef.current = projectVerse
 
-  // ── Derived ───────────────────────────────────────────────────────────────────
+  const handleProjectNow = () => {
+    if (selectedIdx === null) return
+    projectVerse(chapterVerses[selectedIdx])
+  }
 
-  const chapterRef = result?.verses[0]
-    ? `${result.verses[0].book_name} ${result.verses[0].chapter}`
-    : null
+  // ── Session history ────────────────────────────────────────────────────────
 
-  // ── Render ────────────────────────────────────────────────────────────────────
+  const jumpToHistory = async (entry: SessionEntry) => {
+    const { book_name, chapter, verse: verseNum } = entry.verse
+    setActiveBook(book_name)
+    setActiveChapter(chapter)
+    setPanelTab("browse")
+    const verses = await doLoadChapter(book_name, chapter)
+    const idx = verses.findIndex(v => v.verse === verseNum)
+    if (idx >= 0) {
+      setSelectedIdx(idx)
+      setTimeout(() => {
+        const el = verseListRef.current?.children[idx] as HTMLElement | undefined
+        el?.scrollIntoView({ behavior: "smooth", block: "center" })
+      }, 50)
+    }
+  }
+
+  const reprojectHistory = (entry: SessionEntry) => {
+    setHistoryPreview({ verse: entry.verse, translationLabel: entry.translationLabel })
+    projectVerse(entry.verse, entry.translationLabel)
+  }
+
+  // ── Search jump-to ─────────────────────────────────────────────────────────
+
+  const jumpToRef = async (ref: string) => {
+    // Supports: "John 3", "John 3:16", "John 3:16-18", "Jn 3:16", "Ps 23"
+    const m = ref.trim().match(/^([\w\s]+?)\s+(\d+)(?::(\d+)(?:-(\d+))?)?/)
+    if (!m) return
+    const book = resolveBook(m[1])
+    if (!book) return
+    const chapter    = parseInt(m[2])
+    const startVerse = m[3] ? parseInt(m[3]) : null
+    const endVerse   = m[4] ? parseInt(m[4]) : startVerse
+    setActiveBook(book)
+    setActiveChapter(chapter)
+    setPanelTab("browse")
+    const verses = await doLoadChapter(book, chapter)
+    if (startVerse !== null) {
+      const startIdx = verses.findIndex(v => v.verse === startVerse)
+      if (startIdx >= 0) {
+        setSelectedIdx(startIdx)
+        selectedIdxRef.current = startIdx
+        if (endVerse !== null && endVerse > startVerse) {
+          const nums = new Set<number>()
+          for (let v = startVerse; v <= endVerse; v++) nums.add(v)
+          setHighlightedVerseNums(nums)
+        }
+        setTimeout(() => {
+          const el = verseListRef.current?.children[startIdx] as HTMLElement | undefined
+          el?.scrollIntoView({ behavior: "smooth", block: "center" })
+        }, 50)
+      }
+    }
+    setSearchQuery("")
+    setSearchHidden(false)
+  }
+
+  // ── Keyboard navigation ────────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (!chapterVerses.length) return
+    const handler = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement).tagName
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault()
+        const current = selectedIdxRef.current ?? -1
+        const next = e.key === "ArrowDown"
+          ? Math.min(current + 1, chapterVerses.length - 1)
+          : Math.max(current - 1, 0)
+        setHighlightedVerseNums(new Set())
+        setSelectedIdx(next)
+        selectedIdxRef.current = next
+        const el = verseListRef.current?.children[next] as HTMLElement | undefined
+        el?.scrollIntoView({ behavior: "smooth", block: "nearest" })
+        if (projectionOpen) projectVerseRef.current(chapterVerses[next])
+      }
+      if ((e.key === "Enter" || e.key === " ") && projectionOpen) {
+        e.preventDefault()
+        const idx = selectedIdxRef.current
+        if (idx !== null && chapterVerses[idx]) projectVerseRef.current(chapterVerses[idx])
+      }
+    }
+    document.addEventListener("keydown", handler)
+    return () => document.removeEventListener("keydown", handler)
+  }, [chapterVerses, projectionOpen]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Derived ────────────────────────────────────────────────────────────────
+
+  const translationLabel       = availableTranslations.find(t => t.id === translation)?.label ?? translation.toUpperCase()
+  const browseSelectedVerse    = selectedIdx !== null ? chapterVerses[selectedIdx] : null
+  // historyPreview takes precedence so the preview panel always reflects the last re-projected verse
+  const selectedVerse          = historyPreview?.verse ?? browseSelectedVerse
+  const selectedVerseTranslation = historyPreview?.translationLabel ?? translationLabel
+  const totalChapters          = activeBook ? (CHAPTER_COUNTS[activeBook] ?? 1) : 0
+  const isProjected            = selectedVerse
+    ? projectedLabel === `${selectedVerse.book_name} ${selectedVerse.chapter}:${selectedVerse.verse} ${selectedVerseTranslation}`
+    : false
+
+  const filteredOT = bookFilter ? OT_BOOKS.filter(b => b.toLowerCase().includes(bookFilter.toLowerCase())) : OT_BOOKS
+  const filteredNT = bookFilter ? NT_BOOKS.filter(b => b.toLowerCase().includes(bookFilter.toLowerCase())) : NT_BOOKS
+
+  // Scale scriptureFontSize down for the thumbnail (preview is ~232px wide vs ~1920px actual)
+  // We inflate slightly so text stays readable, while still reflecting relative size changes
+  const previewFontPx = Math.max(8, Math.min(14, scriptureFontSize / 5))
+  const previewBg     = scriptureBackgroundPath ?? defaultThemeBg
+
+  // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <div className="h-full flex flex-col overflow-hidden bg-background text-foreground">
 
-      {/* ── Top bar ── */}
-      <div className="h-12 shrink-0 border-b border-border flex items-center px-5 gap-3">
-        <BookOpen className="h-4 w-4 text-primary shrink-0" />
-        <span className="text-sm font-semibold">Bible</span>
-        <div className="flex-1" />
-        {projectionOpen && (
-          <div className="flex items-center gap-1.5 text-[11px] font-bold text-red-400 bg-red-500/10 border border-red-500/25 px-2.5 py-1 rounded-lg">
-            <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse" />
-            LIVE
-          </div>
+      {/* ── Search / jump-to bar ── */}
+      <div className="h-11 shrink-0 border-b border-border flex items-center gap-2.5 px-3">
+        <div className="relative flex-1 max-w-lg">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+          <input
+            ref={searchRef}
+            value={searchQuery}
+            onChange={e => { setSearchQuery(e.target.value); setSearchHidden(false) }}
+            onKeyDown={e => {
+              if (bookSuggestions.length > 0) {
+                if (e.key === "ArrowDown") { e.preventDefault(); setSearchHighlight(h => Math.min(h + 1, bookSuggestions.length - 1)); return }
+                if (e.key === "ArrowUp")   { e.preventDefault(); setSearchHighlight(h => Math.max(h - 1, 0)); return }
+                if (e.key === "Escape")    { e.preventDefault(); setSearchHidden(true); return }
+                if (e.key === "Tab" || (e.key === "Enter" && searchHighlight >= 0)) {
+                  e.preventDefault()
+                  const chosen = bookSuggestions[searchHighlight >= 0 ? searchHighlight : 0]
+                  setSearchQuery(chosen + " ")
+                  setSearchHidden(true)
+                  return
+                }
+              }
+              if (e.key === "Enter") { e.preventDefault(); jumpToRef(searchQuery) }
+            }}
+            placeholder="Jump to a verse… e.g. John 3:16, John 3:16-18"
+            className="w-full h-8 pl-8 pr-7 text-sm bg-card border border-border rounded-md focus:outline-none focus:border-primary/50 transition-colors placeholder:text-muted-foreground/40"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => { setSearchQuery(""); setSearchHidden(false); searchRef.current?.focus() }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          )}
+          {/* Book autocomplete */}
+          {bookSuggestions.length > 0 && (
+            <ul className="absolute top-full left-0 right-0 z-50 mt-1 bg-card border border-border rounded-lg shadow-xl overflow-hidden">
+              {bookSuggestions.map((book, i) => (
+                <li key={book}>
+                  <button
+                    type="button"
+                    onMouseDown={e => {
+                      e.preventDefault()
+                      setSearchQuery(book + " ")
+                      setSearchHidden(true)
+                      searchRef.current?.focus()
+                    }}
+                    onMouseEnter={() => setSearchHighlight(i)}
+                    className={`w-full flex items-center gap-2 px-3 py-2 text-sm transition-colors ${
+                      i === searchHighlight ? "bg-primary/10 text-primary" : "text-foreground hover:bg-accent"
+                    }`}
+                  >
+                    <BookOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <span>
+                      <span className="font-semibold text-primary">{book.slice(0, searchQuery.length)}</span>
+                      {book.slice(searchQuery.length)}
+                    </span>
+                    <span className="ml-auto text-[10px] text-muted-foreground">{CHAPTER_COUNTS[book]} ch</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        <TranslationPicker
+          translations={availableTranslations}
+          value={translation}
+          onChange={setTranslation}
+          loading={translationsLoading}
+        />
+        {translationsError && (
+          <span className="text-[10px] text-destructive">⚠ {translationsError}</span>
+        )}
+        {!bibleApiKey && !translationsLoading && (
+          <span className="text-[10px] text-muted-foreground/40 hidden lg:block">
+            Add API.Bible key in Settings for NIV, NLT…
+          </span>
         )}
       </div>
 
-      {/* ── Two-panel body ── */}
-      <div className="flex-1 flex overflow-hidden">
+      {/* ── Three-column body ── */}
+      <div className="flex-1 flex overflow-hidden min-h-0">
 
-        {/* ─── LEFT: Search + results ─────────────────────────────────────── */}
-        <div className="w-[480px] shrink-0 border-r border-border flex flex-col overflow-hidden">
+        {/* ── COL 1: Books / History (200px) ── */}
+        <div className="w-[200px] shrink-0 border-r border-border flex flex-col overflow-hidden bg-card">
 
-          {/* Search form */}
-          <div className="px-4 pt-4 pb-3 shrink-0">
-            <form onSubmit={handleSearch} className="flex gap-2">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                <input
-                  ref={inputRef}
-                  value={query}
-                  onChange={e => { setQuery(e.target.value); setError(null); setHideSuggestions(false) }}
-                  onKeyDown={e => {
-                    if (bookSuggestions.length > 0) {
-                      if (e.key === "ArrowDown") { e.preventDefault(); setBookHighlight(h => Math.min(h + 1, bookSuggestions.length - 1)); return }
-                      if (e.key === "ArrowUp")   { e.preventDefault(); setBookHighlight(h => Math.max(h - 1, 0)); return }
-                      if (e.key === "Escape")    { e.preventDefault(); setHideSuggestions(true); return }
-                      if (e.key === "Tab" || (e.key === "Enter" && bookHighlight >= 0)) {
-                        e.preventDefault()
-                        const chosen = bookSuggestions[bookHighlight >= 0 ? bookHighlight : 0]
-                        setQuery(chosen + " ")
-                        setHideSuggestions(true)
-                        return
-                      }
-                    }
-                  }}
-                  placeholder="John 3:16, Psalm 23, Romans 8:28–39…"
-                  className="w-full h-9 pl-9 pr-8 text-sm bg-input border border-border rounded-lg focus:outline-none focus:border-primary/50 transition-colors placeholder:text-muted-foreground/50"
-                />
-                {query && (
-                  <button
-                    type="button"
-                    onClick={() => { setQuery(""); setResult(null); setError(null); setHideSuggestions(false); inputRef.current?.focus() }}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                )}
-
-                {/* Book name autocomplete dropdown */}
-                {bookSuggestions.length > 0 && (
-                  <ul className="absolute top-full left-0 right-0 z-50 mt-1 bg-card border border-border rounded-lg shadow-lg overflow-hidden">
-                    {bookSuggestions.map((book, i) => (
-                      <li key={book}>
-                        <button
-                          type="button"
-                          onMouseDown={e => {
-                            e.preventDefault()
-                            setQuery(book + " ")
-                            setHideSuggestions(true)
-                            inputRef.current?.focus()
-                          }}
-                          onMouseEnter={() => setBookHighlight(i)}
-                          className={`w-full text-left px-3 py-2 text-sm transition-colors ${
-                            i === bookHighlight
-                              ? "bg-primary/10 text-primary"
-                              : "text-foreground hover:bg-accent"
-                          }`}
-                        >
-                          {book}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-              <button
-                type="submit"
-                disabled={loading || !query.trim()}
-                className="h-9 px-3.5 flex items-center gap-1.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-40 shrink-0"
-              >
-                {loading
-                  ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  : <ChevronRight className="h-4 w-4" />}
-              </button>
-            </form>
-
-            {/* Translation picker */}
-            <div className="mt-3 flex items-center gap-2">
-              <TranslationPicker
-                translations={availableTranslations}
-                value={translation}
-                onChange={setTranslation}
-                loading={translationsLoading}
-              />
-              {translationsError && (
-                <span className="text-[11px] text-destructive">⚠ {translationsError}</span>
-              )}
-              {!bibleApiKey && !translationsLoading && (
-                <span className="text-[10px] text-muted-foreground/50">
-                  Add API.Bible key in Settings for NIV, NLT…
+          {/* Browse / History toggle */}
+          <div className="flex shrink-0 border-b border-border">
+            <button
+              onClick={() => setPanelTab("browse")}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-bold tracking-wide transition-colors ${
+                panelTab === "browse"
+                  ? "text-primary bg-primary/8"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <BookOpen className="h-3.5 w-3.5" />
+              Browse
+            </button>
+            <button
+              onClick={() => setPanelTab("history")}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-bold tracking-wide transition-colors relative ${
+                panelTab === "history"
+                  ? "text-primary bg-primary/8"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Clock className="h-3.5 w-3.5" />
+              History
+              {sessionHistory.length > 0 && (
+                <span className="absolute top-1.5 right-2 min-w-[15px] h-[15px] bg-primary text-white text-[8px] font-black rounded-full flex items-center justify-center px-0.5">
+                  {sessionHistory.length}
                 </span>
               )}
-            </div>
+            </button>
           </div>
 
-          {/* Error */}
-          {error && (
-            <div className="mx-4 mb-3 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-xs text-destructive shrink-0">
-              <span className="leading-relaxed">{error}</span>
+          {/* Browse panel */}
+          {panelTab === "browse" && (
+            <div className="flex flex-col flex-1 overflow-hidden">
+              <div className="px-2.5 py-2 shrink-0 border-b border-border">
+                <input
+                  value={bookFilter}
+                  onChange={e => setBookFilter(e.target.value)}
+                  placeholder="Find a book…"
+                  className="w-full h-7 px-2.5 text-[13px] bg-background border border-border rounded focus:outline-none focus:border-primary/40 transition-colors placeholder:text-muted-foreground/40"
+                />
+              </div>
+              <div className="flex-1 overflow-y-auto py-1">
+                {filteredOT.length > 0 && (
+                  <>
+                    <div className="px-3 pt-2.5 pb-1 text-[10px] font-black uppercase tracking-widest text-muted-foreground/40 sticky top-0 bg-card z-10">
+                      Old Testament
+                    </div>
+                    {filteredOT.map(book => (
+                      <button
+                        key={book}
+                        onClick={() => selectBook(book)}
+                        className={`w-full text-left px-3 py-2 text-[13px] transition-colors ${
+                          activeBook === book
+                            ? "bg-primary/10 text-primary font-semibold"
+                            : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                        }`}
+                      >
+                        {book}
+                      </button>
+                    ))}
+                  </>
+                )}
+                {filteredNT.length > 0 && (
+                  <>
+                    <div className="px-3 pt-3.5 pb-1 text-[10px] font-black uppercase tracking-widest text-muted-foreground/40 sticky top-0 bg-card z-10">
+                      New Testament
+                    </div>
+                    {filteredNT.map(book => (
+                      <button
+                        key={book}
+                        onClick={() => selectBook(book)}
+                        className={`w-full text-left px-3 py-2 text-[13px] transition-colors ${
+                          activeBook === book
+                            ? "bg-primary/10 text-primary font-semibold"
+                            : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                        }`}
+                      >
+                        {book}
+                      </button>
+                    ))}
+                  </>
+                )}
+                {filteredOT.length === 0 && filteredNT.length === 0 && (
+                  <p className="text-center text-xs text-muted-foreground/40 py-6 px-3">No books match</p>
+                )}
+              </div>
             </div>
           )}
 
-          {/* Results / empty state — takes all available space */}
-          <div className="flex-1 overflow-y-auto px-4 py-3">
-
-            {/* Loading */}
-            {loading && (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-              </div>
-            )}
-
-            {/* Verse results */}
-            {!loading && result && (
-              <div className="flex flex-col gap-3">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                  {result.verses.length} verse{result.verses.length !== 1 ? "s" : ""} · {translationLabel}
-                </span>
-
-                {result.verses.map((verse) => {
-                  const label = `${verse.book_name} ${verse.chapter}:${verse.verse} ${translationLabel}`
-                  return (
-                    <VerseCard
-                      key={`${verse.chapter}-${verse.verse}`}
-                      verse={verse}
-                      translationLabel={translationLabel}
-                      isLive={projectionOpen}
-                      isProjected={projectedLabel === label}
-                      onProject={() => projectVerse(verse)}
-                    />
-                  )
-                })}
-
-                {chapterRef && (
-                  <button
-                    onClick={handleReadChapter}
-                    disabled={chapterLoading}
-                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-border text-sm font-medium text-muted-foreground hover:text-foreground hover:border-primary/40 hover:bg-primary/5 transition-colors disabled:opacity-50"
-                  >
-                    {chapterLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <BookMarked className="h-4 w-4" />}
-                    {chapterLoading ? "Loading…" : `Read all of ${chapterRef} →`}
-                  </button>
-                )}
-                {chapterError && <p className="text-xs text-destructive text-center">{chapterError}</p>}
-              </div>
-            )}
-
-            {/* Empty state */}
-            {!loading && !result && !error && (
-              <div className="flex flex-col gap-5">
-
-                {recentPassages.length > 0 && (
-                  <div>
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5 flex items-center gap-1.5">
-                      <Clock className="h-3 w-3" />
-                      Recent
-                    </p>
-                    <div className="flex flex-col gap-0.5">
-                      {recentPassages.map((p, i) => (
-                        <button
-                          key={i}
-                          onClick={() => handleRecentPassage(p)}
-                          className="flex items-center gap-2 px-3 py-2 rounded-lg text-left hover:bg-accent/40 transition-colors group"
-                        >
-                          <span className="flex-1 min-w-0 text-sm text-foreground truncate">{p.reference}</span>
-                          <span className="text-[10px] font-semibold text-muted-foreground bg-muted px-1.5 py-0.5 rounded shrink-0">
-                            {p.translationLabel}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5">
-                    Popular passages
+          {/* History panel */}
+          {panelTab === "history" && (
+            <div className="flex-1 overflow-y-auto">
+              {sessionHistory.length === 0 ? (
+                <div className="flex flex-col items-center justify-center gap-2 px-4 py-8 text-center">
+                  <Clock className="h-5 w-5 text-muted-foreground/25" />
+                  <p className="text-sm font-medium text-muted-foreground/60">No history yet</p>
+                  <p className="text-xs text-muted-foreground/40 leading-relaxed">
+                    Verses you project will appear here for quick access.
                   </p>
-                  <div className="flex flex-col gap-0.5">
-                    {QUICK_PASSAGES.map(p => (
-                      <button
-                        key={p.ref}
-                        onClick={() => handleQuickPassage(p.ref)}
-                        className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-accent/40 transition-colors text-left"
-                      >
-                        <BookOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
-                        {p.label}
-                      </button>
-                    ))}
-                  </div>
                 </div>
-
-              </div>
-            )}
-
-          </div>
-
-          {/* ── Session history — pinned at the bottom ── */}
-          {sessionHistory.length > 0 && (
-            <div className="shrink-0 border-t border-border">
-              <div className="flex items-center gap-1.5 px-4 pt-2.5 pb-1.5">
-                <History className="h-3 w-3 text-red-400" />
-                <span className="text-[10px] font-bold uppercase tracking-widest text-red-400">
-                  This session
-                </span>
-                <span className="text-[10px] text-red-400/60 ml-auto">{sessionHistory.length}</span>
-              </div>
-              <div className="overflow-y-auto max-h-[236px] px-4 pb-2 flex flex-col gap-1">
-                {sessionHistory.map(entry => {
+              ) : (
+                sessionHistory.map(entry => {
                   const isOnScreen = projectedLabel === entry.label
                   return (
                     <div
                       key={entry.label}
-                      className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-colors ${
-                        isOnScreen
-                          ? "bg-red-500/10 border border-red-500/20"
-                          : "hover:bg-accent/30 border border-transparent"
+                      onClick={() => jumpToHistory(entry)}
+                      className={`group flex items-start border-b border-border/50 cursor-pointer transition-colors ${
+                        isOnScreen ? "bg-primary/8" : "hover:bg-accent/40"
                       }`}
                     >
-                      <div className="shrink-0 w-2 flex justify-center">
-                        {isOnScreen
-                          ? <span className="h-2 w-2 rounded-full bg-red-500 animate-pulse block" />
-                          : <span className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30 block" />
-                        }
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span className={`text-[11px] font-bold truncate ${isOnScreen ? "text-red-300" : "text-foreground"}`}>
+                      <div className="flex-1 min-w-0 px-3 py-2.5">
+                        <div className="flex items-center gap-1.5 mb-1">
+                          {isOnScreen && (
+                            <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse shrink-0" />
+                          )}
+                          <span className={`text-[13px] font-bold truncate ${isOnScreen ? "text-primary" : "text-foreground"}`}>
                             {entry.verse.book_name} {entry.verse.chapter}:{entry.verse.verse}
                           </span>
-                          <span className="text-[9px] font-semibold text-muted-foreground bg-muted px-1 py-0.5 rounded shrink-0">
+                          <span className="text-[10px] font-bold text-muted-foreground bg-muted px-1 py-px rounded shrink-0">
                             {entry.translationLabel}
                           </span>
                         </div>
-                        <p className="text-[10px] text-muted-foreground/60 truncate leading-tight">
+                        <p className="text-[12px] text-muted-foreground/60 leading-snug line-clamp-2">
                           {entry.verse.text}
                         </p>
                       </div>
-                      {isOnScreen ? (
-                        <div className="shrink-0 flex items-center gap-1 text-[10px] font-bold text-red-400">
-                          <Radio className="h-2.5 w-2.5" />
-                          Live
-                        </div>
-                      ) : (
-                        projectionOpen && (
-                          <button
-                            onClick={() => projectVerse(entry.verse, entry.translationLabel)}
-                            className="shrink-0 px-2 py-1 rounded text-[10px] font-semibold bg-red-600 hover:bg-red-500 text-white transition-colors"
-                          >
-                            Project
-                          </button>
-                        )
+                      {/* Re-project button — appears on hover */}
+                      {projectionOpen && (
+                        <button
+                          onClick={e => { e.stopPropagation(); reprojectHistory(entry) }}
+                          title="Project again"
+                          className="shrink-0 self-center mr-2 w-7 h-7 rounded flex items-center justify-center bg-primary text-white opacity-25 group-hover:opacity-100 hover:bg-primary/80 transition-all"
+                        >
+                          <Play className="h-3 w-3 fill-current" />
+                        </button>
                       )}
                     </div>
                   )
-                })}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* ─── RIGHT: Chapter reader ──────────────────────────────────────── */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-
-          {chapterResult ? (
-            <>
-              {/* Chapter header */}
-              <div className="h-12 shrink-0 border-b border-border flex items-center gap-3 px-5">
-                <button
-                  onClick={() => setChapterResult(null)}
-                  className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors shrink-0"
-                >
-                  <ArrowLeft className="h-3.5 w-3.5" />
-                  Back
-                </button>
-                <div className="h-4 w-px bg-border shrink-0" />
-                <div className="flex items-center gap-2 min-w-0 flex-1">
-                  <span className="text-sm font-bold truncate">
-                    {chapterResult.verses[0]?.book_name} {chapterResult.verses[0]?.chapter}
-                  </span>
-                  <span className="text-[10px] font-semibold text-muted-foreground bg-muted px-1.5 py-0.5 rounded shrink-0">
-                    {translationLabel}
-                  </span>
-                  <span className="text-[11px] text-muted-foreground shrink-0">
-                    {chapterResult.verses.length} v
-                  </span>
-                </div>
-                {/* Jump to verse */}
-                <form onSubmit={handleJumpToVerse} className="flex items-center gap-1.5 shrink-0">
-                  <span className="text-[11px] text-muted-foreground/60">v.</span>
-                  <input
-                    type="number"
-                    min="1"
-                    value={jumpInput}
-                    onChange={e => setJumpInput(e.target.value)}
-                    placeholder="—"
-                    className="w-12 h-6 px-1.5 text-xs text-center bg-input border border-border rounded focus:outline-none focus:border-primary/50 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
-                  />
-                </form>
-                <div className="h-4 w-px bg-border shrink-0" />
-                <span className="text-[11px] text-muted-foreground/50 shrink-0 flex items-center gap-0.5 font-mono">↑↓</span>
-              </div>
-
-              {/* Verses */}
-              <div className="flex-1 overflow-y-auto px-4 py-3">
-                <div className="flex flex-col gap-0.5">
-                  {chapterResult.verses.map((verse, idx) => {
-                    const label = `${verse.book_name} ${verse.chapter}:${verse.verse} ${translationLabel}`
-                    return (
-                      <div key={verse.verse} id={`chapter-verse-${verse.verse}`}>
-                        <ChapterVerseRow
-                          verse={verse}
-                          isLive={projectionOpen}
-                          isProjected={projectedLabel === label}
-                          isActive={activeVerseIndex === idx}
-                          onProject={() => {
-                            activeIdxRef.current = idx
-                            setActiveVerseIndex(idx)
-                            projectVerse(verse)
-                          }}
-                        />
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            </>
-          ) : (
-            /* Empty state — no chapter loaded */
-            <div className="flex-1 flex flex-col items-center justify-center text-center px-10">
-              <div className="h-14 w-14 rounded-2xl bg-primary/8 border border-border flex items-center justify-center mb-4">
-                <BookMarked className="h-7 w-7 text-primary/60" />
-              </div>
-              <p className="text-sm font-medium text-muted-foreground mb-1">
-                Chapter reader
-              </p>
-              <p className="text-[13px] text-muted-foreground/60 max-w-xs leading-relaxed">
-                Search for a verse on the left, then click "Read all of…" to browse the full chapter here and project any verse while live.
-              </p>
-              {!projectionOpen && (
-                <p className="mt-4 text-[11px] text-muted-foreground/40 flex items-center gap-1.5">
-                  <Radio className="h-3.5 w-3.5" />
-                  Project buttons activate when a show is live
-                </p>
+                })
               )}
             </div>
           )}
         </div>
+
+        {/* ── COL 2: Chapters (175px) ── */}
+        <div className="w-[210px] shrink-0 border-r border-border flex flex-col overflow-hidden">
+          <div className="px-3 pt-3 pb-2.5 border-b border-border shrink-0">
+            <div className="text-[15px] font-bold text-foreground truncate">
+              {activeBook ?? "Select a book"}
+            </div>
+            <div className="text-xs text-muted-foreground mt-0.5">
+              {activeBook ? `${totalChapters} chapter${totalChapters !== 1 ? "s" : ""}` : "—"}
+            </div>
+          </div>
+          {activeBook ? (
+            <div className="flex-1 overflow-y-auto p-2.5 grid grid-cols-4 gap-2 content-start">
+              {Array.from({ length: totalChapters }, (_, i) => i + 1).map(ch => (
+                <button
+                  key={ch}
+                  onClick={() => selectChapter(ch)}
+                  className={`aspect-square min-h-[42px] flex items-center justify-center text-[13px] font-medium rounded-md transition-all ${
+                    activeChapter === ch
+                      ? "bg-primary text-white font-bold shadow-sm shadow-primary/30"
+                      : "bg-accent/50 border border-border text-muted-foreground hover:border-primary/40 hover:text-foreground"
+                  }`}
+                >
+                  {activeChapter === ch && chapterLoading
+                    ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    : ch}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center text-center px-4 gap-2">
+              <div className="text-2xl text-muted-foreground/15">①</div>
+              <p className="text-xs font-semibold text-muted-foreground/50">Pick a book</p>
+              <p className="text-[11px] text-muted-foreground/30 leading-relaxed">
+                Select any book from the list on the left to see its chapters here.
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* ── COL 3: Verses + Preview ── */}
+        <div className="flex-1 flex overflow-hidden min-w-0">
+
+          {/* Verse list */}
+          <div className="flex-1 flex flex-col overflow-hidden border-r border-border">
+            <div className="h-10 shrink-0 border-b border-border flex items-center gap-1.5 px-1.5">
+              <button
+                onClick={prevChapter}
+                disabled={!activeBook || !activeChapter || activeChapter <= 1}
+                title="Previous chapter"
+                className="w-7 h-7 shrink-0 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-25 disabled:cursor-not-allowed"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              {activeBook && activeChapter ? (
+                <>
+                  <span className="font-bold text-foreground text-sm">{activeBook} {activeChapter}</span>
+                  <span className="text-[10px] font-bold tracking-wide text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                    {translationLabel}
+                  </span>
+                  {chapterVerses.length > 0 && (
+                    <span className="text-[11px] text-muted-foreground">{chapterVerses.length} v.</span>
+                  )}
+                </>
+              ) : (
+                <span className="text-sm text-muted-foreground/40">No chapter selected</span>
+              )}
+              <button
+                onClick={nextChapter}
+                disabled={!activeBook || !activeChapter || activeChapter >= totalChapters}
+                title="Next chapter"
+                className="ml-auto w-7 h-7 shrink-0 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-25 disabled:cursor-not-allowed"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="flex-1 relative overflow-hidden">
+              {chapterLoading && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              )}
+              {chapterError && (
+                <p className="p-4 text-sm text-destructive text-center">{chapterError}</p>
+              )}
+              {!chapterLoading && !chapterError && chapterVerses.length === 0 && (
+                <div className="flex flex-col items-center justify-center text-center px-8 py-12 gap-2">
+                  <div className="text-2xl text-muted-foreground/15">{activeBook ? "②" : "①②"}</div>
+                  <p className="text-sm font-medium text-muted-foreground/60">
+                    {activeBook ? "Now pick a chapter" : "Pick a book, then a chapter"}
+                  </p>
+                  <p className="text-[12px] text-muted-foreground/40 leading-relaxed max-w-[200px]">
+                    {activeBook
+                      ? `Select a chapter from the ${activeBook} panel to read its verses.`
+                      : "Use the Books panel on the left to get started."}
+                  </p>
+                </div>
+              )}
+              {!chapterLoading && chapterVerses.length > 0 && (
+                <div ref={verseListRef} className="h-full overflow-y-auto px-2.5 py-1.5">
+                  {chapterVerses.map((verse, idx) => {
+                    const isOnScreen    = projectedLabel === `${verse.book_name} ${verse.chapter}:${verse.verse} ${translationLabel}`
+                    const isPrimary     = selectedIdx === idx
+                    const isInRange     = highlightedVerseNums.size > 0 && highlightedVerseNums.has(verse.verse)
+                    const isHighlighted = isInRange || (highlightedVerseNums.size === 0 && isPrimary)
+                    return (
+                      <div
+                        key={verse.verse}
+                        onClick={() => selectVerse(idx)}
+                        onDoubleClick={() => { setHighlightedVerseNums(new Set()); setSelectedIdx(idx); projectVerse(verse) }}
+                        className={`flex gap-2.5 px-2.5 py-2.5 rounded-md cursor-pointer transition-colors border min-h-[44px] items-start select-none mb-0.5 ${
+                          isOnScreen
+                            ? "bg-green-500/8 border-green-500/25"
+                            : isPrimary && highlightedVerseNums.size > 0
+                              ? "bg-primary/12 border-primary/40"
+                              : isHighlighted
+                                ? "bg-primary/8 border-primary/30"
+                                : "border-transparent hover:bg-accent/40"
+                        }`}
+                      >
+                        <span className={`text-[13px] font-bold min-w-[22px] pt-0.5 shrink-0 text-right tabular-nums ${
+                          isOnScreen ? "text-green-400" : isHighlighted ? "text-primary" : "text-muted-foreground"
+                        }`}>
+                          {verse.verse}
+                        </span>
+                        <p className="flex-1 text-[13.5px] leading-[1.7] text-foreground/90">
+                          {verse.text}
+                        </p>
+                        {isOnScreen && (
+                          <span className="shrink-0 text-[9px] font-black text-green-400 self-start mt-1 tracking-wider">
+                            LIVE
+                          </span>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* ── Preview + Actions (256px) ── */}
+          <div className="w-[256px] shrink-0 flex flex-col overflow-hidden bg-card">
+
+            {/* LIVE NOW bar — always visible */}
+            <div className={`flex items-center gap-2 px-3 py-2 border-b border-border shrink-0 min-h-[38px] ${
+              projectedLabel ? "bg-primary/5" : ""
+            }`}>
+              <span className={`h-2 w-2 rounded-full shrink-0 transition-colors ${
+                projectedLabel ? "bg-primary animate-pulse" : "bg-muted-foreground/25"
+              }`} />
+              <span className={`text-[10px] font-black uppercase tracking-widest ${
+                projectedLabel ? "text-primary" : "text-muted-foreground/40"
+              }`}>
+                {projectedLabel ? "Live Now" : "Not Live"}
+              </span>
+              {projectedLabel && (
+                <span className="ml-auto text-[10px] font-semibold text-muted-foreground truncate max-w-[90px]">
+                  {projectedLabel.replace(/ [A-Z]+$/, "")}
+                </span>
+              )}
+            </div>
+
+            {/* Slide preview */}
+            <div className="px-3 pt-2.5 pb-2 shrink-0">
+              <p className="text-[9.5px] font-bold uppercase tracking-widest text-muted-foreground/40 mb-1.5">
+                Slide Preview
+              </p>
+              <div className="w-full aspect-video rounded-lg border border-border overflow-hidden relative bg-black">
+
+                {/* Background */}
+                {previewBg ? (
+                  <div
+                    className="absolute inset-0 bg-cover bg-center"
+                    style={{ backgroundImage: `url(${toFileUrl(previewBg)})` }}
+                  />
+                ) : (
+                  <div
+                    className="absolute inset-0"
+                    style={{ background: "radial-gradient(ellipse at 55% 40%, #1a0d40 0%, #06030f 100%)" }}
+                  />
+                )}
+
+                {/* Overlay */}
+                <div
+                  className="absolute inset-0"
+                  style={{ background: `rgba(0,0,0,${resolvedTheme.overlayOpacity / 100})` }}
+                />
+
+                {selectedVerse ? (
+                  <>
+                    {/* Reference at top */}
+                    {scriptureRefPosition === "top" && (
+                      <div className="absolute top-0 inset-x-0 px-3 pt-2 z-10">
+                        <p
+                          className="font-semibold leading-none"
+                          style={{
+                            fontSize: "6px",
+                            textAlign: scriptureTextAlign,
+                            color: resolvedTheme.textColor,
+                            opacity: 0.55,
+                          }}
+                        >
+                          {selectedVerse.book_name} {selectedVerse.chapter}:{selectedVerse.verse} · {selectedVerseTranslation}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Main verse text — centered vertically */}
+                    <div
+                      className="absolute inset-0 flex flex-col justify-center px-3 py-4 z-10"
+                      style={{ alignItems: scriptureTextAlign === "left" ? "flex-start" : "center" }}
+                    >
+                      <p
+                        className="leading-[1.55]"
+                        style={{
+                          fontSize: `${previewFontPx}px`,
+                          fontFamily: resolvedTheme.fontFamily,
+                          fontWeight: resolvedTheme.fontWeight,
+                          color: resolvedTheme.textColor,
+                          textAlign: scriptureTextAlign,
+                          textShadow: `0 1px 3px rgba(0,0,0,${resolvedTheme.textShadowOpacity / 100})`,
+                        }}
+                      >
+                        {selectedVerse.text.length > 160
+                          ? selectedVerse.text.slice(0, 160) + "…"
+                          : selectedVerse.text}
+                      </p>
+                    </div>
+
+                    {/* Reference at bottom */}
+                    {(scriptureRefPosition === "bottom-right" || scriptureRefPosition === "bottom-center") && (
+                      <div className="absolute bottom-0 inset-x-0 px-3 pb-2 z-10">
+                        <p
+                          className="font-semibold leading-none"
+                          style={{
+                            fontSize: "6px",
+                            textAlign: scriptureRefPosition === "bottom-right" ? "right" : "center",
+                            color: resolvedTheme.textColor,
+                            opacity: 0.55,
+                          }}
+                        >
+                          {selectedVerse.book_name} {selectedVerse.chapter}:{selectedVerse.verse} · {selectedVerseTranslation}
+                        </p>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 z-10">
+                    <MonitorPlay className="h-4 w-4 text-white/15" />
+                    <p className="text-[7.5px] font-semibold text-white/20 uppercase tracking-widest">Select a verse</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Project Now button */}
+            <div className="px-3 pb-2 shrink-0">
+              <button
+                onClick={handleProjectNow}
+                disabled={!selectedVerse || !projectionOpen}
+                className={`w-full h-12 rounded-lg font-bold text-[15px] flex items-center justify-center gap-2 transition-all ${
+                  isProjected
+                    ? "bg-green-600 text-white shadow-md shadow-green-600/30"
+                    : selectedVerse && projectionOpen
+                      ? "bg-primary text-white shadow-md shadow-primary/30 hover:bg-primary/90 hover:-translate-y-px active:translate-y-0"
+                      : "bg-primary/15 text-primary/40 cursor-not-allowed"
+                }`}
+              >
+                {isProjected ? (
+                  <>
+                    <span className="h-2 w-2 rounded-full bg-white animate-pulse" />
+                    Live
+                  </>
+                ) : highlightedVerseNums.size > 0 && selectedVerse ? (
+                  <>
+                    <Play className="h-4 w-4 fill-current" />
+                    Project v.{selectedVerse.verse}
+                  </>
+                ) : (
+                  <>
+                    <Play className="h-4 w-4 fill-current" />
+                    Project Now
+                  </>
+                )}
+              </button>
+              {!projectionOpen && (
+                <p className="text-center text-[10.5px] text-muted-foreground/40 mt-1.5">
+                  Open a projection window to project
+                </p>
+              )}
+            </div>
+
+            {/* Tip */}
+            <div className="px-3 mt-auto pb-3">
+              <p className="text-[11px] text-muted-foreground/35 leading-relaxed">
+                {highlightedVerseNums.size > 0 && selectedVerse
+                  ? `Range selected. "Project v.${selectedVerse.verse}" sends the first verse. Double-click any verse to project it directly.`
+                  : selectedVerse
+                    ? "Double-click the verse or press Enter / Project Now to go live."
+                    : "Click any verse to preview · double-click or press Enter to project."}
+              </p>
+            </div>
+
+          </div>
+        </div>
       </div>
+
+      {/* ── Footer: live status ── */}
+      <div className="h-9 shrink-0 border-t border-border bg-card flex items-center gap-2.5 px-4">
+        <span className={`h-1.5 w-1.5 rounded-full shrink-0 transition-colors ${
+          projectedLabel ? "bg-primary animate-pulse" : "bg-muted-foreground/25"
+        }`} />
+        <span className={`text-xs font-semibold truncate transition-colors ${
+          projectedLabel ? "text-foreground" : "text-muted-foreground/40"
+        }`}>
+          {projectedLabel ?? "Nothing projected"}
+        </span>
+      </div>
+
     </div>
   )
 }

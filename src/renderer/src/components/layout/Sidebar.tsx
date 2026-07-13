@@ -42,18 +42,18 @@ const LIVE_DIMMED: AppScreen[] = ["library", "media", "themes", "analytics"]
 
 export default function Sidebar({ current, onChange, projectionOpen: _projectionOpen, isLive, onReturnToLive }: Props) {
   return (
-    <nav className="w-[64px] shrink-0 bg-sidebar border-r border-border flex flex-col items-center">
+    <nav className="w-[88px] shrink-0 bg-sidebar border-r border-border flex flex-col items-center">
       {/* Draggable logo area */}
       <div
-        className="w-full flex items-center justify-center pt-12 pb-4 text-sidebar-foreground"
+        className="w-full flex items-center justify-center pt-12 pb-5 text-sidebar-foreground"
         style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
       >
-        <Church className={`h-6 w-6 transition-opacity ${isLive ? "opacity-30" : ""}`} />
+        <Church className={`h-7 w-7 transition-opacity ${isLive ? "opacity-30" : ""}`} />
       </div>
 
       {/* Nav icons */}
       <div
-        className="flex flex-col gap-1 items-center px-2"
+        className="flex flex-col gap-1 items-center px-2 w-full"
         style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
       >
         {NAV_TOP.map((item) => {
@@ -65,7 +65,7 @@ export default function Sidebar({ current, onChange, projectionOpen: _projection
               key={item.id}
               onClick={() => onChange(item.id)}
               title={item.label}
-              className={`w-10 h-10 flex items-center justify-center rounded-lg transition-all ${
+              className={`w-full flex flex-col items-center justify-center gap-1.5 py-2.5 px-1 rounded-xl transition-all ${
                 isActive
                   ? "bg-sidebar-primary text-sidebar-primary-foreground"
                   : isDimmed
@@ -73,28 +73,30 @@ export default function Sidebar({ current, onChange, projectionOpen: _projection
                     : "text-muted-foreground hover:text-foreground hover:bg-sidebar-primary/50"
               }`}
             >
-              <Icon className="h-5 w-5" />
+              <Icon className="h-6 w-6" />
+              <span className="text-[11px] font-semibold leading-none">{item.label}</span>
             </button>
           );
         })}
       </div>
 
       {/* Bottom: Live indicator + Settings */}
-      <div className="mt-auto pb-3 flex flex-col items-center gap-1" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
+      <div className="mt-auto pb-4 flex flex-col items-center gap-1 w-full px-2" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
         {isLive && (
           <button
             onClick={onReturnToLive}
             title="Return to Stage"
-            className="w-10 h-10 flex items-center justify-center rounded-lg bg-red-600 hover:bg-red-500 text-white transition-all relative"
+            className="w-full flex flex-col items-center justify-center gap-1.5 py-2.5 px-1 rounded-xl bg-red-600 hover:bg-red-500 text-white transition-all relative"
           >
-            <Radio className="h-5 w-5" />
-            <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+            <Radio className="h-6 w-6" />
+            <span className="text-[11px] font-semibold leading-none">Live</span>
+            <span className="absolute top-2 right-2.5 w-2 h-2 rounded-full bg-white animate-pulse" />
           </button>
         )}
         <button
           onClick={() => onChange("settings")}
           title="Settings"
-          className={`w-10 h-10 flex items-center justify-center rounded-lg transition-all ${
+          className={`w-full flex flex-col items-center justify-center gap-1.5 py-2.5 px-1 rounded-xl transition-all ${
             current === "settings"
               ? "bg-sidebar-primary text-sidebar-primary-foreground"
               : isLive
@@ -102,7 +104,8 @@ export default function Sidebar({ current, onChange, projectionOpen: _projection
                 : "text-muted-foreground hover:text-foreground hover:bg-sidebar-primary/50"
           }`}
         >
-          <Settings className="h-5 w-5" />
+          <Settings className="h-6 w-6" />
+          <span className="text-[11px] font-semibold leading-none">Settings</span>
         </button>
       </div>
     </nav>

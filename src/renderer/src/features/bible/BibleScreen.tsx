@@ -165,6 +165,9 @@ function getBookSuggestions(query: string): string[] {
 
 const BOOKMARKS_KEY = "worshipsync:bible-bookmarks"
 
+// Persists session history across navigation (component unmount/remount)
+let _sessionHistoryCache: SessionEntry[] = []
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 interface Props { projectionOpen: boolean }
@@ -205,7 +208,7 @@ export default function BibleScreen({ projectionOpen }: Props) {
 
   // Projection
   const [projectedLabel, setProjectedLabel] = useState<string | null>(null)
-  const [sessionHistory, setSessionHistory] = useState<SessionEntry[]>([])
+  const [sessionHistory, setSessionHistory] = useState<SessionEntry[]>(_sessionHistoryCache)
   const recentPassagesRef                   = useRef<RecentPassage[]>([])
 
   // Bookmarks (persisted to localStorage)
@@ -406,7 +409,9 @@ export default function BibleScreen({ projectionOpen }: Props) {
 
     setSessionHistory(prev => {
       const entry: SessionEntry = { verse, translationLabel, label }
-      return [entry, ...prev.filter(e => e.label !== label)].slice(0, 20)
+      const next = [entry, ...prev.filter(e => e.label !== label)].slice(0, 20)
+      _sessionHistoryCache = next
+      return next
     })
 
     const reference = `${verse.book_name} ${verse.chapter}:${verse.verse}`
@@ -720,69 +725,8 @@ export default function BibleScreen({ projectionOpen }: Props) {
         </div>
       )}
 
-      {/* ── History popover ── */}
-      {showHistoryPopover && (
-        <div
-          ref={historyPopoverRef}
-          className="fixed z-40 w-80 max-h-[420px] flex flex-col bg-card border border-border rounded-xl shadow-2xl overflow-hidden"
-          style={{ top: "44px", right: "8px" }}
-        >
-          <div className="flex items-center justify-between px-3 py-2.5 border-b border-border shrink-0">
-            <span className="text-xs font-bold text-foreground">Session History</span>
-            {sessionHistory.length > 0 && (
-              <span className="text-[10px] text-muted-foreground">{sessionHistory.length} verse{sessionHistory.length !== 1 ? "s" : ""}</span>
-            )}
-            <button onClick={() => setShowHistoryPopover(false)} className="ml-auto text-muted-foreground hover:text-foreground transition-colors">
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-          <div className="flex-1 overflow-y-auto">
-            {sessionHistory.length === 0 ? (
-              <div className="flex flex-col items-center justify-center gap-2 px-4 py-8 text-center">
-                <Clock className="h-5 w-5 text-muted-foreground/25" />
-                <p className="text-sm font-medium text-muted-foreground/60">No history yet</p>
-                <p className="text-xs text-muted-foreground/40 leading-relaxed">Verses you project will appear here.</p>
-              </div>
-            ) : (
-              sessionHistory.map(entry => {
-                const isOnScreen = projectedLabel === entry.label
-                return (
-                  <div
-                    key={entry.label}
-                    onClick={() => jumpToHistory(entry)}
-                    className={`group flex items-start border-b border-border/50 cursor-pointer transition-colors ${isOnScreen ? "bg-primary/8" : "hover:bg-accent/40"}`}
-                  >
-                    <div className="flex-1 min-w-0 px-3 py-2.5">
-                      <div className="flex items-center gap-1.5 mb-1">
-                        {isOnScreen && <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse shrink-0" />}
-                        <span className={`text-[13px] font-bold truncate ${isOnScreen ? "text-primary" : "text-foreground"}`}>
-                          {entry.verse.book_name} {entry.verse.chapter}:{entry.verse.verse}
-                        </span>
-                        <span className="text-[10px] font-bold text-muted-foreground bg-muted px-1 py-px rounded shrink-0">
-                          {entry.translationLabel}
-                        </span>
-                      </div>
-                      <p className="text-[12px] text-muted-foreground/60 leading-snug line-clamp-2">{entry.verse.text}</p>
-                    </div>
-                    {projectionOpen && (
-                      <button
-                        onClick={e => { e.stopPropagation(); reprojectHistory(entry) }}
-                        title="Project again"
-                        className="shrink-0 self-center mr-2 w-7 h-7 rounded flex items-center justify-center bg-primary text-white opacity-25 group-hover:opacity-100 hover:bg-primary/80 transition-all"
-                      >
-                        <Play className="h-3 w-3 fill-current" />
-                      </button>
-                    )}
-                  </div>
-                )
-              })
-            )}
-          </div>
-        </div>
-      )}
-
       {/* ── Toolbar ── */}
-      <div className="h-11 shrink-0 border-b border-border flex items-center gap-2.5 px-3">
+      <div className="relative h-11 shrink-0 border-b border-border flex items-center gap-2.5 px-3">
         {/* Reference search */}
         <div className="relative flex-1 max-w-lg">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
@@ -877,6 +821,67 @@ export default function BibleScreen({ projectionOpen }: Props) {
             </span>
           )}
         </button>
+
+        {/* History popover — absolute inside toolbar so it clears the right panel */}
+        {showHistoryPopover && (
+          <div
+            ref={historyPopoverRef}
+            className="absolute z-40 w-80 max-h-[420px] flex flex-col bg-card border border-border rounded-xl shadow-2xl overflow-hidden"
+            style={{ top: "calc(100% + 4px)", right: "256px" }}
+          >
+            <div className="flex items-center justify-between px-3 py-2.5 border-b border-border shrink-0">
+              <span className="text-xs font-bold text-foreground">Session History</span>
+              {sessionHistory.length > 0 && (
+                <span className="text-[10px] text-muted-foreground">{sessionHistory.length} verse{sessionHistory.length !== 1 ? "s" : ""}</span>
+              )}
+              <button onClick={() => setShowHistoryPopover(false)} className="ml-auto text-muted-foreground hover:text-foreground transition-colors">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {sessionHistory.length === 0 ? (
+                <div className="flex flex-col items-center justify-center gap-2 px-4 py-8 text-center">
+                  <Clock className="h-5 w-5 text-muted-foreground/25" />
+                  <p className="text-sm font-medium text-muted-foreground/60">No history yet</p>
+                  <p className="text-xs text-muted-foreground/40 leading-relaxed">Verses you project will appear here.</p>
+                </div>
+              ) : (
+                sessionHistory.map(entry => {
+                  const isOnScreen = projectedLabel === entry.label
+                  return (
+                    <div
+                      key={entry.label}
+                      onClick={() => jumpToHistory(entry)}
+                      className={`group flex items-start border-b border-border/50 cursor-pointer transition-colors ${isOnScreen ? "bg-primary/8" : "hover:bg-accent/40"}`}
+                    >
+                      <div className="flex-1 min-w-0 px-3 py-2.5">
+                        <div className="flex items-center gap-1.5 mb-1">
+                          {isOnScreen && <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse shrink-0" />}
+                          <span className={`text-[13px] font-bold truncate ${isOnScreen ? "text-primary" : "text-foreground"}`}>
+                            {entry.verse.book_name} {entry.verse.chapter}:{entry.verse.verse}
+                          </span>
+                          <span className="text-[10px] font-bold text-muted-foreground bg-muted px-1 py-px rounded shrink-0">
+                            {entry.translationLabel}
+                          </span>
+                        </div>
+                        <p className="text-[12px] text-muted-foreground/60 leading-snug line-clamp-2">{entry.verse.text}</p>
+                      </div>
+                      {projectionOpen && (
+                        <button
+                          onClick={e => { e.stopPropagation(); reprojectHistory(entry) }}
+                          title="Project again"
+                          className="shrink-0 self-center mr-2 w-7 h-7 rounded flex items-center justify-center bg-primary text-white opacity-25 group-hover:opacity-100 hover:bg-primary/80 transition-all"
+                        >
+                          <Play className="h-3 w-3 fill-current" />
+                        </button>
+                      )}
+                    </div>
+                  )
+                })
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── Three-column body ── */}

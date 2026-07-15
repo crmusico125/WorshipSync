@@ -210,30 +210,92 @@ interface ApiBibleItem {
   text?: string
 }
 
-function extractVersesFromJson(content: ApiBibleItem[], bookName: string, chapter: number): BibleApiVerse[] {
-  // Each text node has attrs.verseId = "BOOK.CHAPTER.VERSE" (e.g. "PSA.77.1").
-  // Text nodes without verseId are headings/titles — skip them.
-  const verseMap = new Map<number, string[]>()
+// Paragraph styles that are headings/metadata — text inside is NOT verse content
+const HEADING_STYLES = new Set(['ms', 'ms1', 'ms2', 's', 's1', 's2', 'r', 'mt', 'mt1', 'mt2', 'mte', 'd', 'sp', 'rem', 'cl'])
 
-  function processNode(item: ApiBibleItem): void {
+function extractVersesFromJson(content: ApiBibleItem[], bookName: string, chapter: number, startVerse = 1): BibleApiVerse[] {
+  // API.Bible JSON uses several structures depending on translation and passage:
+  //
+  //   A) verseId on the text node itself:
+  //      { type:'text', attrs:{ verseId:'TIT.1.1' }, text:'...' }
+  //
+  //   B) verseId on a parent verse tag (inherited down):
+  //      { type:'tag', attrs:{ verseId:'TIT.1.1' }, items:[{ type:'text', text:'...' }] }
+  //
+  //   C) Sibling sid marker (NIV verses 5-16 in Titus 1):
+  //      { type:'tag', name:'verse', attrs:{ sid:'TIT 1:5' }, items:[] }
+  //      { type:'text', text:'...' }   ← no verseId; falls back to sidVerseNum
+  //
+  //   D) Prose/salutation with vid + NO verse markers (NIV Titus 1:1-4):
+  //      { type:'tag', name:'para', attrs:{ style:'po' }, items:[text,text,text] }  ← verses 1-3
+  //      { type:'tag', name:'para', attrs:{ style:'po' }, items:[text] }            ← verse 4 start
+  //      { type:'tag', name:'para', attrs:{ style:'po', vid:'TIT 1:4' }, items:[text] } ← verse 4 end
+  //
+  //      For D, vid = "verse in progress at the start of this element."
+  //      For text with no verseId/sid/vid attribution, we use a sequential counter
+  //      starting at startVerse so each unattributed text gets the next verse number.
+
+  const verseMap = new Map<number, string[]>()
+  let sidVerseNum: number | undefined
+  let nextUnattributed = startVerse  // sequential counter for D-style prose passages
+
+  function parseVerseAttr(val: string): number | undefined {
+    // handles "TIT 1:4", "TIT.1.4", "TIT.1.4-TIT.1.4" — extract trailing verse number
+    const m = val.match(/[:.](\d+)(?:\s*[-–]|$)/)
+    if (!m) return undefined
+    const n = parseInt(m[1], 10)
+    return isNaN(n) || n <= 0 ? undefined : n
+  }
+
+  function processNode(item: ApiBibleItem, inheritedVerseId?: string, inheritedVid?: number, inVerseContent = true): void {
     if (item.type === 'text') {
-      const verseId = item.attrs?.verseId  // e.g. "PSA.77.1"
+      // Priority: A) own verseId → B) inherited verseId → C) sid tracker → D1) vid → D2) sequential
+      const verseId = item.attrs?.verseId ?? inheritedVerseId
+      let verseNum: number | undefined
+      let usedSequential = false
+
       if (verseId) {
         const parts = verseId.split('.')
-        const verseNum = parseInt(parts[parts.length - 1], 10)
-        if (!isNaN(verseNum) && verseNum > 0) {
-          const t = (item.text ?? '').trim()
-          if (t) {
-            if (!verseMap.has(verseNum)) verseMap.set(verseNum, [])
-            verseMap.get(verseNum)!.push(t)
-          }
+        const n = parseInt(parts[parts.length - 1], 10)
+        if (!isNaN(n) && n > 0) verseNum = n
+      }
+      if (verseNum === undefined) verseNum = sidVerseNum
+      if (verseNum === undefined && inheritedVid !== undefined) verseNum = inheritedVid
+      if (verseNum === undefined && inVerseContent) {
+        verseNum = nextUnattributed
+        usedSequential = true
+      }
+
+      if (verseNum !== undefined) {
+        const t = (item.text ?? '').trim()
+        if (t) {
+          if (!verseMap.has(verseNum)) verseMap.set(verseNum, [])
+          verseMap.get(verseNum)!.push(t)
+          if (usedSequential) nextUnattributed++
         }
       }
       return
     }
 
+    // C: sid verse start marker — update tracker
+    if (item.attrs?.sid) {
+      const n = parseVerseAttr(item.attrs.sid)
+      if (n !== undefined) sidVerseNum = n
+    }
+
+    // D: vid = verse in progress at the start of this element
+    let childVid = inheritedVid
+    if (item.attrs?.vid) {
+      const n = parseVerseAttr(item.attrs.vid)
+      if (n !== undefined) childVid = n
+    }
+
+    const style = item.attrs?.style ?? ''
+    const childInVerseContent = inVerseContent && !HEADING_STYLES.has(style)
+    const childVerseId = item.attrs?.verseId ?? inheritedVerseId
+
     if (item.items) {
-      for (const child of item.items) processNode(child)
+      for (const child of item.items) processNode(child, childVerseId, childVid, childInVerseContent)
     }
   }
 
@@ -268,7 +330,7 @@ async function fetchApiBiblePassage(reference: string, bibleId: string, apiKey: 
   const abbrev = _labelCache.get(bibleId) ?? bibleId.slice(0, 8).toUpperCase()
 
   const content: ApiBibleItem[] = Array.isArray(data.content) ? data.content : []
-  const verses = extractVersesFromJson(content, parsed.bookName, parsed.chapter)
+  const verses = extractVersesFromJson(content, parsed.bookName, parsed.chapter, parsed.startVerse)
 
   if (verses.length === 0) {
     verses.push({ book_name: parsed.bookName, chapter: parsed.chapter, verse: parsed.startVerse, text: '' })

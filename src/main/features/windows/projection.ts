@@ -54,11 +54,15 @@ export function createProjectionWindow(displayId?: number): void {
       setMovingProjection(false)
       return
     }
-    // Real close — stop display-sleep prevention and notify renderer
+    // Real close — stop display-sleep prevention, close confidence monitor, notify renderer
     const id = getPowerSaveBlockerId()
     if (id !== null && powerSaveBlocker.isStarted(id)) {
       powerSaveBlocker.stop(id)
       setPowerSaveBlockerId(null)
+    }
+    if (windows.confidence && !windows.confidence.isDestroyed()) {
+      windows.confidence.close()
+      windows.confidence = null
     }
     windows.control?.webContents.send('window:projectionClosed')
   })

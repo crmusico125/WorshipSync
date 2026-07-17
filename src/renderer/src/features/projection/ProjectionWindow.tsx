@@ -472,8 +472,15 @@ export default function ProjectionWindow() {
           if (vid && pendingVideoAction.current) {
             const action = pendingVideoAction.current;
             pendingVideoAction.current = null;
-            if (action === "play") vid.play().catch(() => {});
-            else if (action === "pause") vid.pause();
+            if (action === "play") {
+              // If the video isn't ready yet, wait for canplay rather than
+              // silently swallowing a rejected play() promise.
+              if (vid.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) {
+                vid.play().catch(() => {});
+              } else {
+                vid.addEventListener("canplay", () => vid.play().catch(() => {}), { once: true });
+              }
+            } else if (action === "pause") vid.pause();
             else if (action === "stop") { vid.pause(); vid.currentTime = 0; setDisplayState("blank"); }
           }
         });

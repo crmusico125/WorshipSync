@@ -45,7 +45,7 @@ import BackgroundPickerPanel from "../../components/BackgroundPickerPanel";
 import EditLyricsModal from "../../components/EditLyricsModal";
 import type { AnnouncementCard } from "../../../../../shared/types";
 import { fetchBiblePassage, bibleResultToScriptureRef, FREE_TRANSLATIONS, fetchApiBibleTranslations, type BibleTranslation } from "../../lib/bibleApi";
-import { toFileUrl } from "../../lib/utils";
+import { toFileUrl, basenameOf } from "../../lib/utils";
 
 
 // ── Audio singleton — survives PresenterDashboard unmounts ───────────────────
@@ -1172,7 +1172,7 @@ export default function PresenterDashboard({
   };
 
   const handleAddMedia = async (path: string) => {
-    const filename = path.split("/").pop() ?? "Media";
+    const filename = basenameOf(path) || "Media";
     const isVideo = /\.(mp4|webm|mov)$/i.test(path);
     const isAudio = /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(path);
     const label = isVideo ? "Video" : isAudio ? "Audio" : "Image";
@@ -2094,7 +2094,7 @@ export default function PresenterDashboard({
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className={`text-[12px] font-medium truncate ${isCurrent ? "text-red-400 font-semibold" : isFinished ? "text-muted-foreground" : "text-foreground"}`}>
-                    {isMedia && song.mediaPath ? song.mediaPath.split("/").pop() ?? song.title : song.title}
+                    {isMedia && song.mediaPath ? basenameOf(song.mediaPath) || song.title : song.title}
                   </p>
                   <p className="text-[10px] text-muted-foreground truncate">
                     {isCountdown ? "Countdown" : isScripture ? "Scripture" : isMedia ? (isVideoItem ? "Video" : isAudioItem ? "Audio" : "Image") : isAnnouncement ? "Announcement" : song.artist || "Song"}
@@ -2244,6 +2244,16 @@ export default function PresenterDashboard({
               broadcastVideoNow(newTime);
             };
             const handlePlay = () => {
+              // Pause audio singleton and suspend its context before video starts.
+              // createMediaElementSource holds the audio output; suspending frees it
+              // so the projection window's video can reclaim its audio pipeline.
+              if (_audio.el && !_audio.el.paused) {
+                _audio.el.pause();
+                _audio.ctx?.suspend();
+                setAudioPlaying(false);
+                if (audioTimerRef.current) { clearInterval(audioTimerRef.current); audioTimerRef.current = null; }
+                stopViz();
+              }
               const preview = videoPreviewRef.current;
               const dur = preview?.duration ?? 0;
               setVideoDuration(dur); setVideoCurrentTime(0);
@@ -2317,7 +2327,7 @@ export default function PresenterDashboard({
                 {/* Header */}
                 <div className="px-5 py-3 border-b border-border bg-card flex items-center justify-between gap-4 shrink-0">
                   <div className="min-w-0">
-                    <h1 className="text-base font-semibold truncate">{bg.split("/").pop()}</h1>
+                    <h1 className="text-base font-semibold truncate">{basenameOf(bg)}</h1>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
                       <span>Video</span><span>·</span><span className="tabular-nums">{fmt(videoDuration)}</span><span>·</span><span>{ext}</span>
                     </div>
@@ -2497,6 +2507,9 @@ export default function PresenterDashboard({
             };
             const handlePause = () => {
               audioRef.current?.pause();
+              // Suspend the context so it fully releases the audio device.
+              // ctx.resume() is called before the next play() (see startPlayback below).
+              _audio.ctx?.suspend();
               setAudioPlaying(false);
               if (audioTimerRef.current) { clearInterval(audioTimerRef.current); audioTimerRef.current = null; }
               stopViz();
@@ -2526,7 +2539,7 @@ export default function PresenterDashboard({
                 {/* Header */}
                 <div className="px-5 py-3 border-b border-border bg-card flex items-center justify-between gap-4 shrink-0">
                   <div className="min-w-0">
-                    <h1 className="text-base font-semibold truncate">{bg.split("/").pop()}</h1>
+                    <h1 className="text-base font-semibold truncate">{basenameOf(bg)}</h1>
                     <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
                       <span>Audio</span><span>·</span><span className="tabular-nums">{fmt(audioDuration)}</span><span>·</span><span>{ext}</span>
                     </div>
@@ -2969,21 +2982,39 @@ export default function PresenterDashboard({
           )}
         </div>
 
-        {/* ── Zone 2: Quick Actions — 3-up ── */}
+        {/* ── Zone 2: Quick Actions — context-sensitive ── */}
         <div className="px-3 pb-3 border-b border-border shrink-0">
-          <div className="grid grid-cols-3 gap-1.5">
-            <button
-              onClick={clearText}
-              className={`py-2 px-2 rounded-lg text-[11px] font-semibold border transition-all duration-150 text-center active:scale-[0.97] ${isTextCleared ? "bg-primary/15 text-primary border-primary/35 shadow-[0_0_8px_rgba(139,92,246,0.15)]" : "bg-muted/40 border-border/60 hover:bg-muted hover:text-foreground text-muted-foreground"}`}
-            >
-              {isTextCleared ? "Restore" : "Clear Text"}
-            </button>
-            <button
-              onClick={clearAll}
-              className="py-2 px-2 rounded-lg text-[11px] font-semibold border border-border/60 bg-muted/40 hover:bg-muted hover:text-foreground text-muted-foreground transition-all duration-150 text-center active:scale-[0.97]"
-            >
-              Clear All
-            </button>
+          {(currentSong?.itemType === "song" || currentSong?.itemType === "scripture" || currentSong?.itemType === "announcement" || !currentSong) ? (
+            <div className="grid grid-cols-3 gap-1.5">
+              <button
+                onClick={clearText}
+                className={`py-2 px-2 rounded-lg text-[11px] font-semibold border transition-all duration-150 text-center active:scale-[0.97] ${isTextCleared ? "bg-primary/15 text-primary border-primary/35 shadow-[0_0_8px_rgba(139,92,246,0.15)]" : "bg-muted/40 border-border/60 hover:bg-muted hover:text-foreground text-muted-foreground"}`}
+              >
+                {isTextCleared ? "Restore" : "Clear Text"}
+              </button>
+              <button
+                onClick={clearAll}
+                className="py-2 px-2 rounded-lg text-[11px] font-semibold border border-border/60 bg-muted/40 hover:bg-muted hover:text-foreground text-muted-foreground transition-all duration-150 text-center active:scale-[0.97]"
+              >
+                Clear All
+              </button>
+              <button
+                onClick={() => {
+                  if (isLogo) {
+                    window.worshipsync.slide.logo(false);
+                    setIsLogo(false);
+                    window.worshipsync.slide.blank(true);
+                    setIsBlank(true);
+                  } else {
+                    showLogo();
+                  }
+                }}
+                className={`py-2 px-2 rounded-lg text-[11px] font-semibold border transition-all duration-150 text-center active:scale-[0.97] ${isLogo ? "bg-amber-500/15 text-amber-400 border-amber-500/35" : "bg-muted/40 border-border/60 hover:bg-muted hover:text-foreground text-muted-foreground"}`}
+              >
+                {isLogo ? "Hide Logo" : "Logo"}
+              </button>
+            </div>
+          ) : (
             <button
               onClick={() => {
                 if (isLogo) {
@@ -2995,11 +3026,11 @@ export default function PresenterDashboard({
                   showLogo();
                 }
               }}
-              className={`py-2 px-2 rounded-lg text-[11px] font-semibold border transition-all duration-150 text-center active:scale-[0.97] ${isLogo ? "bg-amber-500/15 text-amber-400 border-amber-500/35" : "bg-muted/40 border-border/60 hover:bg-muted hover:text-foreground text-muted-foreground"}`}
+              className={`w-full py-2 px-2 rounded-lg text-[11px] font-semibold border transition-all duration-150 text-center active:scale-[0.97] ${isLogo ? "bg-amber-500/15 text-amber-400 border-amber-500/35" : "bg-muted/40 border-border/60 hover:bg-muted hover:text-foreground text-muted-foreground"}`}
             >
               {isLogo ? "Hide Logo" : "Logo"}
             </button>
-          </div>
+          )}
         </div>
 
         {/* ── Zone 3: Item Navigation — shows what you're jumping to ── */}
@@ -3093,6 +3124,123 @@ export default function PresenterDashboard({
           );
         })()}
 
+        {/* ── Contextual Zone: scripture display controls ── */}
+        {currentSong?.itemType === "scripture" && (
+          <div className="px-3 py-3 border-b border-border shrink-0 flex flex-col gap-3">
+            <h3 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Scripture Display</h3>
+
+            {/* Font size presets */}
+            <div>
+              <p className="text-[10px] text-muted-foreground mb-1.5">Font Size</p>
+              <div className="flex rounded-lg overflow-hidden border border-border">
+                {([32, 48, 64, 80] as const).map(size => (
+                  <button
+                    key={size}
+                    onClick={() => {
+                      setScriptureFontSize(size)
+                      window.worshipsync.appState.set({ scriptureFontSize: size }).catch(() => {})
+                    }}
+                    className={`flex-1 py-1.5 text-[11px] font-semibold transition-colors ${
+                      scriptureFontSize === size
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-background text-muted-foreground hover:bg-accent/40"
+                    }`}
+                  >
+                    {size}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Align + Ref position */}
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <p className="text-[10px] text-muted-foreground mb-1.5">Align</p>
+                <div className="flex rounded-lg overflow-hidden border border-border">
+                  {(["left", "center"] as const).map(align => (
+                    <button
+                      key={align}
+                      onClick={() => {
+                        setScriptureTextAlign(align)
+                        window.worshipsync.appState.set({ scriptureTextAlign: align }).catch(() => {})
+                      }}
+                      className={`flex-1 py-1.5 text-[11px] font-semibold capitalize transition-colors ${
+                        scriptureTextAlign === align
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-background text-muted-foreground hover:bg-accent/40"
+                      }`}
+                    >
+                      {align === "left" ? "L" : "C"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex-1">
+                <p className="text-[10px] text-muted-foreground mb-1.5">Reference</p>
+                <select
+                  value={scriptureRefPosition}
+                  onChange={e => {
+                    const v = e.target.value as typeof scriptureRefPosition
+                    setScriptureRefPosition(v)
+                    window.worshipsync.appState.set({ scriptureRefPosition: v }).catch(() => {})
+                  }}
+                  className="w-full py-1.5 px-2 rounded-lg border border-border bg-background text-[11px] font-semibold text-foreground"
+                >
+                  <option value="top">Top</option>
+                  <option value="bottom-right">B. Right</option>
+                  <option value="bottom-center">B. Center</option>
+                  <option value="hidden">Hidden</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ── Contextual Zone: countdown live readout ── */}
+        {currentSong?.itemType === "countdown" && (
+          <div className="px-3 py-4 border-b border-border shrink-0 flex flex-col items-center gap-3">
+            <p className="text-[10px] font-black uppercase tracking-wider text-muted-foreground self-start">Countdown</p>
+            <span className="text-4xl font-mono font-bold tracking-wider text-foreground tabular-nums">
+              {countdownRunning ? countdownDisplay : computeCountdownDisplay()}
+            </span>
+            <button
+              onClick={countdownRunning ? stopCountdown : startCountdown}
+              className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-black uppercase tracking-wide transition-all duration-150 active:scale-[0.98] ${
+                countdownRunning
+                  ? "bg-red-600/15 border border-red-500/30 text-red-400 hover:bg-red-600/25"
+                  : "bg-primary/15 border border-primary/30 text-primary hover:bg-primary/25"
+              }`}
+            >
+              {countdownRunning ? <><Square className="h-3.5 w-3.5 fill-current" /> Stop</> : <><Play className="h-3.5 w-3.5 fill-current" /> Start</>}
+            </button>
+          </div>
+        )}
+
+        {/* ── Contextual Zone: section divider ── */}
+        {currentSong?.itemType === "section" && (
+          <div className="px-3 py-4 border-b border-border shrink-0 flex flex-col items-center gap-3 text-center">
+            <Layers className="h-8 w-8 text-muted-foreground/25 mt-1" />
+            <div>
+              <p className="text-[12px] font-semibold text-foreground/60">Section Divider</p>
+              <p className="text-[10px] text-muted-foreground/50 mt-0.5">Not projectable — select the item below it.</p>
+            </div>
+            {(() => {
+              let nextIdx = selectedSongIdx + 1;
+              while (nextIdx < liveSongs.length && liveSongs[nextIdx]?.itemType === "section") nextIdx++;
+              const nextItem = nextIdx < liveSongs.length ? liveSongs[nextIdx] : null;
+              return nextItem ? (
+                <button
+                  onClick={() => goNextSong()}
+                  className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-[11px] font-semibold border border-border/70 bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground transition-all duration-150 active:scale-[0.97]"
+                >
+                  <SkipForward className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">{nextItem.title}</span>
+                </button>
+              ) : null;
+            })()}
+          </div>
+        )}
+
         {/* ── Image controls — shown only for image media items (not audio/video) ── */}
         {currentSong?.itemType === "media" && !/\.(mp4|webm|mov|mp3|wav|ogg|m4a|aac|flac)$/i.test(currentSong.mediaPath ?? "") && (() => {
           const imgPath = currentSong.mediaPath;
@@ -3174,8 +3322,8 @@ export default function PresenterDashboard({
           );
         })()}
 
-        {/* Active Background — not shown for media items (image/audio/video) */}
-        {!(currentSong?.itemType === "media") && <div className="px-3 py-3 border-b border-border shrink-0">
+        {/* Active Background — only for text-based projectable items */}
+        {(currentSong?.itemType === "song" || currentSong?.itemType === "scripture" || currentSong?.itemType === "announcement" || !currentSong) && <div className="px-3 py-3 border-b border-border shrink-0">
           <h3 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">Active Background</h3>
           <div
             className="flex items-center gap-2.5 p-2 rounded-md bg-background/40 border border-border cursor-pointer hover:bg-accent/30 transition-colors"
@@ -3195,7 +3343,7 @@ export default function PresenterDashboard({
             <div className="min-w-0 flex-1">
               {effectiveBg ? (
                 <>
-                  <p className="text-[11px] font-medium truncate">{effectiveBg.split("/").pop() ?? "Background"}</p>
+                  <p className="text-[11px] font-medium truncate">{basenameOf(effectiveBg) || "Background"}</p>
                   <p className={`text-[10px] ${/\.(mp4|webm|mov)$/i.test(effectiveBg) ? "text-green-400" : "text-muted-foreground"}`}>
                     {/\.(mp4|webm|mov)$/i.test(effectiveBg) ? "Playing • Looped" : "Static"}
                   </p>
@@ -3225,15 +3373,17 @@ export default function PresenterDashboard({
 
         <div className="flex-1" />
 
-        {/* Next Slide button */}
-        <div className="p-3 shrink-0">
-          <button
-            onClick={goNextSlide}
-            className="w-full py-3 bg-foreground text-background rounded-lg text-sm font-bold hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
-          >
-            Next Slide <ChevronRight className="h-4 w-4" />
-          </button>
-        </div>
+        {/* Next Slide button — only for slide-based items */}
+        {(currentSong?.itemType === "song" || currentSong?.itemType === "scripture" || !currentSong) && (
+          <div className="p-3 shrink-0">
+            <button
+              onClick={goNextSlide}
+              className="w-full py-3 bg-foreground text-background rounded-lg text-sm font-bold hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
+            >
+              Next Slide <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        )}
       </div>
 
       </div>{/* end inner row */}

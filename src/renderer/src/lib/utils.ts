@@ -17,6 +17,11 @@ export function fmtDur(sec: number): string | null {
  * - Adds the extra leading slash needed for Windows drive letters (C:/ → /C:/).
  * - Percent-encodes characters that are illegal in URLs (spaces, #, etc.).
  */
+/** Return just the filename portion of a path, handling both / (Mac) and \ (Windows). */
+export function basenameOf(p: string): string {
+  return p.replace(/.*[/\\]/, "") || p;
+}
+
 export function toFileUrl(nativePath: string): string {
   const forward = nativePath.replace(/\\/g, '/')
   const withLeadingSlash = forward.startsWith('/') ? forward : '/' + forward

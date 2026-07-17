@@ -1,6 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import type { SlidePayload } from "../../../../../shared/types";
 import AnnouncementCardsView from "../../components/AnnouncementCardsView";
+import { basenameOf } from "../../lib/utils";
 
 export default function ConfidenceMonitor() {
   const [slide, setSlide] = useState<SlidePayload | null>(null);
@@ -470,7 +471,7 @@ export default function ConfidenceMonitor() {
                 <div style={{ fontSize: "clamp(56px,10vw,100px)", opacity: 0.5, lineHeight: 1 }}>{icon}</div>
                 {/* Title */}
                 <div style={{ fontSize: "clamp(28px,4.5vw,64px)", fontWeight: 700, textAlign: "center", letterSpacing: "-0.02em", lineHeight: 1.2, color: "#ffffff" }}>
-                  {slide.songTitle}
+                  {basenameOf(slide.songTitle)}
                 </div>
                 {/* Progress — audio and video only */}
                 {(isAudio || isVideo) && (

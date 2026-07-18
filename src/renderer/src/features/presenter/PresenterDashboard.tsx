@@ -8,6 +8,7 @@ import React, {
 import {
   MonitorOff,
   ChevronRight,
+  ChevronLeft,
   ChevronDown,
   ChevronUp,
   Music,
@@ -416,6 +417,7 @@ export default function PresenterDashboard({
   const [bibleBrowserProjectedRef, setBibleBrowserProjectedRef] = useState<string | null>(null);
   const [bibleBrowserProjectedTranslation, setBibleBrowserProjectedTranslation] = useState<string | null>(null);
   const [liveBibleVerse, setLiveBibleVerse] = useState<{ text: string; sectionLabel: string; bg: string | undefined } | null>(null);
+  const [bibleBrowserRecentOpen, setBibleBrowserRecentOpen] = useState(true);
   const bibleBrowserInputRef = useRef<HTMLInputElement | null>(null);
   const [bibleSuggestions, setBibleSuggestions] = useState<string[]>([]);
   const [bibleSuggestionIdx, setBibleSuggestionIdx] = useState(-1);
@@ -458,6 +460,15 @@ export default function PresenterDashboard({
     setBibleBrowserProjectedRef(reference);
     setBibleBrowserProjectedTranslation(translationId ?? null);
     setLiveBibleVerse({ text: verse.text.trim(), sectionLabel: translationLabel ? `${reference} ${translationLabel}` : reference, bg: bg ?? undefined });
+    if (translationId) {
+      const label = translationLabel ?? translationId.toUpperCase();
+      setRecentScriptures(prev => {
+        const entry = { query: reference, translationId, translationLabel: label, reference };
+        const updated = [entry, ...prev.filter(r => r.query !== reference || r.translationId !== translationId)].slice(0, 10);
+        window.worshipsync.appState.set({ recentScriptures: updated }).catch(() => {});
+        return updated;
+      });
+    }
     window.worshipsync.slide.blank(false);
     window.worshipsync.slide.logo(false);
     window.worshipsync.slide.show({
@@ -485,7 +496,7 @@ export default function PresenterDashboard({
     });
     setIsBlank(false);
     setIsLogo(false);
-  }, [defaultThemeBg, defaultTheme, availableTranslations, scriptureFontSize, scriptureTextAlign, scriptureRefPosition]);
+  }, [defaultThemeBg, defaultTheme, availableTranslations, scriptureFontSize, scriptureTextAlign, scriptureRefPosition, setRecentScriptures]);
 
   // True once appState confirms the operator has explicitly saved a font size override.
   // Used to prevent the default theme from overwriting an intentional operator choice.
@@ -2495,35 +2506,17 @@ export default function PresenterDashboard({
               </div>
             </div>
 
-            {/* Body */}
+            {/* Body row: verse list + recent sidebar */}
+            <div className="flex-1 flex min-h-0 overflow-hidden">
+
+            {/* ── Verse list (left) ── */}
+            <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
             <div className="flex-1 overflow-y-auto">
               {!bibleBrowserResult && !bibleBrowserLoading && !bibleBrowserError && (
                 <div className="flex flex-col items-center justify-center h-full gap-2 text-muted-foreground px-8">
                   <BookOpen className="h-12 w-12 opacity-15 mb-1" />
                   <p className="text-sm font-medium">Search for a passage above</p>
                   <p className="text-xs text-center opacity-60">Type a reference like "John 3:16" or "Romans 8:28-39" and press Search</p>
-                  {recentScriptures.length > 0 && (
-                    <div className="mt-5 w-full max-w-md">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">Recent</p>
-                      <div className="flex flex-col gap-1">
-                        {recentScriptures.slice(0, 5).map((r) => (
-                          <button
-                            key={r.query + r.translationId}
-                            onClick={() => {
-                              setBibleBrowserQuery(r.query);
-                              setScriptureTranslation(r.translationId);
-                              bibleBrowserSearch(r.query, r.translationId, bibleBrowserCompareIds);
-                            }}
-                            className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-accent/40 transition-colors text-left group"
-                          >
-                            <BookOpen className="h-3.5 w-3.5 text-primary/60 shrink-0" />
-                            <span className="text-sm font-medium text-foreground">{r.reference}</span>
-                            <span className="text-[11px] text-muted-foreground">({r.translationLabel})</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </div>
               )}
 
@@ -2631,7 +2624,7 @@ export default function PresenterDashboard({
               )}
             </div>
 
-            {/* Footer */}
+            {/* Footer: Add to Lineup */}
             {bibleBrowserResult && (
               <div className="shrink-0 border-t border-border px-4 py-2.5 flex items-center justify-between gap-3 bg-card">
                 <span className="text-xs text-muted-foreground truncate">
@@ -2647,6 +2640,60 @@ export default function PresenterDashboard({
                 </button>
               </div>
             )}
+            </div>{/* end verse list */}
+
+            {/* ── Recent sidebar (right) ── */}
+            {recentScriptures.length > 0 && (
+              <div
+                className="shrink-0 border-l border-border flex flex-col bg-card overflow-hidden transition-all duration-200"
+                style={{ width: bibleBrowserRecentOpen ? 176 : 28 }}
+              >
+                {/* Toggle button */}
+                <button
+                  onClick={() => setBibleBrowserRecentOpen(o => !o)}
+                  title={bibleBrowserRecentOpen ? "Collapse recent" : "Show recent passages"}
+                  className="shrink-0 flex items-center justify-center gap-1.5 border-b border-border text-muted-foreground hover:text-foreground hover:bg-accent/40 transition-colors"
+                  style={{ height: 28 }}
+                >
+                  {bibleBrowserRecentOpen ? (
+                    <>
+                      <span className="text-[9px] font-black uppercase tracking-wider truncate">Recent</span>
+                      <ChevronRight className="h-3 w-3 shrink-0" />
+                    </>
+                  ) : (
+                    <ChevronLeft className="h-3 w-3" />
+                  )}
+                </button>
+
+                {/* Passage list */}
+                {bibleBrowserRecentOpen && (
+                  <div className="flex-1 overflow-y-auto flex flex-col py-1">
+                    {recentScriptures.slice(0, 8).map((r) => {
+                      const isActive = bibleBrowserQuery === r.query && scriptureTranslation === r.translationId && !!bibleBrowserResult;
+                      return (
+                        <button
+                          key={r.query + r.translationId}
+                          onClick={() => {
+                            setBibleBrowserQuery(r.query);
+                            setScriptureTranslation(r.translationId);
+                            bibleBrowserSearch(r.query, r.translationId, bibleBrowserCompareIds);
+                          }}
+                          title={`${r.reference} (${r.translationLabel})`}
+                          className={`flex flex-col items-start px-2.5 py-1.5 text-left transition-colors hover:bg-accent/40 ${isActive ? "bg-primary/8" : ""}`}
+                        >
+                          <span className={`text-[11px] font-semibold leading-tight truncate w-full ${isActive ? "text-primary" : "text-foreground"}`}>
+                            {r.reference}
+                          </span>
+                          <span className="text-[9px] text-muted-foreground">{r.translationLabel}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            </div>{/* end body row */}
           </div>
         ) : currentSong?.itemType === "media" && /\.(mp4|webm|mov)$/i.test(currentSong.mediaPath ?? "") ? (
           /* ── Video media ── */

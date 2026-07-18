@@ -419,8 +419,15 @@ export default function PresenterDashboard({
   const [liveBibleVerse, setLiveBibleVerse] = useState<{ text: string; sectionLabel: string; bg: string | undefined } | null>(null);
   const [bibleBrowserRecentOpen, setBibleBrowserRecentOpen] = useState(true);
   const bibleBrowserInputRef = useRef<HTMLInputElement | null>(null);
+  const verseListRef = useRef<HTMLDivElement | null>(null);
   const [bibleSuggestions, setBibleSuggestions] = useState<string[]>([]);
   const [bibleSuggestionIdx, setBibleSuggestionIdx] = useState(-1);
+
+  useEffect(() => {
+    if (!bibleBrowserProjectedRef || !verseListRef.current) return;
+    const el = verseListRef.current.querySelector<HTMLElement>(`[data-verse-ref="${CSS.escape(bibleBrowserProjectedRef)}"]`);
+    el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [bibleBrowserProjectedRef]);
 
   const bibleBrowserSearch = useCallback(async (q: string, translationId: string, compareIds?: string[]) => {
     const query = q.trim();
@@ -2511,7 +2518,7 @@ export default function PresenterDashboard({
 
             {/* ── Verse list (left) ── */}
             <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-            <div className="flex-1 overflow-y-auto">
+            <div ref={verseListRef} className="flex-1 overflow-y-auto">
               {!bibleBrowserResult && !bibleBrowserLoading && !bibleBrowserError && (
                 <div className="flex flex-col items-center justify-center h-full gap-2 text-muted-foreground px-8">
                   <BookOpen className="h-12 w-12 opacity-15 mb-1" />
@@ -2540,13 +2547,13 @@ export default function PresenterDashboard({
                   {/* Column headers */}
                   {bibleBrowserCompareIds.length > 0 && (
                     <>
-                      <div className="col-span-1 px-4 py-2 bg-muted/30 border-b border-border sticky top-0 z-10">
+                      <div className="col-span-1 px-4 py-2 bg-card border-b border-border sticky top-0 z-10">
                         <span className="text-[11px] font-bold text-muted-foreground">
                           {availableTranslations.find(t => t.id === scriptureTranslation)?.label ?? scriptureTranslation.toUpperCase()}
                         </span>
                       </div>
                       {bibleBrowserCompareIds.map(cid => (
-                        <div key={cid} className="col-span-1 px-4 py-2 bg-muted/30 border-b border-border sticky top-0 z-10">
+                        <div key={cid} className="col-span-1 px-4 py-2 bg-card border-b border-border sticky top-0 z-10">
                           <span className="text-[11px] font-bold text-muted-foreground">
                             {availableTranslations.find(t => t.id === cid)?.label ?? cid.toUpperCase()}
                             {bibleBrowserCompareLoadingSet.has(cid) && <Loader2 className="h-3 w-3 animate-spin inline ml-1.5" />}
@@ -2563,7 +2570,7 @@ export default function PresenterDashboard({
                     return bibleBrowserCompareIds.length > 0 ? (
                       <React.Fragment key={ref}>
                         {/* Primary verse cell */}
-                        <div className={`flex items-start gap-2 px-4 py-3 group transition-colors border-b border-border/40 ${isPrimaryLive ? "bg-primary/8" : isAnyVerseProjected ? "bg-primary/3" : "hover:bg-accent/20"}`}>
+                        <div data-verse-ref={ref} className={`flex items-start gap-2 px-4 py-3 group transition-colors border-b border-border/40 ${isPrimaryLive ? "bg-primary/8" : isAnyVerseProjected ? "bg-primary/3" : "hover:bg-accent/20"}`}>
                           <span className="text-[11px] font-bold text-muted-foreground/60 w-7 shrink-0 pt-0.5 tabular-nums">{verse.verse}</span>
                           <p className="flex-1 text-sm leading-relaxed text-foreground">{verse.text.trim()}</p>
                           <button
@@ -2603,6 +2610,7 @@ export default function PresenterDashboard({
                     ) : (
                       <div
                         key={ref}
+                        data-verse-ref={ref}
                         className={`flex items-start gap-3 px-4 py-3 group transition-colors ${isPrimaryLive ? "bg-primary/8" : "hover:bg-accent/30"}`}
                       >
                         <span className="text-[11px] font-bold text-muted-foreground/60 w-10 shrink-0 pt-0.5 tabular-nums">{verse.verse}</span>
@@ -2623,6 +2631,66 @@ export default function PresenterDashboard({
                 </div>
               )}
             </div>
+
+            {/* Verse navigation bar — shown when a verse from this passage is live */}
+            {(() => {
+              if (!bibleBrowserResult || !bibleBrowserProjectedRef) return null;
+              const verses = bibleBrowserResult.verses;
+              const liveIdx = verses.findIndex(v => `${v.book_name} ${v.chapter}:${v.verse}` === bibleBrowserProjectedRef);
+              if (liveIdx === -1) return null;
+              const navigate = (delta: -1 | 1) => {
+                const nextIdx = liveIdx + delta;
+                if (nextIdx < 0 || nextIdx >= verses.length) return;
+                const primary = verses[nextIdx];
+                const ref = `${primary.book_name} ${primary.chapter}:${primary.verse}`;
+                const tid = bibleBrowserProjectedTranslation;
+                const compareVerse = tid && tid !== scriptureTranslation ? bibleBrowserCompareResults[tid]?.verses[nextIdx] : undefined;
+                const verse = compareVerse ?? (tid === scriptureTranslation ? primary : primary);
+                projectBibleVerse(verse, ref, tid ?? scriptureTranslation);
+              };
+              const prevVerse = liveIdx > 0 ? verses[liveIdx - 1] : null;
+              const nextVerse = liveIdx < verses.length - 1 ? verses[liveIdx + 1] : null;
+              return (
+                <div className="shrink-0 border-t border-border bg-muted/20 px-2 py-1.5 flex items-center gap-1.5">
+                  <button
+                    onClick={() => navigate(-1)}
+                    disabled={!prevVerse}
+                    className="flex-1 flex items-center gap-1.5 px-2.5 py-1.5 rounded-md hover:bg-accent disabled:opacity-25 transition-colors text-left min-w-0"
+                  >
+                    <ChevronLeft className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <div className="flex flex-col min-w-0">
+                      <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide leading-none mb-0.5">Prev verse</span>
+                      {prevVerse && (
+                        <span className="text-[11px] font-semibold text-foreground tabular-nums leading-tight">
+                          {prevVerse.book_name} {prevVerse.chapter}:{prevVerse.verse}
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                  <div className="flex flex-col items-center justify-center px-2 shrink-0">
+                    <span className="text-[11px] font-semibold text-foreground tabular-nums">
+                      {verses[liveIdx].book_name} {verses[liveIdx].chapter}:{verses[liveIdx].verse}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground tabular-nums">{liveIdx + 1} / {verses.length}</span>
+                  </div>
+                  <button
+                    onClick={() => navigate(1)}
+                    disabled={!nextVerse}
+                    className="flex-1 flex items-center gap-1.5 px-2.5 py-1.5 rounded-md hover:bg-accent disabled:opacity-25 transition-colors justify-end min-w-0"
+                  >
+                    <div className="flex flex-col items-end min-w-0">
+                      <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide leading-none mb-0.5">Next verse</span>
+                      {nextVerse && (
+                        <span className="text-[11px] font-semibold text-foreground tabular-nums leading-tight">
+                          {nextVerse.book_name} {nextVerse.chapter}:{nextVerse.verse}
+                        </span>
+                      )}
+                    </div>
+                    <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  </button>
+                </div>
+              );
+            })()}
 
             {/* Footer: Add to Lineup */}
             {bibleBrowserResult && (

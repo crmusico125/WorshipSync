@@ -59,6 +59,7 @@ function estimateLineupMinutes(items: any[]): number {
       case 'scripture': return acc + 2
       case 'media': return acc + 3
       case 'announcement': return acc + 2
+      case 'bible': return acc
       default: return acc + 1
     }
   }, 0)
@@ -255,6 +256,7 @@ function lineupItemIcon(itemType: string) {
   switch (itemType) {
     case 'countdown':    return Timer
     case 'scripture':    return BookOpen
+    case 'bible':        return BookOpen
     case 'announcement': return Megaphone
     case 'media':        return Film
     case 'section':      return Layers

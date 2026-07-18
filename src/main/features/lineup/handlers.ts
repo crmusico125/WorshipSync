@@ -71,6 +71,20 @@ export function registerLineupHandlers(): void {
     return item
   })
 
+  ipcMain.handle('lineup:addBible', (_e, serviceDateId: number) => {
+    const existing = db.select().from(lineupItems)
+      .where(eq(lineupItems.serviceDateId, serviceDateId))
+      .all()
+    const [item] = db.insert(lineupItems).values({
+      serviceDateId,
+      orderIndex: existing.length,
+      itemType: 'bible',
+      title: 'Bible Browser',
+      selectedSections: '[]',
+    }).returning().all()
+    return item
+  })
+
   ipcMain.handle('lineup:addScripture', (_e, serviceDateId: number, data: {
     title: string
     scriptureRef: string

@@ -14,7 +14,7 @@ interface LineupItemWithSong {
   id: number
   serviceDateId: number
   songId: number | null
-  itemType: 'song' | 'countdown' | 'scripture' | 'media' | 'announcement' | 'note' | 'section'
+  itemType: 'song' | 'countdown' | 'scripture' | 'media' | 'announcement' | 'note' | 'section' | 'bible'
   orderIndex: number
   selectedSections: string
   overrideThemeId: number | null
@@ -127,6 +127,7 @@ declare global {
         getForService:  (serviceDateId: number) => Promise<LineupItemWithSong[]>
         addSong:        (serviceDateId: number, songId: number) => Promise<unknown>
         addCountdown:   (serviceDateId: number) => Promise<unknown>
+        addBible:       (serviceDateId: number) => Promise<unknown>
         addScripture:   (serviceDateId: number, data: { title: string; scriptureRef: string }) => Promise<unknown>
         addMedia:       (serviceDateId: number, data: { title: string; mediaPath: string; imageScaleMode?: 'cover' | 'contain' | 'stretch' }) => Promise<unknown>
         removeSong:     (lineupItemId: number) => Promise<boolean>

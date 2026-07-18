@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type LineupItemType = 'song' | 'scripture' | 'media' | 'countdown' | 'announcement' | 'note' | 'section'
+export type LineupItemType = 'song' | 'scripture' | 'media' | 'countdown' | 'announcement' | 'note' | 'section' | 'bible'
 
 export interface LineupItem {
   id: number
@@ -63,6 +63,7 @@ interface ServiceStore {
   addScriptureToLineup: (data: { title: string; scriptureRef: string }) => Promise<void>
   addMediaToLineup: (data: { title: string; mediaPath: string }) => Promise<void>
   addCountdownToLineup: () => Promise<void>
+  addBibleBrowserToLineup: () => Promise<void>
   addAnnouncementToLineup: (data: { title: string; content: string }) => Promise<void>
   addSectionToLineup: (title: string) => Promise<void>
   removeSongFromLineup: (lineupItemId: number) => Promise<void>
@@ -169,6 +170,14 @@ export const useServiceStore = create<ServiceStore>((set, get) => ({
     const { selectedService } = get()
     if (!selectedService) return
     await window.worshipsync.lineup.addCountdown(selectedService.id)
+    await get().loadLineup(selectedService.id)
+    if (selectedService.status === 'empty') await get().updateStatus(selectedService.id, 'in-progress')
+  },
+
+  addBibleBrowserToLineup: async () => {
+    const { selectedService } = get()
+    if (!selectedService) return
+    await window.worshipsync.lineup.addBible(selectedService.id)
     await get().loadLineup(selectedService.id)
     if (selectedService.status === 'empty') await get().updateStatus(selectedService.id, 'in-progress')
   },

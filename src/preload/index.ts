@@ -114,6 +114,7 @@ contextBridge.exposeInMainWorld('worshipsync', {
     getForService:  (serviceDateId: number)                    => ipcRenderer.invoke('lineup:getForService', serviceDateId),
     addSong:        (serviceDateId: number, songId: number)    => ipcRenderer.invoke('lineup:addSong', serviceDateId, songId),
     addCountdown:   (serviceDateId: number)                    => ipcRenderer.invoke('lineup:addCountdown', serviceDateId),
+    addBible:       (serviceDateId: number)                    => ipcRenderer.invoke('lineup:addBible', serviceDateId),
     addScripture:   (serviceDateId: number, data: { title: string; scriptureRef: string }) =>
                         ipcRenderer.invoke('lineup:addScripture', serviceDateId, data),
     addMedia:       (serviceDateId: number, data: { title: string; mediaPath: string; imageScaleMode?: 'cover' | 'contain' | 'stretch' }) =>

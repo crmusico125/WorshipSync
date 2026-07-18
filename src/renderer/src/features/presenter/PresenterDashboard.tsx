@@ -36,6 +36,7 @@ import {
   Layers,
   CheckCircle2,
   Circle,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -44,7 +45,7 @@ import LibraryModal from "../../components/LibraryModal";
 import BackgroundPickerPanel from "../../components/BackgroundPickerPanel";
 import EditLyricsModal from "../../components/EditLyricsModal";
 import type { AnnouncementCard } from "../../../../../shared/types";
-import { fetchBiblePassage, bibleResultToScriptureRef, FREE_TRANSLATIONS, fetchApiBibleTranslations, type BibleTranslation } from "../../lib/bibleApi";
+import { fetchBiblePassage, bibleResultToScriptureRef, FREE_TRANSLATIONS, fetchApiBibleTranslations, COMMON_TRANSLATION_LABELS, type BibleTranslation, type BibleApiResult, type BibleApiVerse } from "../../lib/bibleApi";
 import { toFileUrl, basenameOf } from "../../lib/utils";
 
 
@@ -69,7 +70,7 @@ interface Slide {
 
 interface LiveSong {
   lineupItemId: number;
-  itemType: "song" | "countdown" | "scripture" | "media" | "announcement" | "section";
+  itemType: "song" | "countdown" | "scripture" | "media" | "announcement" | "section" | "bible";
   songId: number;
   title: string;
   artist: string;
@@ -106,6 +107,37 @@ function parseAnnouncementCards(raw: string | null | undefined): AnnouncementCar
   } catch {}
   return raw.split('\n').filter(l => l.trim()).map((l, i) => ({ id: String(i), heading: l.trim() }))
 }
+
+function renderTranslationOptions(translations: BibleTranslation[], filterFn?: (t: BibleTranslation) => boolean) {
+  const list = filterFn ? translations.filter(filterFn) : translations;
+  const common = list.filter(t => COMMON_TRANSLATION_LABELS.includes(t.label));
+  const others = list.filter(t => !COMMON_TRANSLATION_LABELS.includes(t.label));
+  if (common.length === 0) return list.map(t => <option key={t.id} value={t.id}>{t.label}</option>);
+  return (
+    <>
+      <optgroup label="Popular">
+        {common.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+      </optgroup>
+      {others.length > 0 && (
+        <optgroup label="Other">
+          {others.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
+        </optgroup>
+      )}
+    </>
+  );
+}
+
+const BIBLE_BOOKS = [
+  "Genesis","Exodus","Leviticus","Numbers","Deuteronomy","Joshua","Judges","Ruth",
+  "1 Samuel","2 Samuel","1 Kings","2 Kings","1 Chronicles","2 Chronicles",
+  "Ezra","Nehemiah","Esther","Job","Psalms","Proverbs","Ecclesiastes","Song of Solomon",
+  "Isaiah","Jeremiah","Lamentations","Ezekiel","Daniel","Hosea","Joel","Amos",
+  "Obadiah","Jonah","Micah","Nahum","Habakkuk","Zephaniah","Haggai","Zechariah","Malachi",
+  "Matthew","Mark","Luke","John","Acts","Romans",
+  "1 Corinthians","2 Corinthians","Galatians","Ephesians","Philippians","Colossians",
+  "1 Thessalonians","2 Thessalonians","1 Timothy","2 Timothy","Titus","Philemon",
+  "Hebrews","James","1 Peter","2 Peter","1 John","2 John","3 John","Jude","Revelation",
+]
 
 const DEFAULT_THEME: ThemeStyle = {
   fontFamily: "Montserrat, sans-serif",
@@ -205,6 +237,7 @@ export default function PresenterDashboard({
     selectService,
     addSongToLineup,
     addCountdownToLineup,
+    addBibleBrowserToLineup,
     addScriptureToLineup,
     addMediaToLineup,
     addAnnouncementToLineup,
@@ -371,6 +404,89 @@ export default function PresenterDashboard({
   const [scriptureFontSize, setScriptureFontSize]     = useState(48);
   const [scriptureTextAlign, setScriptureTextAlign]   = useState<'left' | 'center'>('center');
   const [scriptureRefPosition, setScriptureRefPosition] = useState<'top' | 'bottom-right' | 'bottom-center' | 'hidden'>('bottom-right');
+
+  // ── Bible Browser state (needs scripture display state above) ────────────
+  const [bibleBrowserQuery, setBibleBrowserQuery] = useState("");
+  const [bibleBrowserResult, setBibleBrowserResult] = useState<BibleApiResult | null>(null);
+  const [bibleBrowserLoading, setBibleBrowserLoading] = useState(false);
+  const [bibleBrowserError, setBibleBrowserError] = useState<string | null>(null);
+  const [bibleBrowserCompareIds, setBibleBrowserCompareIds] = useState<string[]>([]);
+  const [bibleBrowserCompareResults, setBibleBrowserCompareResults] = useState<Record<string, BibleApiResult | null>>({});
+  const [bibleBrowserCompareLoadingSet, setBibleBrowserCompareLoadingSet] = useState<Set<string>>(new Set());
+  const [bibleBrowserProjectedRef, setBibleBrowserProjectedRef] = useState<string | null>(null);
+  const [bibleBrowserProjectedTranslation, setBibleBrowserProjectedTranslation] = useState<string | null>(null);
+  const [liveBibleVerse, setLiveBibleVerse] = useState<{ text: string; sectionLabel: string; bg: string | undefined } | null>(null);
+  const bibleBrowserInputRef = useRef<HTMLInputElement | null>(null);
+  const [bibleSuggestions, setBibleSuggestions] = useState<string[]>([]);
+  const [bibleSuggestionIdx, setBibleSuggestionIdx] = useState(-1);
+
+  const bibleBrowserSearch = useCallback(async (q: string, translationId: string, compareIds?: string[]) => {
+    const query = q.trim();
+    if (!query) return;
+    setBibleBrowserLoading(true);
+    setBibleBrowserError(null);
+    setBibleBrowserResult(null);
+    setBibleBrowserCompareResults({});
+    try {
+      const result = await fetchBiblePassage(query, translationId, bibleApiKey);
+      setBibleBrowserResult(result);
+      if (compareIds?.length) {
+        setBibleBrowserCompareLoadingSet(new Set(compareIds));
+        for (const cid of compareIds) {
+          fetchBiblePassage(query, cid, bibleApiKey)
+            .then(r => setBibleBrowserCompareResults(prev => ({ ...prev, [cid]: r })))
+            .catch(() => setBibleBrowserCompareResults(prev => ({ ...prev, [cid]: null })))
+            .finally(() => setBibleBrowserCompareLoadingSet(prev => { const s = new Set(prev); s.delete(cid); return s; }));
+        }
+      }
+    } catch (err) {
+      setBibleBrowserError(err instanceof Error ? err.message : "Passage not found");
+    } finally {
+      setBibleBrowserLoading(false);
+    }
+  }, [bibleApiKey]);
+
+  const projectBibleVerse = useCallback((verse: BibleApiVerse, reference: string, translationId?: string) => {
+    const bg = defaultScriptureThemeBgRef.current ?? defaultThemeBg ?? undefined;
+    let base = DEFAULT_THEME;
+    if (defaultTheme?.settings) {
+      try { base = { ...DEFAULT_THEME, ...JSON.parse(defaultTheme.settings) }; } catch {}
+    }
+    const translationLabel = translationId
+      ? (availableTranslations.find(t => t.id === translationId)?.label ?? translationId.toUpperCase())
+      : null;
+    setBibleBrowserProjectedRef(reference);
+    setBibleBrowserProjectedTranslation(translationId ?? null);
+    setLiveBibleVerse({ text: verse.text.trim(), sectionLabel: translationLabel ? `${reference} ${translationLabel}` : reference, bg: bg ?? undefined });
+    window.worshipsync.slide.blank(false);
+    window.worshipsync.slide.logo(false);
+    window.worshipsync.slide.show({
+      lines: [verse.text.trim()],
+      songTitle: reference,
+      sectionLabel: translationLabel ? `${reference} ${translationLabel}` : reference,
+      itemType: "scripture",
+      slideIndex: 0,
+      totalSlides: 1,
+      lineupItemId: -1,
+      backgroundPath: bg ?? null,
+      theme: {
+        fontFamily: base.fontFamily,
+        fontSize: scriptureFontSize,
+        fontWeight: base.fontWeight,
+        textColor: base.textColor,
+        textAlign: scriptureTextAlign,
+        textPosition: base.textPosition,
+        overlayOpacity: base.overlayOpacity,
+        textShadowOpacity: base.textShadowOpacity,
+        maxLinesPerSlide: base.maxLinesPerSlide,
+        accentColor: base.accentColor,
+        scriptureRefPosition,
+      },
+    });
+    setIsBlank(false);
+    setIsLogo(false);
+  }, [defaultThemeBg, defaultTheme, availableTranslations, scriptureFontSize, scriptureTextAlign, scriptureRefPosition]);
+
   // True once appState confirms the operator has explicitly saved a font size override.
   // Used to prevent the default theme from overwriting an intentional operator choice.
   const fontSizeExplicitRef = useRef(false);
@@ -540,6 +656,26 @@ export default function PresenterDashboard({
           itemType: "countdown" as const,
           songId: 0,
           title: "Countdown Timer",
+          artist: "",
+          key: null,
+          ccliNumber: null,
+          backgroundPath: null,
+          mediaPath: null,
+          themeId: null,
+          styleOverrides: null,
+          notes: item.notes ?? null,
+          itemStyle: null,
+          imageScaleMode: null,
+          slides: [],
+        };
+      }
+
+      if (item.itemType === "bible") {
+        return {
+          lineupItemId: item.id,
+          itemType: "bible" as const,
+          songId: 0,
+          title: "Bible Browser",
           artist: "",
           key: null,
           ccliNumber: null,
@@ -780,6 +916,7 @@ export default function PresenterDashboard({
       setIsBlank(false);
       setIsLogo(false);
       setIsTextCleared(false);
+      setLiveBibleVerse(null);
       if (countdownRunningRef.current) {
         setCountdownRunning(false);
         if (countdownIntervalRef.current) {
@@ -2031,6 +2168,7 @@ export default function PresenterDashboard({
             const isSection = song.itemType === "section";
             const isCountdown = song.itemType === "countdown";
             const isScripture = song.itemType === "scripture";
+            const isBible = song.itemType === "bible";
             const isMedia = song.itemType === "media";
             const isAudioItem = isMedia && /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(song.mediaPath ?? "");
             const isVideoItem = isMedia && /\.(mp4|webm|mov)$/i.test(song.mediaPath ?? "");
@@ -2056,7 +2194,7 @@ export default function PresenterDashboard({
               );
             }
 
-            const Icon = isCountdown ? Timer : isScripture ? BookOpen : isMedia ? (isVideoItem ? Film : isAudioItem ? Volume2 : ImageIcon) : isAnnouncement ? Megaphone : Music;
+            const Icon = isCountdown ? Timer : isScripture || isBible ? BookOpen : isMedia ? (isVideoItem ? Film : isAudioItem ? Volume2 : ImageIcon) : isAnnouncement ? Megaphone : Music;
             return (
               <button
                 key={song.lineupItemId}
@@ -2097,7 +2235,7 @@ export default function PresenterDashboard({
                     {isMedia && song.mediaPath ? basenameOf(song.mediaPath) || song.title : song.title}
                   </p>
                   <p className="text-[10px] text-muted-foreground truncate">
-                    {isCountdown ? "Countdown" : isScripture ? "Scripture" : isMedia ? (isVideoItem ? "Video" : isAudioItem ? "Audio" : "Image") : isAnnouncement ? "Announcement" : song.artist || "Song"}
+                    {isCountdown ? "Countdown" : isBible ? "Bible Browser" : isScripture ? "Scripture" : isMedia ? (isVideoItem ? "Video" : isAudioItem ? "Audio" : "Image") : isAnnouncement ? "Announcement" : song.artist || "Song"}
                     {!isCountdown && !isMedia && song.slides.length > 0 && (
                       <span className="ml-1 opacity-50">· {song.slides.filter(s => s.sectionType !== "blank").length} slides</span>
                     )}
@@ -2190,17 +2328,325 @@ export default function PresenterDashboard({
             <div className="flex items-center gap-3">
               {!countdownRunning ? (
                 <Button size="lg" className="gap-2" onClick={startCountdown}>
-                  <Play className="h-5 w-5 fill-current" /> Start Countdown
+                  <Play className="h-5 w-5 fill-current" /> Show Countdown
                 </Button>
               ) : (
                 <Button size="lg" variant="destructive" className="gap-2" onClick={stopCountdown}>
-                  <Square className="h-4 w-4 fill-current" /> Stop Countdown
+                  <Square className="h-4 w-4 fill-current" /> Hide Countdown
                 </Button>
               )}
             </div>
             <p className="text-[11px] text-muted-foreground mt-6 max-w-sm">
-              The countdown will be shown on the projection screen when started. It stops automatically when it reaches zero.
+              Click Show Countdown to display it on the projection screen. It hides automatically when it reaches zero.
             </p>
+          </div>
+        ) : currentSong?.itemType === "bible" ? (
+          /* ── Bible Browser ── */
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {/* Search bar */}
+            <div className="shrink-0 border-b border-border bg-card px-4 py-3">
+              <form
+                className="flex items-center gap-2"
+                onSubmit={e => { e.preventDefault(); bibleBrowserSearch(bibleBrowserQuery, scriptureTranslation, bibleBrowserCompareIds); }}
+              >
+                <div className="relative flex-1 min-w-0">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none z-10" />
+                  <input
+                    ref={bibleBrowserInputRef}
+                    value={bibleBrowserQuery}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setBibleBrowserQuery(val);
+                      const q = val.trim().toLowerCase();
+                      if (!q || val.includes(':')) {
+                        setBibleSuggestions([]);
+                        return;
+                      }
+                      const matches = BIBLE_BOOKS.filter(b => b.toLowerCase().startsWith(q)).slice(0, 7);
+                      setBibleSuggestions(matches);
+                      setBibleSuggestionIdx(-1);
+                    }}
+                    onKeyDown={e => {
+                      if (bibleSuggestions.length === 0) return;
+                      if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        setBibleSuggestionIdx(i => Math.min(i + 1, bibleSuggestions.length - 1));
+                      } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        setBibleSuggestionIdx(i => Math.max(i - 1, -1));
+                      } else if (e.key === 'Enter' && bibleSuggestionIdx >= 0) {
+                        e.preventDefault();
+                        setBibleBrowserQuery(bibleSuggestions[bibleSuggestionIdx] + ' ');
+                        setBibleSuggestions([]);
+                        setBibleSuggestionIdx(-1);
+                      } else if (e.key === 'Escape') {
+                        setBibleSuggestions([]);
+                        setBibleSuggestionIdx(-1);
+                      }
+                    }}
+                    onBlur={() => setTimeout(() => { setBibleSuggestions([]); setBibleSuggestionIdx(-1); }, 150)}
+                    placeholder="John 3:16, Romans 8:28-39…"
+                    className="w-full pl-8 pr-7 py-1.5 text-sm bg-input border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary"
+                  />
+                  {bibleBrowserQuery && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBibleBrowserQuery("");
+                        setBibleBrowserResult(null);
+                        setBibleBrowserError(null);
+                        setBibleSuggestions([]);
+                        setBibleSuggestionIdx(-1);
+                        bibleBrowserInputRef.current?.focus();
+                      }}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 flex items-center justify-center rounded-full bg-muted-foreground/20 hover:bg-muted-foreground/40 text-muted-foreground hover:text-foreground transition-colors"
+                      aria-label="Clear search"
+                    >
+                      <X className="h-2.5 w-2.5" />
+                    </button>
+                  )}
+                  {bibleSuggestions.length > 0 && (
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-popover border border-border rounded-lg shadow-lg z-50 overflow-hidden">
+                      {bibleSuggestions.map((book, i) => (
+                        <button
+                          key={book}
+                          type="button"
+                          onMouseDown={e => {
+                            e.preventDefault();
+                            setBibleBrowserQuery(book + ' ');
+                            setBibleSuggestions([]);
+                            setBibleSuggestionIdx(-1);
+                            bibleBrowserInputRef.current?.focus();
+                          }}
+                          className={`w-full text-left px-3 py-2 text-sm transition-colors ${
+                            i === bibleSuggestionIdx
+                              ? 'bg-primary text-primary-foreground'
+                              : 'hover:bg-accent text-foreground'
+                          }`}
+                        >
+                          {book}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <select
+                  value={scriptureTranslation}
+                  onChange={e => {
+                    setScriptureTranslation(e.target.value);
+                    window.worshipsync.appState.set({ lastBibleTranslation: e.target.value }).catch(() => {});
+                    if (bibleBrowserResult) bibleBrowserSearch(bibleBrowserQuery, e.target.value, bibleBrowserCompareIds);
+                  }}
+                  className="h-8 px-2 text-xs bg-input border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary shrink-0"
+                >
+                  {renderTranslationOptions(availableTranslations)}
+                </select>
+                <button
+                  type="submit"
+                  disabled={bibleBrowserLoading || !bibleBrowserQuery.trim()}
+                  className="h-8 px-3 rounded-lg bg-primary text-primary-foreground text-xs font-semibold disabled:opacity-40 shrink-0 flex items-center gap-1.5"
+                >
+                  {bibleBrowserLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Search"}
+                </button>
+              </form>
+              {/* Compare translations */}
+              <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                <span className="text-[10px] text-muted-foreground font-medium shrink-0">Compare:</span>
+                {bibleBrowserCompareIds.map(cid => {
+                  const label = availableTranslations.find(t => t.id === cid)?.label ?? cid.toUpperCase();
+                  const isLoading = bibleBrowserCompareLoadingSet.has(cid);
+                  return (
+                    <span key={cid} className="inline-flex items-center gap-1 h-6 px-2 rounded-full bg-primary/10 text-primary text-[11px] font-semibold">
+                      {label}
+                      {isLoading && <Loader2 className="h-3 w-3 animate-spin" />}
+                      <button
+                        onClick={() => {
+                          setBibleBrowserCompareIds(prev => prev.filter(x => x !== cid));
+                          setBibleBrowserCompareResults(prev => { const n = { ...prev }; delete n[cid]; return n; });
+                          setBibleBrowserCompareLoadingSet(prev => { const s = new Set(prev); s.delete(cid); return s; });
+                        }}
+                        className="ml-0.5 leading-none opacity-60 hover:opacity-100 text-xs"
+                      >×</button>
+                    </span>
+                  );
+                })}
+                {bibleBrowserCompareIds.length < 3 && (
+                  <select
+                    value=""
+                    onChange={e => {
+                      const cid = e.target.value;
+                      if (!cid || bibleBrowserCompareIds.includes(cid)) return;
+                      const newIds = [...bibleBrowserCompareIds, cid];
+                      setBibleBrowserCompareIds(newIds);
+                      if (bibleBrowserResult) {
+                        setBibleBrowserCompareLoadingSet(prev => new Set([...prev, cid]));
+                        fetchBiblePassage(bibleBrowserQuery, cid, bibleApiKey)
+                          .then(r => setBibleBrowserCompareResults(prev => ({ ...prev, [cid]: r })))
+                          .catch(() => setBibleBrowserCompareResults(prev => ({ ...prev, [cid]: null })))
+                          .finally(() => setBibleBrowserCompareLoadingSet(prev => { const s = new Set(prev); s.delete(cid); return s; }));
+                      }
+                    }}
+                    className="h-6 px-1.5 text-[11px] bg-input border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary"
+                  >
+                    <option value="">+ Add translation</option>
+                    {renderTranslationOptions(availableTranslations, t => t.id !== scriptureTranslation && !bibleBrowserCompareIds.includes(t.id))}
+                  </select>
+                )}
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto">
+              {!bibleBrowserResult && !bibleBrowserLoading && !bibleBrowserError && (
+                <div className="flex flex-col items-center justify-center h-full gap-2 text-muted-foreground px-8">
+                  <BookOpen className="h-12 w-12 opacity-15 mb-1" />
+                  <p className="text-sm font-medium">Search for a passage above</p>
+                  <p className="text-xs text-center opacity-60">Type a reference like "John 3:16" or "Romans 8:28-39" and press Search</p>
+                  {recentScriptures.length > 0 && (
+                    <div className="mt-5 w-full max-w-md">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">Recent</p>
+                      <div className="flex flex-col gap-1">
+                        {recentScriptures.slice(0, 5).map((r) => (
+                          <button
+                            key={r.query + r.translationId}
+                            onClick={() => {
+                              setBibleBrowserQuery(r.query);
+                              setScriptureTranslation(r.translationId);
+                              bibleBrowserSearch(r.query, r.translationId, bibleBrowserCompareIds);
+                            }}
+                            className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-accent/40 transition-colors text-left group"
+                          >
+                            <BookOpen className="h-3.5 w-3.5 text-primary/60 shrink-0" />
+                            <span className="text-sm font-medium text-foreground">{r.reference}</span>
+                            <span className="text-[11px] text-muted-foreground">({r.translationLabel})</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {bibleBrowserLoading && (
+                <div className="flex items-center justify-center h-full">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              )}
+
+              {bibleBrowserError && (
+                <div className="flex flex-col items-center justify-center h-full gap-2">
+                  <p className="text-sm font-medium text-destructive">Passage not found</p>
+                  <p className="text-xs text-muted-foreground">{bibleBrowserError}</p>
+                </div>
+              )}
+
+              {bibleBrowserResult && (
+                <div className={bibleBrowserCompareIds.length > 0 ? `grid divide-border/40` : "divide-y divide-border/40"}
+                  style={bibleBrowserCompareIds.length > 0 ? { gridTemplateColumns: `repeat(${1 + bibleBrowserCompareIds.length}, minmax(0, 1fr))` } : undefined}
+                >
+                  {/* Column headers */}
+                  {bibleBrowserCompareIds.length > 0 && (
+                    <>
+                      <div className="col-span-1 px-4 py-2 bg-muted/30 border-b border-border sticky top-0 z-10">
+                        <span className="text-[11px] font-bold text-muted-foreground">
+                          {availableTranslations.find(t => t.id === scriptureTranslation)?.label ?? scriptureTranslation.toUpperCase()}
+                        </span>
+                      </div>
+                      {bibleBrowserCompareIds.map(cid => (
+                        <div key={cid} className="col-span-1 px-4 py-2 bg-muted/30 border-b border-border sticky top-0 z-10">
+                          <span className="text-[11px] font-bold text-muted-foreground">
+                            {availableTranslations.find(t => t.id === cid)?.label ?? cid.toUpperCase()}
+                            {bibleBrowserCompareLoadingSet.has(cid) && <Loader2 className="h-3 w-3 animate-spin inline ml-1.5" />}
+                          </span>
+                        </div>
+                      ))}
+                    </>
+                  )}
+                  {/* Verse rows */}
+                  {bibleBrowserResult.verses.map((verse, vi) => {
+                    const ref = `${verse.book_name} ${verse.chapter}:${verse.verse}`;
+                    const isPrimaryLive = bibleBrowserProjectedRef === ref && bibleBrowserProjectedTranslation === scriptureTranslation;
+                    const isAnyVerseProjected = bibleBrowserProjectedRef === ref;
+                    return bibleBrowserCompareIds.length > 0 ? (
+                      <React.Fragment key={ref}>
+                        {/* Primary verse cell */}
+                        <div className={`flex items-start gap-2 px-4 py-3 group transition-colors border-b border-border/40 ${isPrimaryLive ? "bg-primary/8" : isAnyVerseProjected ? "bg-primary/3" : "hover:bg-accent/20"}`}>
+                          <span className="text-[11px] font-bold text-muted-foreground/60 w-7 shrink-0 pt-0.5 tabular-nums">{verse.verse}</span>
+                          <p className="flex-1 text-sm leading-relaxed text-foreground">{verse.text.trim()}</p>
+                          <button
+                            onClick={() => projectBibleVerse(verse, ref, scriptureTranslation)}
+                            className={`shrink-0 h-6 px-2 rounded text-[10px] font-semibold transition-all ${
+                              isPrimaryLive ? "bg-primary text-primary-foreground" : "opacity-0 group-hover:opacity-100 bg-primary/15 text-primary hover:bg-primary hover:text-primary-foreground"
+                            }`}
+                          >
+                            {isPrimaryLive ? "Live" : "Project"}
+                          </button>
+                        </div>
+                        {/* Compare verse cells */}
+                        {bibleBrowserCompareIds.map(cid => {
+                          const compareVerse = bibleBrowserCompareResults[cid]?.verses[vi];
+                          const isLoading = bibleBrowserCompareLoadingSet.has(cid);
+                          const isCompareLive = bibleBrowserProjectedRef === ref && bibleBrowserProjectedTranslation === cid;
+                          return (
+                            <div key={cid} className={`flex items-start gap-2 px-4 py-3 group transition-colors border-b border-border/40 ${isCompareLive ? "bg-primary/8" : isAnyVerseProjected ? "bg-primary/3" : "hover:bg-accent/10"}`}>
+                              <span className="text-[11px] font-bold text-muted-foreground/40 w-7 shrink-0 pt-0.5 tabular-nums">{verse.verse}</span>
+                              <p className="flex-1 text-sm leading-relaxed text-foreground/80 italic">
+                                {compareVerse ? compareVerse.text.trim() : (isLoading ? "…" : "—")}
+                              </p>
+                              {compareVerse && (
+                                <button
+                                  onClick={() => projectBibleVerse(compareVerse, ref, cid)}
+                                  className={`shrink-0 h-6 px-2 rounded text-[10px] font-semibold transition-all ${
+                                    isCompareLive ? "bg-primary text-primary-foreground" : "opacity-0 group-hover:opacity-100 bg-primary/15 text-primary hover:bg-primary hover:text-primary-foreground"
+                                  }`}
+                                >
+                                  {isCompareLive ? "Live" : "Project"}
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </React.Fragment>
+                    ) : (
+                      <div
+                        key={ref}
+                        className={`flex items-start gap-3 px-4 py-3 group transition-colors ${isPrimaryLive ? "bg-primary/8" : "hover:bg-accent/30"}`}
+                      >
+                        <span className="text-[11px] font-bold text-muted-foreground/60 w-10 shrink-0 pt-0.5 tabular-nums">{verse.verse}</span>
+                        <p className="flex-1 text-sm leading-relaxed text-foreground">{verse.text.trim()}</p>
+                        <button
+                          onClick={() => projectBibleVerse(verse, ref, scriptureTranslation)}
+                          className={`shrink-0 h-7 px-2.5 rounded-lg text-[11px] font-semibold transition-all ${
+                            isPrimaryLive
+                              ? "bg-primary text-primary-foreground"
+                              : "opacity-0 group-hover:opacity-100 bg-primary/15 text-primary hover:bg-primary hover:text-primary-foreground"
+                          }`}
+                        >
+                          {isPrimaryLive ? "Live" : "Project"}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            {bibleBrowserResult && (
+              <div className="shrink-0 border-t border-border px-4 py-2.5 flex items-center justify-between gap-3 bg-card">
+                <span className="text-xs text-muted-foreground truncate">
+                  {bibleBrowserResult.reference} · {bibleBrowserResult.translation_name}
+                </span>
+                <button
+                  onClick={async () => {
+                    await handleScriptureByRef(bibleBrowserQuery, scriptureTranslation);
+                  }}
+                  className="h-7 px-3 rounded-lg bg-accent border border-border text-xs font-semibold text-foreground hover:bg-accent/80 transition-colors shrink-0 flex items-center gap-1.5"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Add to Lineup
+                </button>
+              </div>
+            )}
           </div>
         ) : currentSong?.itemType === "media" && /\.(mp4|webm|mov)$/i.test(currentSong.mediaPath ?? "") ? (
           /* ── Video media ── */
@@ -2984,7 +3430,7 @@ export default function PresenterDashboard({
 
         {/* ── Zone 2: Quick Actions — context-sensitive ── */}
         <div className="px-3 pb-3 border-b border-border shrink-0">
-          {(currentSong?.itemType === "song" || currentSong?.itemType === "scripture" || currentSong?.itemType === "announcement" || !currentSong) ? (
+          {(currentSong?.itemType === "song" || currentSong?.itemType === "scripture" || currentSong?.itemType === "announcement" || currentSong?.itemType === "bible" || !currentSong) ? (
             <div className="grid grid-cols-3 gap-1.5">
               <button
                 onClick={clearText}
@@ -3125,7 +3571,7 @@ export default function PresenterDashboard({
         })()}
 
         {/* ── Contextual Zone: scripture display controls ── */}
-        {currentSong?.itemType === "scripture" && (
+        {(currentSong?.itemType === "scripture" || currentSong?.itemType === "bible") && (
           <div className="px-3 py-3 border-b border-border shrink-0 flex flex-col gap-3">
             <h3 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Scripture Display</h3>
 
@@ -3211,7 +3657,7 @@ export default function PresenterDashboard({
                   : "bg-primary/15 border border-primary/30 text-primary hover:bg-primary/25"
               }`}
             >
-              {countdownRunning ? <><Square className="h-3.5 w-3.5 fill-current" /> Stop</> : <><Play className="h-3.5 w-3.5 fill-current" /> Start</>}
+              {countdownRunning ? <><Square className="h-3.5 w-3.5 fill-current" /> Hide</> : <><Play className="h-3.5 w-3.5 fill-current" /> Show</>}
             </button>
           </div>
         )}
@@ -3374,7 +3820,7 @@ export default function PresenterDashboard({
         <div className="flex-1" />
 
         {/* Next Slide button — only for slide-based items */}
-        {(currentSong?.itemType === "song" || currentSong?.itemType === "scripture" || !currentSong) && (
+        {(currentSong?.itemType === "song" || currentSong?.itemType === "scripture") && (
           <div className="p-3 shrink-0">
             <button
               onClick={goNextSlide}
@@ -3463,18 +3909,20 @@ export default function PresenterDashboard({
             <div className="flex-1 flex items-center min-h-0 mb-1">
               <div className="h-full aspect-video max-w-full relative rounded overflow-hidden border border-border bg-black">
                 {/* Background layer */}
-                {!isBlank && !isLogo && liveBg && liveSlide?.sectionType !== "blank" && (
-                  liveBg.startsWith("color:") ? (
-                    <div className="absolute inset-0" style={{ background: liveBg.replace("color:", "") }} />
-                  ) : /\.(mp4|webm|mov)$/i.test(liveBg) ? (
-                    <video src={`${toFileUrl(liveBg)}`} className="absolute inset-0 w-full h-full object-cover" muted preload="none" />
+                {!isBlank && !isLogo && (liveSlide?.sectionType !== "blank" || liveBibleVerse) && (() => {
+                  const outputBg = liveBibleVerse ? (liveBibleVerse.bg ?? liveBg) : liveBg;
+                  if (!outputBg) return null;
+                  return outputBg.startsWith("color:") ? (
+                    <div className="absolute inset-0" style={{ background: outputBg.replace("color:", "") }} />
+                  ) : /\.(mp4|webm|mov)$/i.test(outputBg) ? (
+                    <video src={`${toFileUrl(outputBg)}`} className="absolute inset-0 w-full h-full object-cover" muted preload="none" />
                   ) : (
                     <>
-                      <img src={`${toFileUrl(liveBg)}`} className="absolute inset-0 w-full h-full object-cover" alt="" />
+                      <img src={`${toFileUrl(outputBg)}`} className="absolute inset-0 w-full h-full object-cover" alt="" />
                       <div className="absolute inset-0" style={{ background: `rgba(0,0,0,${liveTheme.overlayOpacity / 100})` }} />
                     </>
-                  )
-                )}
+                  );
+                })()}
                 {/* Content / state overlay */}
                 {isLogo ? (
                   <div className="absolute inset-0 bg-gradient-to-br from-zinc-900 to-black flex flex-col items-center justify-center gap-1">
@@ -3545,7 +3993,27 @@ export default function PresenterDashboard({
                     </p>
                   </div>
                   )
-                ) : (
+                ) : liveBibleVerse ? (() => {
+                    const refPos = scriptureRefPosition ?? 'bottom-right'
+                    const refEl = refPos !== 'hidden' ? (
+                      <p className={`text-[7px] font-semibold shrink-0 truncate px-2 pb-1.5 ${refPos === 'bottom-center' ? 'text-center' : refPos === 'top' ? 'text-left' : 'text-right'}`}
+                        style={{ color: "rgba(255,255,255,0.55)" }}>
+                        {liveBibleVerse.sectionLabel}
+                      </p>
+                    ) : null
+                    return (
+                      <div className="absolute inset-0 flex flex-col">
+                        {refPos === 'top' && refEl}
+                        <div className="flex-1 flex items-center justify-center p-2 min-h-0">
+                          <p className={`text-[9px] font-medium leading-snug line-clamp-4 whitespace-pre-wrap w-full ${scriptureTextAlign === 'left' ? 'text-left' : 'text-center'}`}
+                            style={{ color: "#ffffff" }}>
+                            {liveBibleVerse.text}
+                          </p>
+                        </div>
+                        {refPos !== 'top' && refEl}
+                      </div>
+                    )
+                  })() : (
                   <div className="absolute inset-0 bg-zinc-950 flex flex-col items-center justify-center gap-1">
                     <MonitorOff className="h-3.5 w-3.5 text-muted-foreground/20" />
                     <span className="text-[8px] font-medium text-muted-foreground/25">Nothing live</span>
@@ -3697,7 +4165,27 @@ export default function PresenterDashboard({
                   {showLiveNextPanel && liveNextPanel}
                 </div>
                 )
-              ) : (
+              ) : liveBibleVerse ? (() => {
+                  const refPos = scriptureRefPosition ?? 'bottom-right'
+                  const refEl = refPos !== 'hidden' ? (
+                    <p className={`text-[7px] font-semibold shrink-0 truncate px-2 pb-1 ${refPos === 'bottom-center' ? 'text-center' : refPos === 'top' ? 'text-left' : 'text-right'}`}
+                      style={{ color: "rgba(255,255,255,0.55)" }}>
+                      {liveBibleVerse.sectionLabel}
+                    </p>
+                  ) : null
+                  return (
+                    <div className="absolute inset-0 flex flex-col">
+                      {refPos === 'top' && refEl}
+                      <div className="flex-1 flex items-center justify-center px-2 pt-1.5 min-h-0 overflow-hidden">
+                        <p className={`text-[8px] font-bold leading-snug line-clamp-4 whitespace-pre-wrap w-full ${scriptureTextAlign === 'left' ? 'text-left' : 'text-center'}`}
+                          style={{ color: "#ffffff" }}>
+                          {liveBibleVerse.text}
+                        </p>
+                      </div>
+                      {refPos !== 'top' && refEl}
+                    </div>
+                  )
+                })() : (
                 <div className="absolute inset-0 flex items-center justify-center">
                   <span className="text-[7px]" style={{ color: "rgba(255,255,255,0.18)" }}>Waiting for slides…</span>
                 </div>
@@ -3880,6 +4368,12 @@ export default function PresenterDashboard({
             await addCountdownToLineup();
             if (insertAfterSectionId !== null) await repositionAfterSection(insertAfterSectionId, prevLen);
           }}
+          onAddBibleBrowser={async () => {
+            const prevLen = useServiceStore.getState().lineup.length;
+            await addBibleBrowserToLineup();
+            if (insertAfterSectionId !== null) await repositionAfterSection(insertAfterSectionId, prevLen);
+            setSelectedSongIdx(useServiceStore.getState().lineup.length - 1);
+          }}
           onAddMedia={handleAddMedia}
           onAddAnnouncement={async (title, content) => {
             const prevLen = useServiceStore.getState().lineup.length;
@@ -3945,6 +4439,7 @@ export default function PresenterDashboard({
           onSave={handleSaveLyrics}
         />
       )}
+
     </div>
   );
 }

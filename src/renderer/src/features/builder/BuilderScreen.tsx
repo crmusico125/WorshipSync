@@ -173,6 +173,7 @@ function newCard(): AnnouncementCard {
 
 function estimateDuration(item: LineupItemWithSong, maxLinesPerSlide: number): number {
   if (item.itemType === 'section') return 0
+  if (item.itemType === 'bible') return 0
   if (item.itemType === 'countdown') return 300
   if (item.itemType === 'scripture') {
     try { return (JSON.parse(item.scriptureRef ?? '{}').verses ?? []).length * 12 } catch { return 0 }
@@ -200,7 +201,7 @@ interface Props {
 export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onReturnToPresenter }: Props) {
   const {
     selectedService, lineup, loadLineup, addSongToLineup, addCountdownToLineup,
-    addScriptureToLineup, addMediaToLineup, addAnnouncementToLineup,
+    addScriptureToLineup, addMediaToLineup, addAnnouncementToLineup, addBibleBrowserToLineup,
     removeSongFromLineup, loadServices, selectService,
     services, reorderLineup, updateStatus, updateService,
     patchLineupItemSectionOrder, patchImageScaleMode, setMediaLoop, addSectionToLineup,
@@ -913,6 +914,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
                         const isScripture = item.itemType === 'scripture'
                         const isMedia = item.itemType === 'media'
                         const isAnnouncement = item.itemType === 'announcement'
+                        const isBible = item.itemType === 'bible'
                         const colorIdx = sectionColor[i] ?? 0
 
                         if (isSection) {
@@ -965,10 +967,11 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
                             isSelected={isSelected}
                             indent={underSection[i]}
                             colorIdx={underSection[i] ? colorIdx : -1}
-                            title={isCountdown ? "Countdown Timer" : isScripture || isMedia || isAnnouncement ? item.title ?? "—" : item.song?.title ?? "—"}
+                            title={isCountdown ? "Countdown Timer" : isBible ? "Bible Browser" : isScripture || isMedia || isAnnouncement ? item.title ?? "—" : item.song?.title ?? "—"}
                             subtitle={(() => {
                               const dur = fmtDur(estimateDuration(item, defaultMaxLines))
                               const base = isCountdown ? "Countdown"
+                                : isBible ? "Bible Browser"
                                 : isScripture ? "Scripture"
                                 : isMedia ? "Media"
                                 : isAnnouncement ? "Announcement"
@@ -978,7 +981,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
                             isPast={isPast}
                             onSelect={() => setSelectedSongIdx(i)}
                             onDelete={() => {
-                              const label = isCountdown ? "Countdown Timer" : isScripture || isMedia ? item.title ?? "item" : item.song?.title ?? "item"
+                              const label = isCountdown ? "Countdown Timer" : isBible ? "Bible Browser" : isScripture || isMedia ? item.title ?? "item" : item.song?.title ?? "item"
                               if (confirm(`Remove "${label}" from lineup?`)) {
                                 removeSongFromLineup(item.id)
                                 if (selectedSongIdx >= lineup.length - 1)
@@ -1041,6 +1044,17 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
               </p>
               <p className="text-xs text-muted-foreground mt-3">
                 The countdown must be started manually in the Presenter screen to avoid accidental projection.
+              </p>
+            </div>
+          ) : currentItem?.itemType === 'bible' ? (
+            <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
+              <BookOpen className="h-12 w-12 text-muted-foreground mb-4" />
+              <h2 className="text-base font-bold mb-1">Bible Browser</h2>
+              <p className="text-sm text-muted-foreground max-w-xs">
+                A live scripture lookup station. Search any passage, compare translations, and project individual verses directly from the Presenter screen.
+              </p>
+              <p className="text-xs text-muted-foreground mt-3">
+                No content to configure here — everything happens live.
               </p>
             </div>
           ) : currentItem?.itemType === 'announcement' ? (
@@ -1748,6 +1762,11 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
           onAddAnnouncement={async (title, content) => {
             const prevLen = useServiceStore.getState().lineup.length
             await addAnnouncementToLineup({ title, content })
+            if (insertAfterSectionIdx !== null) await repositionAfterSection(insertAfterSectionIdx, prevLen)
+          }}
+          onAddBibleBrowser={async () => {
+            const prevLen = useServiceStore.getState().lineup.length
+            await addBibleBrowserToLineup()
             if (insertAfterSectionIdx !== null) await repositionAfterSection(insertAfterSectionIdx, prevLen)
           }}
           excludeIds={lineup.filter(item => item.songId != null).map(item => item.songId!)}

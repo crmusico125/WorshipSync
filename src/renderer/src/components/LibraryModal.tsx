@@ -37,6 +37,7 @@ interface Props {
   onClose: () => void
   onAdd: (songIds: number[]) => void
   onAddCountdown?: () => void
+  onAddBibleBrowser?: () => void
   onAddMedia?: (path: string) => void
   onAddAnnouncement?: (title: string, content: string) => void
   excludeIds?: number[]
@@ -81,7 +82,7 @@ function getBookSuggestions(query: string): string[] {
   return BIBLE_BOOKS.filter(b => b.toLowerCase().startsWith(query.toLowerCase())).slice(0, 6)
 }
 
-export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddMedia, onAddAnnouncement, excludeIds = [], availableTranslations, defaultTranslation, recentScriptures, onAddScriptureByRef, onTranslationChange }: Props) {
+export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddBibleBrowser, onAddMedia, onAddAnnouncement, excludeIds = [], availableTranslations, defaultTranslation, recentScriptures, onAddScriptureByRef, onTranslationChange }: Props) {
   const [tab, setTab] = useState("songs")
   const [songs, setSongs] = useState<SongRow[]>([])
   const [selectedIds, setSelectedIds] = useState<number[]>([])
@@ -495,6 +496,7 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddMedi
               ) : tab === "widgets" ? (
                 <WidgetsTab
                   onAddCountdown={() => { onAddCountdown?.(); onClose() }}
+                  onAddBibleBrowser={() => { onAddBibleBrowser?.(); onClose() }}
                   onAddAnnouncement={(title, content) => { onAddAnnouncement?.(title, content); onClose() }}
                 />
               ) : tab === "scriptures" ? (
@@ -855,8 +857,9 @@ function ScriptureTab({ translation, availableTranslations, recentScriptures, on
 
 // ── WidgetsTab ────────────────────────────────────────────────────────────────
 
-function WidgetsTab({ onAddCountdown, onAddAnnouncement }: {
+function WidgetsTab({ onAddCountdown, onAddBibleBrowser, onAddAnnouncement }: {
   onAddCountdown: () => void
+  onAddBibleBrowser: () => void
   onAddAnnouncement: (title: string, content: string) => void
 }) {
   const [annTitle,   setAnnTitle]   = useState("")
@@ -875,6 +878,20 @@ function WidgetsTab({ onAddCountdown, onAddAnnouncement }: {
         <div>
           <p className="text-sm font-medium">Countdown Timer</p>
           <p className="text-xs text-muted-foreground mt-0.5">Count down to service start time</p>
+        </div>
+      </button>
+
+      {/* Bible Browser */}
+      <button
+        onClick={onAddBibleBrowser}
+        className="flex items-center gap-4 p-4 rounded-xl border border-border bg-card hover:bg-accent hover:border-primary/30 transition-colors text-left group"
+      >
+        <div className="h-10 w-10 rounded-lg bg-blue-500/10 flex items-center justify-center group-hover:bg-blue-500/20 transition-colors shrink-0">
+          <BookOpen className="h-5 w-5 text-blue-500" />
+        </div>
+        <div>
+          <p className="text-sm font-medium">Bible Browser</p>
+          <p className="text-xs text-muted-foreground mt-0.5">Search, compare translations, and project scripture live</p>
         </div>
       </button>
 

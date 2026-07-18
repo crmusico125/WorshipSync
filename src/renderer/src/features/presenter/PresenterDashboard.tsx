@@ -3393,7 +3393,7 @@ export default function PresenterDashboard({
 
             {/* Slide grid */}
             <div ref={slideGridRef} className="flex-1 overflow-y-auto p-3">
-              <div className="grid gap-x-3 gap-y-4" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(160px, 190px))" }}>
+              <div className="grid gap-x-3 gap-y-4" style={{ gridTemplateColumns: "repeat(auto-fill, 206px)" }}>
                 {currentSong.slides.map((slide, i) => {
                   const isActive = activeSlideIdx === i;
                   const isNextSlide = activeSlideIdx >= 0 && i === activeSlideIdx + 1;
@@ -3988,7 +3988,7 @@ export default function PresenterDashboard({
       ) : (
 
         /* ── Expanded outputs bar ── */
-        <div className="shrink-0 border-t border-border bg-card flex flex-col" style={{ height: 180 }}>
+        <div className="shrink-0 border-t border-border bg-card flex flex-col" style={{ height: 200 }}>
 
           {/* Header strip */}
           <div className="flex items-center justify-between px-3 shrink-0" style={{ height: 20 }}>

@@ -428,9 +428,9 @@ export default function PresenterDashboard({
   });
   const splitPctRef = useRef(splitPct);
   const centerPanelRef = useRef<HTMLDivElement>(null);
-  const [bibleBrowserRecentOpen, setBibleBrowserRecentOpen] = useState(true);
   const bibleBrowserInputRef = useRef<HTMLInputElement | null>(null);
   const verseListRef = useRef<HTMLDivElement | null>(null);
+  const liveBibleVerseDataRef = useRef<{ verse: BibleApiVerse; reference: string; translationId?: string } | null>(null);
   const [bibleSuggestions, setBibleSuggestions] = useState<string[]>([]);
   const [bibleSuggestionIdx, setBibleSuggestionIdx] = useState(-1);
 
@@ -475,6 +475,7 @@ export default function PresenterDashboard({
     const translationLabel = translationId
       ? (availableTranslations.find(t => t.id === translationId)?.label ?? translationId.toUpperCase())
       : null;
+    liveBibleVerseDataRef.current = { verse, reference, translationId };
     setBibleBrowserProjectedRef(reference);
     setBibleBrowserProjectedTranslation(translationId ?? null);
     setLiveBibleVerse({ text: verse.text.trim(), sectionLabel: translationLabel ? `${reference} ${translationLabel}` : reference, bg: bg ?? undefined });
@@ -1168,13 +1169,19 @@ export default function PresenterDashboard({
   // Re-send the live scripture slide whenever scripture display settings change
   // so the projection updates immediately without needing to click the slide again.
   useEffect(() => {
+    // Bible browser verses bypass the lineup slide system — re-project using stored ref
+    if (liveBibleVerseDataRef.current) {
+      const { verse, reference, translationId } = liveBibleVerseDataRef.current
+      projectBibleVerse(verse, reference, translationId)
+      return
+    }
+    // Lineup scripture items: re-send via sendSlide
     const liveIdx  = liveItemIdxRef.current
     const slideIdx = liveSlideIdxRef.current
     if (liveIdx < 0 || slideIdx < 0) return
     const song = liveSongs[liveIdx]
-    if (song?.itemType !== 'scripture') return
-    sendSlide(liveIdx, slideIdx)
-  }, [scriptureFontSize, scriptureTextAlign, scriptureRefPosition, liveSongs, sendSlide])
+    if (song?.itemType === 'scripture') sendSlide(liveIdx, slideIdx)
+  }, [scriptureFontSize, scriptureTextAlign, scriptureRefPosition, liveSongs, sendSlide, projectBibleVerse])
 
   const jumpToItem = useCallback((idx: number) => {
     const item = liveSongs[idx];
@@ -2400,15 +2407,16 @@ export default function PresenterDashboard({
           </div>
         ) : currentSong?.itemType === "bible" ? (
           /* ── Bible Browser ── */
-          <div className="flex-1 flex flex-col overflow-hidden">
-            {/* Search bar */}
-            <div className="shrink-0 border-b border-border bg-card px-4 py-3">
+          <div className="flex-1 flex flex-col overflow-hidden m-2 rounded-xl bg-card ring-1 ring-white/[0.06]">
+
+            {/* ─ Search + Recent chips + Compare ─ */}
+            <div className="shrink-0 border-b border-border px-4 pt-3.5 pb-3">
               <form
                 className="flex items-center gap-2"
                 onSubmit={e => { e.preventDefault(); bibleBrowserSearch(bibleBrowserQuery, scriptureTranslation, bibleBrowserCompareIds); }}
               >
                 <div className="relative flex-1 min-w-0">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none z-10" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/40 pointer-events-none z-10" />
                   <input
                     ref={bibleBrowserInputRef}
                     value={bibleBrowserQuery}
@@ -2443,8 +2451,8 @@ export default function PresenterDashboard({
                       }
                     }}
                     onBlur={() => setTimeout(() => { setBibleSuggestions([]); setBibleSuggestionIdx(-1); }, 150)}
-                    placeholder="John 3:16, Romans 8:28-39…"
-                    className="w-full pl-8 pr-7 py-1.5 text-sm bg-input border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary"
+                    placeholder="John 3:16 · Romans 8:28–39 · Psalm 23"
+                    className="w-full h-9 pl-9 pr-8 text-sm bg-input border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-colors"
                   />
                   {bibleBrowserQuery && (
                     <button
@@ -2457,7 +2465,7 @@ export default function PresenterDashboard({
                         setBibleSuggestionIdx(-1);
                         bibleBrowserInputRef.current?.focus();
                       }}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 flex items-center justify-center rounded-full bg-muted-foreground/20 hover:bg-muted-foreground/40 text-muted-foreground hover:text-foreground transition-colors"
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 flex items-center justify-center rounded-full bg-muted-foreground/20 hover:bg-muted-foreground/40 transition-colors"
                       aria-label="Clear search"
                     >
                       <X className="h-2.5 w-2.5" />
@@ -2495,26 +2503,55 @@ export default function PresenterDashboard({
                     window.worshipsync.appState.set({ lastBibleTranslation: e.target.value }).catch(() => {});
                     if (bibleBrowserResult) bibleBrowserSearch(bibleBrowserQuery, e.target.value, bibleBrowserCompareIds);
                   }}
-                  className="h-8 px-2 text-xs bg-input border border-border rounded-lg focus:outline-none focus:ring-1 focus:ring-primary shrink-0"
+                  className="h-9 px-2.5 text-sm font-medium bg-input border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 shrink-0"
                 >
                   {renderTranslationOptions(availableTranslations)}
                 </select>
                 <button
                   type="submit"
                   disabled={bibleBrowserLoading || !bibleBrowserQuery.trim()}
-                  className="h-8 px-3 rounded-lg bg-primary text-primary-foreground text-xs font-semibold disabled:opacity-40 shrink-0 flex items-center gap-1.5"
+                  className="h-9 px-4 rounded-lg bg-primary text-primary-foreground text-sm font-semibold disabled:opacity-40 shrink-0 flex items-center gap-1.5 transition-opacity"
                 >
                   {bibleBrowserLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Search"}
                 </button>
               </form>
-              {/* Compare translations */}
-              <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-                <span className="text-[10px] text-muted-foreground font-medium shrink-0">Compare:</span>
+
+              {/* Recent passages as horizontal scrollable chips */}
+              {recentScriptures.length > 0 && (
+                <div className="flex items-center gap-1.5 mt-2.5 overflow-x-auto">
+                  <span className="text-[11px] font-semibold text-muted-foreground/50 shrink-0">Recent</span>
+                  {recentScriptures.slice(0, 8).map(r => {
+                    const isActive = bibleBrowserQuery === r.query && scriptureTranslation === r.translationId && !!bibleBrowserResult;
+                    return (
+                      <button
+                        key={r.query + r.translationId}
+                        onClick={() => {
+                          setBibleBrowserQuery(r.query);
+                          setScriptureTranslation(r.translationId);
+                          bibleBrowserSearch(r.query, r.translationId, bibleBrowserCompareIds);
+                        }}
+                        title={`${r.reference} · ${r.translationLabel}`}
+                        className={`shrink-0 h-6 px-2.5 rounded-full text-xs font-medium border transition-colors whitespace-nowrap capitalize ${
+                          isActive
+                            ? 'bg-primary/15 text-primary border-primary/30'
+                            : 'bg-muted/60 text-muted-foreground border-border/50 hover:text-foreground hover:bg-accent/40'
+                        }`}
+                      >
+                        {r.reference}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Compare row */}
+              <div className="flex items-center gap-2 mt-2.5 flex-wrap">
+                <span className="text-[11px] font-semibold text-muted-foreground/60 shrink-0">Compare</span>
                 {bibleBrowserCompareIds.map(cid => {
                   const label = availableTranslations.find(t => t.id === cid)?.label ?? cid.toUpperCase();
                   const isLoading = bibleBrowserCompareLoadingSet.has(cid);
                   return (
-                    <span key={cid} className="inline-flex items-center gap-1 h-6 px-2 rounded-full bg-primary/10 text-primary text-[11px] font-semibold">
+                    <span key={cid} className="inline-flex items-center gap-1.5 h-6 px-2.5 rounded-full bg-primary/10 text-primary text-xs font-semibold">
                       {label}
                       {isLoading && <Loader2 className="h-3 w-3 animate-spin" />}
                       <button
@@ -2523,7 +2560,7 @@ export default function PresenterDashboard({
                           setBibleBrowserCompareResults(prev => { const n = { ...prev }; delete n[cid]; return n; });
                           setBibleBrowserCompareLoadingSet(prev => { const s = new Set(prev); s.delete(cid); return s; });
                         }}
-                        className="ml-0.5 leading-none opacity-60 hover:opacity-100 text-xs"
+                        className="ml-0.5 leading-none opacity-50 hover:opacity-100 text-sm"
                       >×</button>
                     </span>
                   );
@@ -2544,7 +2581,7 @@ export default function PresenterDashboard({
                           .finally(() => setBibleBrowserCompareLoadingSet(prev => { const s = new Set(prev); s.delete(cid); return s; }));
                       }
                     }}
-                    className="h-6 px-1.5 text-[11px] bg-input border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary"
+                    className="h-6 px-2 text-xs bg-input border border-border rounded-md text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                   >
                     <option value="">+ Add translation</option>
                     {renderTranslationOptions(availableTranslations, t => t.id !== scriptureTranslation && !bibleBrowserCompareIds.includes(t.id))}
@@ -2553,255 +2590,258 @@ export default function PresenterDashboard({
               </div>
             </div>
 
-            {/* Body row: verse list + recent sidebar */}
-            <div className="flex-1 flex min-h-0 overflow-hidden">
-
-            {/* ── Verse list (left) ── */}
-            <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-            <div ref={verseListRef} className="flex-1 overflow-y-auto">
-              {!bibleBrowserResult && !bibleBrowserLoading && !bibleBrowserError && (
-                <div className="flex flex-col items-center justify-center h-full gap-2 text-muted-foreground px-8">
-                  <BookOpen className="h-12 w-12 opacity-15 mb-1" />
-                  <p className="text-sm font-medium">Search for a passage above</p>
-                  <p className="text-xs text-center opacity-60">Type a reference like "John 3:16" or "Romans 8:28-39" and press Search</p>
-                </div>
-              )}
-
-              {bibleBrowserLoading && (
-                <div className="flex items-center justify-center h-full">
-                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                </div>
-              )}
-
-              {bibleBrowserError && (
-                <div className="flex flex-col items-center justify-center h-full gap-2">
-                  <p className="text-sm font-medium text-destructive">Passage not found</p>
-                  <p className="text-xs text-muted-foreground">{bibleBrowserError}</p>
-                </div>
-              )}
-
-              {bibleBrowserResult && (
-                <div className={bibleBrowserCompareIds.length > 0 ? `grid divide-border/40` : "divide-y divide-border/40"}
-                  style={bibleBrowserCompareIds.length > 0 ? { gridTemplateColumns: `repeat(${1 + bibleBrowserCompareIds.length}, minmax(0, 1fr))` } : undefined}
-                >
-                  {/* Column headers */}
-                  {bibleBrowserCompareIds.length > 0 && (
-                    <>
-                      <div className="col-span-1 px-4 py-2 bg-card border-b border-border sticky top-0 z-10">
-                        <span className="text-[11px] font-bold text-muted-foreground">
-                          {availableTranslations.find(t => t.id === scriptureTranslation)?.label ?? scriptureTranslation.toUpperCase()}
-                        </span>
-                      </div>
-                      {bibleBrowserCompareIds.map(cid => (
-                        <div key={cid} className="col-span-1 px-4 py-2 bg-card border-b border-border sticky top-0 z-10">
-                          <span className="text-[11px] font-bold text-muted-foreground">
-                            {availableTranslations.find(t => t.id === cid)?.label ?? cid.toUpperCase()}
-                            {bibleBrowserCompareLoadingSet.has(cid) && <Loader2 className="h-3 w-3 animate-spin inline ml-1.5" />}
-                          </span>
-                        </div>
-                      ))}
-                    </>
-                  )}
-                  {/* Verse rows */}
-                  {bibleBrowserResult.verses.map((verse, vi) => {
-                    const ref = `${verse.book_name} ${verse.chapter}:${verse.verse}`;
-                    const isPrimaryLive = bibleBrowserProjectedRef === ref && bibleBrowserProjectedTranslation === scriptureTranslation;
-                    const isAnyVerseProjected = bibleBrowserProjectedRef === ref;
-                    return bibleBrowserCompareIds.length > 0 ? (
-                      <React.Fragment key={ref}>
-                        {/* Primary verse cell */}
-                        <div data-verse-ref={ref} className={`flex items-start gap-2 px-4 py-3 group transition-colors border-b border-border/40 ${isPrimaryLive ? "bg-primary/8" : isAnyVerseProjected ? "bg-primary/3" : "hover:bg-accent/20"}`}>
-                          <span className="text-[11px] font-bold text-muted-foreground/60 w-7 shrink-0 pt-0.5 tabular-nums">{verse.verse}</span>
-                          <p className="flex-1 text-sm leading-relaxed text-foreground">{verse.text.trim()}</p>
-                          <button
-                            onClick={() => projectBibleVerse(verse, ref, scriptureTranslation)}
-                            className={`shrink-0 h-6 px-2 rounded text-[10px] font-semibold transition-all ${
-                              isPrimaryLive ? "bg-primary text-primary-foreground" : "opacity-0 group-hover:opacity-100 bg-primary/15 text-primary hover:bg-primary hover:text-primary-foreground"
-                            }`}
-                          >
-                            {isPrimaryLive ? "Live" : "Project"}
-                          </button>
-                        </div>
-                        {/* Compare verse cells */}
-                        {bibleBrowserCompareIds.map(cid => {
-                          const compareVerse = bibleBrowserCompareResults[cid]?.verses[vi];
-                          const isLoading = bibleBrowserCompareLoadingSet.has(cid);
-                          const isCompareLive = bibleBrowserProjectedRef === ref && bibleBrowserProjectedTranslation === cid;
-                          return (
-                            <div key={cid} className={`flex items-start gap-2 px-4 py-3 group transition-colors border-b border-border/40 ${isCompareLive ? "bg-primary/8" : isAnyVerseProjected ? "bg-primary/3" : "hover:bg-accent/10"}`}>
-                              <span className="text-[11px] font-bold text-muted-foreground/40 w-7 shrink-0 pt-0.5 tabular-nums">{verse.verse}</span>
-                              <p className="flex-1 text-sm leading-relaxed text-foreground/80 italic">
-                                {compareVerse ? compareVerse.text.trim() : (isLoading ? "…" : "—")}
-                              </p>
-                              {compareVerse && (
-                                <button
-                                  onClick={() => projectBibleVerse(compareVerse, ref, cid)}
-                                  className={`shrink-0 h-6 px-2 rounded text-[10px] font-semibold transition-all ${
-                                    isCompareLive ? "bg-primary text-primary-foreground" : "opacity-0 group-hover:opacity-100 bg-primary/15 text-primary hover:bg-primary hover:text-primary-foreground"
-                                  }`}
-                                >
-                                  {isCompareLive ? "Live" : "Project"}
-                                </button>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </React.Fragment>
-                    ) : (
-                      <div
-                        key={ref}
-                        data-verse-ref={ref}
-                        className={`flex items-start gap-3 px-4 py-3 group transition-colors ${isPrimaryLive ? "bg-primary/8" : "hover:bg-accent/30"}`}
-                      >
-                        <span className="text-[11px] font-bold text-muted-foreground/60 w-10 shrink-0 pt-0.5 tabular-nums">{verse.verse}</span>
-                        <p className="flex-1 text-sm leading-relaxed text-foreground">{verse.text.trim()}</p>
-                        <button
-                          onClick={() => projectBibleVerse(verse, ref, scriptureTranslation)}
-                          className={`shrink-0 h-7 px-2.5 rounded-lg text-[11px] font-semibold transition-all ${
-                            isPrimaryLive
-                              ? "bg-primary text-primary-foreground"
-                              : "opacity-0 group-hover:opacity-100 bg-primary/15 text-primary hover:bg-primary hover:text-primary-foreground"
-                          }`}
-                        >
-                          {isPrimaryLive ? "Live" : "Project"}
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Verse navigation bar — shown when a verse from this passage is live */}
-            {(() => {
-              if (!bibleBrowserResult || !bibleBrowserProjectedRef) return null;
-              const verses = bibleBrowserResult.verses;
-              const liveIdx = verses.findIndex(v => `${v.book_name} ${v.chapter}:${v.verse}` === bibleBrowserProjectedRef);
-              if (liveIdx === -1) return null;
-              const navigate = (delta: -1 | 1) => {
-                const nextIdx = liveIdx + delta;
-                if (nextIdx < 0 || nextIdx >= verses.length) return;
-                const primary = verses[nextIdx];
-                const ref = `${primary.book_name} ${primary.chapter}:${primary.verse}`;
-                const tid = bibleBrowserProjectedTranslation;
-                const compareVerse = tid && tid !== scriptureTranslation ? bibleBrowserCompareResults[tid]?.verses[nextIdx] : undefined;
-                const verse = compareVerse ?? (tid === scriptureTranslation ? primary : primary);
-                projectBibleVerse(verse, ref, tid ?? scriptureTranslation);
-              };
-              const prevVerse = liveIdx > 0 ? verses[liveIdx - 1] : null;
-              const nextVerse = liveIdx < verses.length - 1 ? verses[liveIdx + 1] : null;
-              return (
-                <div className="shrink-0 border-t border-border bg-muted/20 px-2 py-1.5 flex items-center gap-1.5">
-                  <button
-                    onClick={() => navigate(-1)}
-                    disabled={!prevVerse}
-                    className="flex-1 flex items-center gap-1.5 px-2.5 py-1.5 rounded-md hover:bg-accent disabled:opacity-25 transition-colors text-left min-w-0"
-                  >
-                    <ChevronLeft className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <div className="flex flex-col min-w-0">
-                      <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide leading-none mb-0.5">Prev verse</span>
-                      {prevVerse && (
-                        <span className="text-[11px] font-semibold text-foreground tabular-nums leading-tight">
-                          {prevVerse.book_name} {prevVerse.chapter}:{prevVerse.verse}
-                        </span>
-                      )}
-                    </div>
-                  </button>
-                  <div className="flex flex-col items-center justify-center px-2 shrink-0">
-                    <span className="text-[11px] font-semibold text-foreground tabular-nums">
-                      {verses[liveIdx].book_name} {verses[liveIdx].chapter}:{verses[liveIdx].verse}
-                    </span>
-                    <span className="text-[10px] text-muted-foreground tabular-nums">{liveIdx + 1} / {verses.length}</span>
-                  </div>
-                  <button
-                    onClick={() => navigate(1)}
-                    disabled={!nextVerse}
-                    className="flex-1 flex items-center gap-1.5 px-2.5 py-1.5 rounded-md hover:bg-accent disabled:opacity-25 transition-colors justify-end min-w-0"
-                  >
-                    <div className="flex flex-col items-end min-w-0">
-                      <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide leading-none mb-0.5">Next verse</span>
-                      {nextVerse && (
-                        <span className="text-[11px] font-semibold text-foreground tabular-nums leading-tight">
-                          {nextVerse.book_name} {nextVerse.chapter}:{nextVerse.verse}
-                        </span>
-                      )}
-                    </div>
-                    <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  </button>
-                </div>
-              );
-            })()}
-
-            {/* Footer: Add to Lineup */}
+            {/* ─ Passage header + Add to Lineup ─ */}
             {bibleBrowserResult && (
-              <div className="shrink-0 border-t border-border px-4 py-2.5 flex items-center justify-between gap-3 bg-card">
-                <span className="text-xs text-muted-foreground truncate">
-                  {bibleBrowserResult.reference} · {bibleBrowserResult.translation_name}
-                </span>
+              <div className="shrink-0 px-4 py-2.5 border-b border-border flex items-center justify-between gap-4 bg-card">
+                <div className="min-w-0 flex items-baseline gap-2">
+                  <span className="text-sm font-semibold text-foreground truncate">{bibleBrowserResult.reference}</span>
+                  <span className="text-xs text-muted-foreground shrink-0">
+                    {availableTranslations.find(t => t.id === scriptureTranslation)?.label ?? scriptureTranslation.toUpperCase()}
+                    <span className="mx-1.5 opacity-40">·</span>
+                    {bibleBrowserResult.verses.length}v
+                  </span>
+                </div>
                 <button
-                  onClick={async () => {
-                    await handleScriptureByRef(bibleBrowserQuery, scriptureTranslation);
-                  }}
-                  className="h-7 px-3 rounded-lg bg-accent border border-border text-xs font-semibold text-foreground hover:bg-accent/80 transition-colors shrink-0 flex items-center gap-1.5"
+                  onClick={async () => { await handleScriptureByRef(bibleBrowserQuery, scriptureTranslation); }}
+                  className="shrink-0 h-7 px-3 rounded-lg bg-primary/10 border border-primary/20 text-primary text-xs font-semibold hover:bg-primary hover:text-primary-foreground transition-colors flex items-center gap-1.5"
                 >
                   <Plus className="h-3.5 w-3.5" /> Add to Lineup
                 </button>
               </div>
             )}
-            </div>{/* end verse list */}
 
-            {/* ── Recent sidebar (right) ── */}
-            {recentScriptures.length > 0 && (
+            {/* ─ Verse list (full width, no sidebar) ─ */}
+            <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
               <div
-                className="shrink-0 border-l border-border flex flex-col bg-card overflow-hidden transition-all duration-200"
-                style={{ width: bibleBrowserRecentOpen ? 176 : 28 }}
+                ref={verseListRef}
+                className="flex-1 overflow-y-auto"
+                onKeyDown={e => {
+                  if (!bibleBrowserResult || bibleBrowserCompareIds.length > 0) return;
+                  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+                  e.preventDefault();
+                  const verses = bibleBrowserResult.verses;
+                  const liveIdx = bibleBrowserProjectedRef
+                    ? verses.findIndex(v => `${v.book_name} ${v.chapter}:${v.verse}` === bibleBrowserProjectedRef)
+                    : -1;
+                  const nextIdx = e.key === 'ArrowDown'
+                    ? Math.min(liveIdx < 0 ? 0 : liveIdx + 1, verses.length - 1)
+                    : Math.max(liveIdx - 1, 0);
+                  if (nextIdx >= 0 && nextIdx < verses.length) {
+                    const v = verses[nextIdx];
+                    const r = `${v.book_name} ${v.chapter}:${v.verse}`;
+                    projectBibleVerse(v, r, scriptureTranslation);
+                    verseListRef.current?.querySelector<HTMLElement>(`[data-verse-ref="${CSS.escape(r)}"]`)?.focus();
+                  }
+                }}
               >
-                {/* Toggle button */}
-                <button
-                  onClick={() => setBibleBrowserRecentOpen(o => !o)}
-                  title={bibleBrowserRecentOpen ? "Collapse recent" : "Show recent passages"}
-                  className="shrink-0 flex items-center justify-center gap-1.5 border-b border-border text-muted-foreground hover:text-foreground hover:bg-accent/40 transition-colors"
-                  style={{ height: 28 }}
-                >
-                  {bibleBrowserRecentOpen ? (
-                    <>
-                      <span className="text-[9px] font-black uppercase tracking-wider truncate">Recent</span>
-                      <ChevronRight className="h-3 w-3 shrink-0" />
-                    </>
-                  ) : (
-                    <ChevronLeft className="h-3 w-3" />
-                  )}
-                </button>
+                {/* Empty state */}
+                {!bibleBrowserResult && !bibleBrowserLoading && !bibleBrowserError && (
+                  <div className="flex flex-col items-center justify-center h-full gap-3 text-muted-foreground px-8 py-12">
+                    <BookOpen className="h-9 w-9 opacity-10" />
+                    <div className="text-center space-y-1">
+                      <p className="text-sm font-medium">Search for a passage</p>
+                      <p className="text-xs opacity-50 leading-relaxed max-w-[200px]">Type a reference like "John 3:16" or "Romans 8:28–39"</p>
+                    </div>
+                  </div>
+                )}
 
-                {/* Passage list */}
-                {bibleBrowserRecentOpen && (
-                  <div className="flex-1 overflow-y-auto flex flex-col py-1">
-                    {recentScriptures.slice(0, 8).map((r) => {
-                      const isActive = bibleBrowserQuery === r.query && scriptureTranslation === r.translationId && !!bibleBrowserResult;
-                      return (
-                        <button
-                          key={r.query + r.translationId}
-                          onClick={() => {
-                            setBibleBrowserQuery(r.query);
-                            setScriptureTranslation(r.translationId);
-                            bibleBrowserSearch(r.query, r.translationId, bibleBrowserCompareIds);
-                          }}
-                          title={`${r.reference} (${r.translationLabel})`}
-                          className={`flex flex-col items-start px-2.5 py-1.5 text-left transition-colors hover:bg-accent/40 ${isActive ? "bg-primary/8" : ""}`}
-                        >
-                          <span className={`text-[11px] font-semibold leading-tight truncate w-full ${isActive ? "text-primary" : "text-foreground"}`}>
-                            {r.reference}
+                {/* Loading */}
+                {bibleBrowserLoading && (
+                  <div className="flex items-center justify-center h-full">
+                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground/30" />
+                  </div>
+                )}
+
+                {/* Error */}
+                {bibleBrowserError && (
+                  <div className="flex flex-col items-center justify-center h-full gap-2 px-8">
+                    <p className="text-sm font-medium text-destructive">Passage not found</p>
+                    <p className="text-xs text-muted-foreground text-center">{bibleBrowserError}</p>
+                  </div>
+                )}
+
+                {/* Results */}
+                {bibleBrowserResult && (
+                  <div
+                    className={bibleBrowserCompareIds.length > 0 ? 'grid divide-x divide-border/30' : ''}
+                    style={bibleBrowserCompareIds.length > 0
+                      ? { gridTemplateColumns: `repeat(${1 + bibleBrowserCompareIds.length}, minmax(0, 1fr))` }
+                      : undefined}
+                  >
+                    {/* Compare column headers */}
+                    {bibleBrowserCompareIds.length > 0 && (
+                      <>
+                        <div className="sticky top-0 z-10 px-3 py-3 bg-card border-b border-border/40">
+                          <span className="text-sm font-semibold text-foreground/80">
+                            {availableTranslations.find(t => t.id === scriptureTranslation)?.label ?? scriptureTranslation.toUpperCase()}
                           </span>
-                          <span className="text-[9px] text-muted-foreground">{r.translationLabel}</span>
-                        </button>
+                        </div>
+                        {bibleBrowserCompareIds.map(cid => (
+                          <div key={cid} className="sticky top-0 z-10 px-3 py-3 bg-card border-b border-border/40">
+                            <span className="text-sm font-semibold text-foreground/80">
+                              {availableTranslations.find(t => t.id === cid)?.label ?? cid.toUpperCase()}
+                              {bibleBrowserCompareLoadingSet.has(cid) && <Loader2 className="h-3 w-3 animate-spin inline ml-1.5" />}
+                            </span>
+                          </div>
+                        ))}
+                      </>
+                    )}
+
+                    {/* Verse rows */}
+                    {bibleBrowserResult.verses.map((verse, vi) => {
+                      const ref = `${verse.book_name} ${verse.chapter}:${verse.verse}`;
+                      const isPrimaryLive = bibleBrowserProjectedRef === ref && bibleBrowserProjectedTranslation === scriptureTranslation;
+                      const isAnyVerseProjected = bibleBrowserProjectedRef === ref;
+
+                      return bibleBrowserCompareIds.length > 0 ? (
+                        <React.Fragment key={ref}>
+                          {/* Primary verse cell */}
+                          <div
+                            data-verse-ref={ref}
+                            tabIndex={-1}
+                            style={isPrimaryLive ? { boxShadow: 'inset 3px 0 0 hsl(var(--primary))' } : undefined}
+                            className={`group flex items-start gap-2.5 px-3 py-3.5 border-b border-border/20 transition-colors ${
+                              isPrimaryLive ? 'bg-primary/8' : isAnyVerseProjected ? 'bg-primary/3' : 'hover:bg-accent/10'
+                            }`}
+                          >
+                            <span className="text-xs font-medium text-muted-foreground/50 tabular-nums w-5 text-right shrink-0 mt-[2px] select-none">{verse.verse}</span>
+                            <p className="flex-1 text-[13px] leading-relaxed text-foreground">{verse.text.trim()}</p>
+                            {isPrimaryLive ? (
+                              <span className="shrink-0 self-start flex items-center gap-1 mt-[2px] px-1.5 py-0.5 rounded-full bg-red-500/10 border border-red-500/30 text-[9px] font-bold text-red-400 leading-none">
+                                <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse shrink-0" />
+                                LIVE
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => projectBibleVerse(verse, ref, scriptureTranslation)}
+                                className="shrink-0 self-start opacity-0 group-hover:opacity-100 h-6 px-2 rounded text-[11px] font-semibold bg-primary text-primary-foreground transition-opacity focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                              >
+                                ▶
+                              </button>
+                            )}
+                          </div>
+                          {/* Compare verse cells */}
+                          {bibleBrowserCompareIds.map(cid => {
+                            const compareVerse = bibleBrowserCompareResults[cid]?.verses[vi];
+                            const isLoading = bibleBrowserCompareLoadingSet.has(cid);
+                            const isCompareLive = bibleBrowserProjectedRef === ref && bibleBrowserProjectedTranslation === cid;
+                            return (
+                              <div
+                                key={cid}
+                                style={isCompareLive ? { boxShadow: 'inset 3px 0 0 hsl(var(--primary))' } : undefined}
+                                className={`group flex items-start gap-2.5 px-3 py-3.5 border-b border-border/20 transition-colors ${
+                                  isCompareLive ? 'bg-primary/8' : isAnyVerseProjected ? 'bg-primary/3' : 'hover:bg-accent/10'
+                                }`}
+                              >
+                                <span className="text-xs font-medium text-muted-foreground/45 tabular-nums w-5 text-right shrink-0 mt-[2px] select-none">{verse.verse}</span>
+                                <p className="flex-1 text-[13px] leading-relaxed text-foreground/70 italic">
+                                  {compareVerse ? compareVerse.text.trim() : (isLoading ? '…' : '—')}
+                                </p>
+                                {isCompareLive ? (
+                                  <span className="shrink-0 self-start flex items-center gap-1 mt-[2px] px-1.5 py-0.5 rounded-full bg-red-500/10 border border-red-500/30 text-[9px] font-bold text-red-400 leading-none">
+                                    <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse shrink-0" />
+                                    LIVE
+                                  </span>
+                                ) : compareVerse ? (
+                                  <button
+                                    onClick={() => projectBibleVerse(compareVerse, ref, cid)}
+                                    className="shrink-0 self-start opacity-0 group-hover:opacity-100 h-6 px-2 rounded text-[11px] font-semibold bg-primary text-primary-foreground transition-opacity focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                                  >
+                                    ▶
+                                  </button>
+                                ) : null}
+                              </div>
+                            );
+                          })}
+                        </React.Fragment>
+                      ) : (
+                        <div
+                          key={ref}
+                          data-verse-ref={ref}
+                          tabIndex={-1}
+                          style={isPrimaryLive ? { boxShadow: 'inset 3px 0 0 hsl(var(--primary))' } : undefined}
+                          className={`group flex items-start gap-3 px-4 py-4 border-b border-border/15 last:border-0 transition-all ${
+                            isPrimaryLive ? 'bg-primary/10' : 'hover:bg-accent/15'
+                          }`}
+                        >
+                          <span className="text-xs font-medium text-muted-foreground/50 tabular-nums w-5 text-right shrink-0 mt-[2px] select-none">{verse.verse}</span>
+                          <p className="flex-1 text-sm leading-relaxed text-foreground">{verse.text.trim()}</p>
+                          {isPrimaryLive ? (
+                            <span className="shrink-0 self-start flex items-center gap-1 mt-0.5 px-2 py-1 rounded-full bg-red-500/10 border border-red-500/30 text-[10px] font-bold text-red-400 leading-none">
+                              <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse shrink-0" />
+                              LIVE
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => projectBibleVerse(verse, ref, scriptureTranslation)}
+                              className="shrink-0 self-start opacity-0 group-hover:opacity-100 h-7 px-3 mt-0.5 rounded-md text-xs font-semibold bg-primary text-primary-foreground transition-opacity focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                            >
+                              ▶ Project
+                            </button>
+                          )}
+                        </div>
                       );
                     })}
                   </div>
                 )}
               </div>
-            )}
 
-            </div>{/* end body row */}
+              {/* ─ Verse navigation bar (purely navigational) ─ */}
+              {(() => {
+                if (!bibleBrowserResult || !bibleBrowserProjectedRef) return null;
+                const verses = bibleBrowserResult.verses;
+                const liveIdx = verses.findIndex(v => `${v.book_name} ${v.chapter}:${v.verse}` === bibleBrowserProjectedRef);
+                if (liveIdx === -1) return null;
+                const navigate = (delta: -1 | 1) => {
+                  const nextIdx = liveIdx + delta;
+                  if (nextIdx < 0 || nextIdx >= verses.length) return;
+                  const primary = verses[nextIdx];
+                  const ref = `${primary.book_name} ${primary.chapter}:${primary.verse}`;
+                  const tid = bibleBrowserProjectedTranslation;
+                  const compareVerse = tid && tid !== scriptureTranslation ? bibleBrowserCompareResults[tid]?.verses[nextIdx] : undefined;
+                  const verse = compareVerse ?? primary;
+                  projectBibleVerse(verse, ref, tid ?? scriptureTranslation);
+                };
+                const prevVerse = liveIdx > 0 ? verses[liveIdx - 1] : null;
+                const nextVerse = liveIdx < verses.length - 1 ? verses[liveIdx + 1] : null;
+                return (
+                  <div className="shrink-0 border-t border-border bg-card/60 px-2 py-2 flex items-stretch gap-1">
+                    <button
+                      onClick={() => navigate(-1)}
+                      disabled={!prevVerse}
+                      className="flex-1 flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-accent disabled:opacity-25 transition-colors text-left min-w-0"
+                    >
+                      <ChevronLeft className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-[10px] font-semibold text-muted-foreground/60 tracking-wider leading-none mb-1">Prev Verse</span>
+                        <span className="text-sm font-semibold text-foreground tabular-nums truncate leading-tight capitalize">
+                          {prevVerse ? `${prevVerse.book_name} ${prevVerse.chapter}:${prevVerse.verse}` : '—'}
+                        </span>
+                      </div>
+                    </button>
+                    <div className="shrink-0 flex flex-col items-center justify-center px-2">
+                      <span className="text-sm font-bold text-foreground tabular-nums">
+                        {verses[liveIdx].chapter}:{verses[liveIdx].verse}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground/50 tabular-nums">{liveIdx + 1} / {verses.length}</span>
+                    </div>
+                    <button
+                      onClick={() => navigate(1)}
+                      disabled={!nextVerse}
+                      className="flex-1 flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-accent disabled:opacity-25 transition-colors justify-end min-w-0"
+                    >
+                      <div className="flex flex-col items-end min-w-0">
+                        <span className="text-[10px] font-semibold text-muted-foreground/60 tracking-wider leading-none mb-1">Next Verse</span>
+                        <span className="text-sm font-semibold text-foreground tabular-nums truncate leading-tight capitalize">
+                          {nextVerse ? `${nextVerse.book_name} ${nextVerse.chapter}:${nextVerse.verse}` : '—'}
+                        </span>
+                      </div>
+                      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    </button>
+                  </div>
+                );
+              })()}
+            </div>
           </div>
         ) : currentSong?.itemType === "media" && /\.(mp4|webm|mov)$/i.test(currentSong.mediaPath ?? "") ? (
           /* ── Video media ── */

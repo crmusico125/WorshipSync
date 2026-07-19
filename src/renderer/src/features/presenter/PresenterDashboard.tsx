@@ -4080,7 +4080,7 @@ export default function PresenterDashboard({
                     })()}
                     <div style={{ fontSize: 5, color: "rgba(255,255,255,0.55)", marginTop: 5, textAlign: "center" }}>Please find your seats</div>
                   </div>
-                ) : liveSlide && liveSlide.sectionType !== "blank" ? (
+                ) : !liveBibleVerse && liveSlide && liveSlide.sectionType !== "blank" ? (
                   liveSong?.itemType === "scripture" ? (() => {
                     const refPos = scriptureRefPosition ?? 'bottom-right'
                     const refEl = refPos !== 'hidden' ? (
@@ -4228,7 +4228,7 @@ export default function PresenterDashboard({
                   </span>
                   <span className="text-[6px] font-semibold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.3)" }}>Until Service Starts</span>
                 </div>
-              ) : liveSlide && liveSlide.sectionType !== "blank" && liveSong?.itemType === "announcement" && liveSlide.cards?.filter(c => c.heading).length ? (
+              ) : !liveBibleVerse && liveSlide && liveSlide.sectionType !== "blank" && liveSong?.itemType === "announcement" && liveSlide.cards?.filter(c => c.heading).length ? (
                 <div className="absolute inset-0 flex flex-col justify-center gap-1 px-2 py-1.5 overflow-hidden">
                   <span className="text-[7px] font-black uppercase tracking-widest text-center" style={{ color: "#fbbf24", opacity: 0.8 }}>
                     {liveSong.title}
@@ -4248,7 +4248,7 @@ export default function PresenterDashboard({
                     <span className="text-[6px] text-center" style={{ color: 'rgba(255,255,255,0.3)' }}>+{liveSlide.cards.filter(c => c.heading).length - 3} more</span>
                   )}
                 </div>
-              ) : liveSlide && liveSlide.sectionType !== "blank" && liveSlide.lines.filter(Boolean).length > 0 ? (
+              ) : !liveBibleVerse && liveSlide && liveSlide.sectionType !== "blank" && liveSlide.lines.filter(Boolean).length > 0 ? (
                 liveSong?.itemType === "scripture" ? (() => {
                   const refPos = scriptureRefPosition ?? 'bottom-right'
                   const refEl = refPos !== 'hidden' ? (

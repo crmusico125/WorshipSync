@@ -417,6 +417,17 @@ export default function PresenterDashboard({
   const [bibleBrowserProjectedRef, setBibleBrowserProjectedRef] = useState<string | null>(null);
   const [bibleBrowserProjectedTranslation, setBibleBrowserProjectedTranslation] = useState<string | null>(null);
   const [liveBibleVerse, setLiveBibleVerse] = useState<{ text: string; sectionLabel: string; bg: string | undefined } | null>(null);
+
+  const SPLIT_DEFAULT = 40;
+  const [splitPct, setSplitPct] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem('presenter-split-pct');
+      if (saved) return Math.max(20, Math.min(75, Number(saved)));
+    } catch {}
+    return SPLIT_DEFAULT;
+  });
+  const splitPctRef = useRef(splitPct);
+  const centerPanelRef = useRef<HTMLDivElement>(null);
   const [bibleBrowserRecentOpen, setBibleBrowserRecentOpen] = useState(true);
   const bibleBrowserInputRef = useRef<HTMLInputElement | null>(null);
   const verseListRef = useRef<HTMLDivElement | null>(null);
@@ -504,6 +515,35 @@ export default function PresenterDashboard({
     setIsBlank(false);
     setIsLogo(false);
   }, [defaultThemeBg, defaultTheme, availableTranslations, scriptureFontSize, scriptureTextAlign, scriptureRefPosition, setRecentScriptures]);
+
+  const handleSplitterMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const container = centerPanelRef.current;
+    if (!container) return;
+    const onMove = (ev: MouseEvent) => {
+      const rect = container.getBoundingClientRect();
+      const pct = Math.max(20, Math.min(75, ((ev.clientY - rect.top) / rect.height) * 100));
+      splitPctRef.current = pct;
+      setSplitPct(pct);
+    };
+    const onUp = () => {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      localStorage.setItem('presenter-split-pct', String(Math.round(splitPctRef.current)));
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    document.body.style.cursor = 'row-resize';
+    document.body.style.userSelect = 'none';
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }, []);
+
+  const handleSplitterDblClick = useCallback(() => {
+    setSplitPct(SPLIT_DEFAULT);
+    splitPctRef.current = SPLIT_DEFAULT;
+    localStorage.setItem('presenter-split-pct', String(SPLIT_DEFAULT));
+  }, []);
 
   // True once appState confirms the operator has explicitly saved a font size override.
   // Used to prevent the default theme from overwriting an intentional operator choice.
@@ -3271,10 +3311,14 @@ export default function PresenterDashboard({
           })()
         ) : currentSong ? (
           /* ── Song / Scripture — hero LIVE preview layout ── */
-          <>
-            {/* LIVE Preview — full width hero */}
-            <div className="shrink-0 border-b border-border bg-card px-4 pt-3 pb-3">
-              <div className="flex items-center gap-2 mb-2">
+          <div
+            ref={centerPanelRef}
+            className="flex-1 min-h-0 overflow-hidden"
+            style={{ display: 'grid', gridTemplateRows: `${splitPct}fr 5px ${100 - splitPct}fr` }}
+          >
+            {/* LIVE Preview — fills top grid row */}
+            <div className="flex flex-col overflow-hidden border-b border-border bg-card px-4 pt-3 pb-3 min-h-0">
+              <div className="flex items-center gap-2 mb-2 shrink-0">
                 <span className="flex h-2 w-2 relative shrink-0">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-60" />
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
@@ -3283,8 +3327,8 @@ export default function PresenterDashboard({
                 <span className="flex-1" />
                 {currentSlide && <span className="text-[10px] font-medium text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded">{currentSlide.sectionLabel}</span>}
               </div>
-              <div className="flex justify-center">
-              <div className="relative overflow-hidden rounded-xl border-2 border-red-500/70 bg-black shadow-[0_0_24px_rgba(239,68,68,0.18)]" style={{ height: "clamp(140px, 28vh, 300px)", aspectRatio: "16/9", containerType: "inline-size" }}>
+              <div className="flex-1 min-h-0 flex justify-center overflow-hidden">
+              <div className="relative overflow-hidden rounded-xl border-2 border-red-500/70 bg-black shadow-[0_0_24px_rgba(239,68,68,0.18)]" style={{ height: "100%", maxWidth: "100%", aspectRatio: "16/9", containerType: "inline-size" }}>
                 {!isLogo && effectiveBg && currentSlide && !isBlank && (
                   effectiveBg.startsWith("color:") ? (
                     <div className="absolute inset-0" style={{ background: effectiveBg.replace("color:", "") }} />
@@ -3341,20 +3385,33 @@ export default function PresenterDashboard({
               </div>{/* end flex justify-center */}
               {/* Slide text readout — shows exactly what's projected */}
               {currentSlide && !isBlank && !isLogo && currentSlide.sectionType !== "blank" && (
-                <div className="mt-2 px-1 min-h-[1.6rem] flex items-center justify-center">
-                  <p className="text-center text-[11px] font-medium text-zinc-400 leading-snug line-clamp-2 whitespace-pre-wrap">
+                <div className="mt-1 px-1 min-h-[1.4rem] shrink-0 flex items-center justify-center">
+                  <p className="text-center text-[11px] font-medium text-zinc-400 leading-snug line-clamp-1 whitespace-pre-wrap">
                     {isTextCleared ? <span className="italic text-zinc-600">Text cleared</span> : currentSlide.lines.filter(Boolean).join(" · ")}
                   </p>
                 </div>
               )}
               {(isBlank || isLogo) && (
-                <div className="mt-2 px-1 min-h-[1.6rem] flex items-center justify-center">
+                <div className="mt-1 px-1 min-h-[1.4rem] shrink-0 flex items-center justify-center">
                   <p className="text-[11px] font-semibold text-amber-500/70 italic">
                     {isBlank ? "Screen is blank" : "Logo showing"}
                   </p>
                 </div>
               )}
             </div>
+
+            {/* Draggable splitter */}
+            <div
+              className="relative z-10 flex items-center justify-center cursor-row-resize bg-border hover:bg-primary/30 transition-colors select-none group"
+              onMouseDown={handleSplitterMouseDown}
+              onDoubleClick={handleSplitterDblClick}
+              title="Drag to resize · Double-click to reset"
+            >
+              <div className="w-8 h-0.5 rounded-full bg-muted-foreground/25 group-hover:bg-primary/60 transition-colors" />
+            </div>
+
+            {/* Bottom section: song header + slide grid */}
+            <div className="flex flex-col min-h-0 overflow-hidden">
 
             {/* Song header + section tabs */}
             <div className="shrink-0 px-4 py-2.5 border-b border-border bg-card flex items-center justify-between gap-3">
@@ -3483,7 +3540,8 @@ export default function PresenterDashboard({
                 })}
               </div>
             </div>
-          </>
+            </div>
+          </div>
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center gap-3 px-8 text-center">
             <div className="h-12 w-12 rounded-2xl bg-muted/60 flex items-center justify-center mb-1">

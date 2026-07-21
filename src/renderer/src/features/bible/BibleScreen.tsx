@@ -750,7 +750,8 @@ export default function BibleScreen({ projectionOpen }: Props) {
               if (e.key === "Enter") { e.preventDefault(); jumpToRef(searchQuery) }
             }}
             placeholder="Go to reference…  e.g. John 3:16, Ps 23:1, John 3:16-18"
-            className="w-full h-8 pl-8 pr-7 text-sm bg-card border border-border rounded-md focus:outline-none focus:border-primary/50 transition-colors placeholder:text-muted-foreground/40"
+            aria-label="Go to Bible reference"
+            className="w-full h-8 pl-8 pr-7 text-sm bg-card border border-border rounded-md focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/30 transition-colors placeholder:text-muted-foreground/40"
           />
           {searchQuery && (
             <button
@@ -774,7 +775,6 @@ export default function BibleScreen({ projectionOpen }: Props) {
                       setSearchHidden(true)
                       searchRef.current?.focus()
                     }}
-                    onMouseEnter={() => setSearchHighlight(i)}
                     className={`w-full flex items-center gap-2 px-3 py-2 text-sm transition-colors ${i === searchHighlight ? "bg-primary/10 text-primary" : "text-foreground hover:bg-accent"}`}
                   >
                     <BookOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -795,6 +795,8 @@ export default function BibleScreen({ projectionOpen }: Props) {
           <button
             onClick={retryTranslations}
             title={translationsError}
+            aria-label={`${translationsError}. Retry translations`}
+            role="alert"
             className="flex items-center gap-1 text-destructive hover:text-destructive/80 transition-colors shrink-0"
           >
             <RefreshCw className="h-3.5 w-3.5" />
@@ -812,6 +814,8 @@ export default function BibleScreen({ projectionOpen }: Props) {
         <button
           onClick={() => setShowHistoryPopover(p => !p)}
           title="Session history"
+          aria-label="Session history"
+          aria-expanded={showHistoryPopover}
           className={`relative shrink-0 w-8 h-8 flex items-center justify-center rounded-md transition-colors ${showHistoryPopover ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-accent"}`}
         >
           <Clock className="h-4 w-4" />
@@ -834,7 +838,7 @@ export default function BibleScreen({ projectionOpen }: Props) {
               {sessionHistory.length > 0 && (
                 <span className="text-[10px] text-muted-foreground">{sessionHistory.length} verse{sessionHistory.length !== 1 ? "s" : ""}</span>
               )}
-              <button onClick={() => setShowHistoryPopover(false)} className="ml-auto text-muted-foreground hover:text-foreground transition-colors">
+              <button onClick={() => setShowHistoryPopover(false)} aria-label="Close session history" className="ml-auto text-muted-foreground hover:text-foreground transition-colors">
                 <X className="h-3.5 w-3.5" />
               </button>
             </div>
@@ -852,7 +856,11 @@ export default function BibleScreen({ projectionOpen }: Props) {
                     <div
                       key={entry.label}
                       onClick={() => jumpToHistory(entry)}
-                      className={`group flex items-start border-b border-border/50 cursor-pointer transition-colors ${isOnScreen ? "bg-primary/8" : "hover:bg-accent/40"}`}
+                      onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); jumpToHistory(entry) } }}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`Jump to ${entry.label}`}
+                      className={`group flex items-start border-b border-border/50 cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/50 focus-visible:ring-inset ${isOnScreen ? "bg-primary/8" : "hover:bg-accent/40"}`}
                     >
                       <div className="flex-1 min-w-0 px-3 py-2.5">
                         <div className="flex items-center gap-1.5 mb-1">
@@ -870,6 +878,7 @@ export default function BibleScreen({ projectionOpen }: Props) {
                         <button
                           onClick={e => { e.stopPropagation(); reprojectHistory(entry) }}
                           title="Project again"
+                          aria-label={`Project ${entry.label} again`}
                           className="shrink-0 self-center mr-2 w-7 h-7 rounded flex items-center justify-center bg-primary text-white opacity-25 group-hover:opacity-100 hover:bg-primary/80 transition-all"
                         >
                           <Play className="h-3 w-3 fill-current" />
@@ -921,7 +930,8 @@ export default function BibleScreen({ projectionOpen }: Props) {
                   value={bookFilter}
                   onChange={e => setBookFilter(e.target.value)}
                   placeholder="Filter books…"
-                  className="w-full h-7 px-2.5 text-[13px] bg-background border border-border rounded focus:outline-none focus:border-primary/40 transition-colors placeholder:text-muted-foreground/40"
+                  aria-label="Filter books"
+                  className="w-full h-7 px-2.5 text-[13px] bg-background border border-border rounded focus:outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/30 transition-colors placeholder:text-muted-foreground/40"
                 />
               </div>
               <div className="flex-1 overflow-y-auto py-1">
@@ -976,7 +986,11 @@ export default function BibleScreen({ projectionOpen }: Props) {
                   <div
                     key={bm.label}
                     onClick={() => jumpToBookmark(bm)}
-                    className="group flex items-start border-b border-border/50 cursor-pointer hover:bg-accent/40 transition-colors"
+                    onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); jumpToBookmark(bm) } }}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Jump to saved verse ${bm.label}`}
+                    className="group flex items-start border-b border-border/50 cursor-pointer hover:bg-accent/40 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/50 focus-visible:ring-inset"
                   >
                     <div className="flex-1 min-w-0 px-3 py-2.5">
                       <div className="flex items-center gap-1.5 mb-1">
@@ -995,6 +1009,7 @@ export default function BibleScreen({ projectionOpen }: Props) {
                         setBookmarks(prev => prev.filter(b => b.label !== bm.label))
                       }}
                       title="Remove bookmark"
+                      aria-label={`Remove bookmark ${bm.label}`}
                       className="shrink-0 self-center mr-2 w-6 h-6 rounded flex items-center justify-center text-muted-foreground/30 opacity-0 group-hover:opacity-100 hover:text-destructive transition-all"
                     >
                       <X className="h-3 w-3" />
@@ -1033,7 +1048,8 @@ export default function BibleScreen({ projectionOpen }: Props) {
                   }
                 }}
                 placeholder={`Go to ch. 1–${totalChapters}`}
-                className="w-full h-7 px-2.5 text-[13px] bg-background border border-border rounded focus:outline-none focus:border-primary/40 transition-colors placeholder:text-muted-foreground/40 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                aria-label={`Go to chapter, 1 through ${totalChapters}`}
+                className="w-full h-7 px-2.5 text-[13px] bg-background border border-border rounded focus:outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/30 transition-colors placeholder:text-muted-foreground/40 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
               />
             </div>
           )}
@@ -1101,6 +1117,7 @@ export default function BibleScreen({ projectionOpen }: Props) {
                 onClick={prevChapter}
                 disabled={!activeBook || !activeChapter || activeChapter <= 1}
                 title="Previous chapter"
+                aria-label="Previous chapter"
                 className="w-7 h-7 shrink-0 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-25 disabled:cursor-not-allowed"
               >
                 <ChevronLeft className="h-4 w-4" />
@@ -1125,6 +1142,7 @@ export default function BibleScreen({ projectionOpen }: Props) {
                   onClick={nextChapter}
                   disabled={!activeBook || !activeChapter || activeChapter >= totalChapters}
                   title="Next chapter"
+                  aria-label="Next chapter"
                   className="w-7 h-7 shrink-0 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent transition-colors disabled:opacity-25 disabled:cursor-not-allowed"
                 >
                   <ChevronRight className="h-4 w-4" />
@@ -1139,7 +1157,7 @@ export default function BibleScreen({ projectionOpen }: Props) {
                 </div>
               )}
               {chapterError && (
-                <div className="flex flex-col items-center justify-center gap-3 p-8 text-center">
+                <div role="alert" className="flex flex-col items-center justify-center gap-3 p-8 text-center">
                   <p className="text-sm text-destructive">{chapterError}</p>
                   <button
                     onClick={() => activeBook && activeChapter !== null && doLoadChapter(activeBook, activeChapter)}
@@ -1179,7 +1197,19 @@ export default function BibleScreen({ projectionOpen }: Props) {
                       <div
                         key={verse.verse}
                         onClick={() => selectVerse(idx)}
-                        className={`group flex gap-2.5 px-2.5 py-2.5 rounded-md cursor-pointer transition-colors border min-h-[44px] items-start select-none mb-0.5 ${
+                        onKeyDown={e => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            selectVerse(idx)
+                            if (projectionOpen) projectVerseRef.current(chapterVerses[idx])
+                          }
+                        }}
+                        role="button"
+                        tabIndex={0}
+                        aria-pressed={isPrimary}
+                        aria-label={`Verse ${verse.verse}${isOnScreen ? " (live)" : ""}: ${verse.text}`}
+                        className={`group flex gap-2.5 px-2.5 py-2.5 rounded-md cursor-pointer transition-colors border min-h-[44px] items-start select-none mb-0.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary/50 ${
                           isOnScreen
                             ? "bg-green-500/8 border-green-500/25"
                             : isPrimary && highlightedVerseNums.size > 0
@@ -1201,6 +1231,7 @@ export default function BibleScreen({ projectionOpen }: Props) {
                         <button
                           onClick={e => { e.stopPropagation(); toggleBookmark(verse) }}
                           title={bookmarked ? "Remove bookmark" : "Save verse"}
+                          aria-label={bookmarked ? `Remove bookmark for verse ${verse.verse}` : `Save verse ${verse.verse}`}
                           className={`shrink-0 self-start mt-1 w-5 h-5 flex items-center justify-center rounded transition-all ${
                             bookmarked
                               ? "text-yellow-400 opacity-100"
@@ -1243,6 +1274,7 @@ export default function BibleScreen({ projectionOpen }: Props) {
                 <button
                   onClick={() => setShowPreviewModal(true)}
                   title="Expand preview"
+                  aria-label="Expand slide preview"
                   disabled={!selectedVerse}
                   className="text-muted-foreground/40 hover:text-foreground disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
                 >

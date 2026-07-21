@@ -3373,7 +3373,7 @@ export default function PresenterDashboard({
                   effectiveBg.startsWith("color:") ? (
                     <div className="absolute inset-0" style={{ background: effectiveBg.replace("color:", "") }} />
                   ) : /\.(mp4|webm|mov)$/i.test(effectiveBg) ? (
-                    <video src={`${toFileUrl(effectiveBg)}`} className="absolute inset-0 w-full h-full object-cover" muted preload="metadata" />
+                    <video src={`${toFileUrl(effectiveBg)}`} className="absolute inset-0 w-full h-full object-cover" muted preload="none" />
                   ) : (
                     <>
                       <img src={`${toFileUrl(effectiveBg)}`} className="absolute inset-0 w-full h-full object-cover" alt="" />
@@ -3516,7 +3516,7 @@ export default function PresenterDashboard({
                             bg.startsWith("color:") ? (
                               <div className="absolute inset-0" style={{ background: bg.replace("color:", "") }} />
                             ) : /\.(mp4|webm|mov)$/i.test(bg) ? (
-                              <video src={`${toFileUrl(bg)}`} className="absolute inset-0 w-full h-full object-cover" muted preload="metadata" />
+                              <video src={`${toFileUrl(bg)}`} className="absolute inset-0 w-full h-full object-cover" muted preload="none" />
                             ) : (
                               <>
                                 <img src={`${toFileUrl(bg)}`} className="absolute inset-0 w-full h-full object-cover" alt="" />

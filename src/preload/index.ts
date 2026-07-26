@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('worshipsync', {
     logo: (show: boolean) => ipcRenderer.send('slide:logo', show),
     countdown: (data: { targetTime: string; running: boolean; firstUp?: { title: string; artist?: string; sectionLabel: string } }) => ipcRenderer.send('slide:countdown', data),
     videoControl: (action: 'play' | 'pause' | 'stop') => ipcRenderer.send('slide:videoControl', action),
+    requestVideoPlayGesture: () => ipcRenderer.send('slide:requestVideoPlayGesture'),
     videoSeek: (time: number) => ipcRenderer.send('slide:videoSeek', time),
     videoLoop: (loop: boolean) => ipcRenderer.send('slide:videoLoop', loop),
     stageNext: (data: { nextLines: string[]; nextSectionLabel: string; nextItemType?: string }) => ipcRenderer.send('slide:stageNext', data),
@@ -46,9 +47,9 @@ contextBridge.exposeInMainWorld('worshipsync', {
       ipcRenderer.on('slide:videoLoop', (_e, loop) => cb(loop))
       return () => ipcRenderer.removeAllListeners('slide:videoLoop')
     },
-    reportVideoProgress: (data: { currentTime: number; duration: number; isPlaying: boolean; lineupItemId?: number }) =>
+    reportVideoProgress: (data: { currentTime: number; duration: number; isPlaying: boolean; ended?: boolean; lineupItemId?: number }) =>
       ipcRenderer.send('slide:videoProgress', data),
-    onVideoProgress: (cb: (data: { currentTime: number; duration: number; isPlaying: boolean; lineupItemId?: number }) => void) => {
+    onVideoProgress: (cb: (data: { currentTime: number; duration: number; isPlaying: boolean; ended?: boolean; lineupItemId?: number }) => void) => {
       ipcRenderer.on('slide:videoProgress', (_e, data) => cb(data))
       return () => ipcRenderer.removeAllListeners('slide:videoProgress')
     },
@@ -143,6 +144,17 @@ contextBridge.exposeInMainWorld('worshipsync', {
                           ipcRenderer.invoke('lineup:setItemStyle', lineupItemId, style),
     setImageScaleMode: (lineupItemId: number, mode: 'cover' | 'contain' | 'stretch') =>
                           ipcRenderer.invoke('lineup:setImageScaleMode', lineupItemId, mode),
+    addMediaCollection: (serviceDateId: number, data: { title: string; items: string[] }) =>
+                          ipcRenderer.invoke('lineup:addMediaCollection', serviceDateId, data),
+    setMediaCollectionConfig: (lineupItemId: number, patch: { items?: string[]; autoAdvance?: boolean; intervalSeconds?: number; loop?: boolean }) =>
+                          ipcRenderer.invoke('lineup:setMediaCollectionConfig', lineupItemId, patch),
+    addMusicPlayer:      (serviceDateId: number) => ipcRenderer.invoke('lineup:addMusicPlayer', serviceDateId),
+    setMusicPlayerDir:   (lineupItemId: number, dirPath: string | null) =>
+                          ipcRenderer.invoke('lineup:setMusicPlayerDir', lineupItemId, dirPath),
+  },
+  music: {
+    pickDirectory:  ()                       => ipcRenderer.invoke('music:pickDirectory'),
+    scanDirectory:  (dirPath: string)        => ipcRenderer.invoke('music:scanDirectory', dirPath),
   },
   themes: {
     getAll:     ()                    => ipcRenderer.invoke('themes:getAll'),

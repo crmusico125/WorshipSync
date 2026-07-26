@@ -186,6 +186,74 @@ export function registerLineupHandlers(): void {
     return true
   })
 
+  ipcMain.handle('lineup:addMediaCollection', (_e, serviceDateId: number, data: {
+    title: string
+    items: string[]
+  }) => {
+    const existing = db.select().from(lineupItems)
+      .where(eq(lineupItems.serviceDateId, serviceDateId))
+      .all()
+    const mediaCollection = JSON.stringify({
+      items: data.items,
+      autoAdvance: false,
+      intervalSeconds: 5,
+      loop: false,
+    })
+    const [item] = db.insert(lineupItems).values({
+      serviceDateId,
+      orderIndex: existing.length,
+      itemType: 'media_collection',
+      selectedSections: '[]',
+      title: data.title,
+      mediaCollection,
+    }).returning().all()
+    return item
+  })
+
+  ipcMain.handle('lineup:setMediaCollectionConfig', (_e, lineupItemId: number, patch: {
+    items?: string[]
+    autoAdvance?: boolean
+    intervalSeconds?: number
+    loop?: boolean
+  }) => {
+    const item = db.select().from(lineupItems).where(eq(lineupItems.id, lineupItemId)).get()
+    if (!item) return null
+    let current: { items: string[]; autoAdvance: boolean; intervalSeconds: number; loop: boolean }
+    try {
+      current = { items: [], autoAdvance: false, intervalSeconds: 5, loop: false, ...JSON.parse(item.mediaCollection || '{}') }
+    } catch {
+      current = { items: [], autoAdvance: false, intervalSeconds: 5, loop: false }
+    }
+    const merged = { ...current, ...patch }
+    db.update(lineupItems)
+      .set({ mediaCollection: JSON.stringify(merged) })
+      .where(eq(lineupItems.id, lineupItemId))
+      .run()
+    return merged
+  })
+
+  ipcMain.handle('lineup:addMusicPlayer', (_e, serviceDateId: number) => {
+    const existing = db.select().from(lineupItems)
+      .where(eq(lineupItems.serviceDateId, serviceDateId))
+      .all()
+    const [item] = db.insert(lineupItems).values({
+      serviceDateId,
+      orderIndex: existing.length,
+      itemType: 'music_player',
+      title: 'Music Player',
+      selectedSections: '[]',
+    }).returning().all()
+    return item
+  })
+
+  ipcMain.handle('lineup:setMusicPlayerDir', (_e, lineupItemId: number, dirPath: string | null) => {
+    db.update(lineupItems)
+      .set({ musicPlayerDir: dirPath })
+      .where(eq(lineupItems.id, lineupItemId))
+      .run()
+    return true
+  })
+
   ipcMain.handle('lineup:removeSong', (_e, lineupItemId: number) => {
     db.delete(lineupItems).where(eq(lineupItems.id, lineupItemId)).run()
     return true

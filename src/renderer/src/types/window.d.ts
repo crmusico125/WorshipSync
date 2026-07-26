@@ -14,7 +14,7 @@ interface LineupItemWithSong {
   id: number
   serviceDateId: number
   songId: number | null
-  itemType: 'song' | 'countdown' | 'scripture' | 'media' | 'announcement' | 'note' | 'section' | 'bible'
+  itemType: 'song' | 'countdown' | 'scripture' | 'media' | 'media_collection' | 'announcement' | 'note' | 'section' | 'bible' | 'music_player'
   orderIndex: number
   selectedSections: string
   overrideThemeId: number | null
@@ -26,6 +26,8 @@ interface LineupItemWithSong {
   sectionOrder: string | null
   itemStyle: string | null
   imageScaleMode: 'cover' | 'contain' | 'stretch' | null
+  mediaCollection: string | null
+  musicPlayerDir: string | null
   song: SongWithSections | null
 }
 interface Theme {
@@ -71,6 +73,7 @@ declare global {
         logo: (show: boolean) => void
         countdown: (data: { targetTime: string; running: boolean; firstUp?: { title: string; artist?: string; sectionLabel: string } }) => void
         videoControl: (action: 'play' | 'pause' | 'stop') => void
+        requestVideoPlayGesture: () => void
         videoSeek: (time: number) => void
         videoLoop: (loop: boolean) => void
         stageNext: (data: { nextLines: string[]; nextSectionLabel: string; nextItemType?: string }) => void
@@ -83,8 +86,8 @@ declare global {
         onVideoControl: (cb: (action: 'play' | 'pause' | 'stop') => void) => () => void
         onVideoSeek: (cb: (time: number) => void) => () => void
         onVideoLoop: (cb: (loop: boolean) => void) => () => void
-        reportVideoProgress: (data: { currentTime: number; duration: number; isPlaying: boolean; lineupItemId?: number }) => void
-        onVideoProgress: (cb: (data: { currentTime: number; duration: number; isPlaying: boolean; lineupItemId?: number }) => void) => () => void
+        reportVideoProgress: (data: { currentTime: number; duration: number; isPlaying: boolean; ended?: boolean; lineupItemId?: number }) => void
+        onVideoProgress: (cb: (data: { currentTime: number; duration: number; isPlaying: boolean; ended?: boolean; lineupItemId?: number }) => void) => () => void
         onAudioState: (cb: (state: { isPlaying: boolean; currentTime: number; duration: number; lineupItemId: number } | null) => void) => () => void
         onVideoState: (cb: (state: { isPlaying: boolean; currentTime: number; duration: number; lineupItemId: number } | null) => void) => () => void
       }
@@ -143,6 +146,14 @@ declare global {
         updateScripture:    (lineupItemId: number, data: { title?: string; scriptureRef?: string }) => Promise<boolean>
         setItemStyle:       (lineupItemId: number, style: string) => Promise<boolean>
         setImageScaleMode:  (lineupItemId: number, mode: 'cover' | 'contain' | 'stretch') => Promise<boolean>
+        addMediaCollection: (serviceDateId: number, data: { title: string; items: string[] }) => Promise<unknown>
+        setMediaCollectionConfig: (lineupItemId: number, patch: { items?: string[]; autoAdvance?: boolean; intervalSeconds?: number; loop?: boolean }) => Promise<unknown>
+        addMusicPlayer:     (serviceDateId: number) => Promise<unknown>
+        setMusicPlayerDir:  (lineupItemId: number, dirPath: string | null) => Promise<boolean>
+      }
+      music: {
+        pickDirectory: () => Promise<string | null>
+        scanDirectory: (dirPath: string) => Promise<{ path: string; filename: string }[]>
       }
       themes: {
         getAll:     () => Promise<Theme[]>

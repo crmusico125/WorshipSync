@@ -4,7 +4,7 @@ import {
   Radio, Eye, Music2, Calendar, Image as ImageIcon,
   Monitor, Timer, GripVertical, X, Megaphone,
   Play, Pause, SkipBack, SkipForward, Repeat, ListTodo, Layers, Check,
-  Search, Loader2, ChevronDown,
+  Search, Loader2, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, Folder, Shuffle,
 } from "lucide-react"
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors,
@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { useServiceStore, type LineupItem as LineupItemWithSong } from "../../store/useServiceStore"
+import { parseMediaCollection, type MediaCollectionConfig } from "../../lib/mediaCollection"
 import { useSongStore } from "../../store/useSongStore"
 import LibraryModal from "../../components/LibraryModal"
 import AddSongModal from "../../components/AddSongModal"
@@ -26,7 +27,7 @@ import EditLyricsModal from "../../components/EditLyricsModal"
 import BackgroundPickerPanel from "../../components/BackgroundPickerPanel"
 import { parseBibleGatewayText } from "../../lib/parseBibleGateway"
 import { fetchBiblePassage, bibleResultToScriptureRef, FREE_TRANSLATIONS, fetchApiBibleTranslations, type BibleTranslation } from "../../lib/bibleApi"
-import { fmtDur, toFileUrl } from "../../lib/utils"
+import { fmtDur, toFileUrl, basenameOf } from "../../lib/utils"
 import {
   TemplateManagerModal, getSectionColor,
   type SetlistTemplate, type SetlistTemplateItem,
@@ -179,6 +180,10 @@ function estimateDuration(item: LineupItemWithSong, maxLinesPerSlide: number): n
     try { return (JSON.parse(item.scriptureRef ?? '{}').verses ?? []).length * 12 } catch { return 0 }
   }
   if (item.itemType === 'media') return 0
+  if (item.itemType === 'media_collection') {
+    const cfg = parseMediaCollection(item.mediaCollection)
+    return cfg.autoAdvance ? cfg.items.length * cfg.intervalSeconds : 0
+  }
   if (!item.song) return 0
   const sc = buildSlides(item.song.sections, maxLinesPerSlide).length
   return sc * 15
@@ -201,7 +206,8 @@ interface Props {
 export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onReturnToPresenter }: Props) {
   const {
     selectedService, lineup, loadLineup, addSongToLineup, addCountdownToLineup,
-    addScriptureToLineup, addMediaToLineup, addAnnouncementToLineup, addBibleBrowserToLineup,
+    addScriptureToLineup, addMediaToLineup, addMediaCollectionToLineup,
+    addAnnouncementToLineup, addBibleBrowserToLineup, addMusicPlayerToLineup, setMusicPlayerDir,
     removeSongFromLineup, loadServices, selectService,
     services, reorderLineup, updateStatus, updateService,
     patchLineupItemSectionOrder, patchImageScaleMode, setMediaLoop, addSectionToLineup,
@@ -280,6 +286,17 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
   const previewAudioCtxRef = useRef<AudioContext | null>(null)
   const previewAnalyserRef = useRef<AnalyserNode | null>(null)
   const previewVizFrameRef = useRef<number | null>(null)
+  // Which sub-item of a media_collection is shown in the center preview —
+  // clicking a file in the sidebar tree updates this.
+  const [collectionPreviewIndex, setCollectionPreviewIndex] = useState(0)
+  const suppressCollectionPreviewResetRef = useRef(false)
+  // Music player — scanned folder contents + which file is loaded (reuses the
+  // previewAudio* state/refs above, since only one preview plays at a time)
+  const [scannedSongs, setScannedSongs] = useState<{ path: string; filename: string }[]>([])
+  const scannedSongsRef = useRef<{ path: string; filename: string }[]>([])
+  useEffect(() => { scannedSongsRef.current = scannedSongs }, [scannedSongs])
+  const [scanningDir, setScanningDir] = useState(false)
+  const [musicPlayerCurrentPath, setMusicPlayerCurrentPath] = useState<string | null>(null)
 
   // Theme data
   const [defaultTheme, setDefaultTheme] = useState<any>(null)
@@ -414,6 +431,26 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
       setAnnCards(parseAnnouncementCards(currentItem.scriptureRef))
     }
   }, [currentItem?.id])
+
+  // Reset the collection preview pointer whenever the selected lineup item changes —
+  // unless a sidebar sub-item click just explicitly picked one (see suppressCollectionPreviewResetRef).
+  useEffect(() => {
+    if (suppressCollectionPreviewResetRef.current) { suppressCollectionPreviewResetRef.current = false; return }
+    setCollectionPreviewIndex(0)
+  }, [currentItem?.id])
+
+  // Scan the music player's folder whenever it's selected or the folder changes
+  useEffect(() => {
+    if (currentItem?.itemType !== 'music_player') return
+    const dir = currentItem.musicPlayerDir
+    setMusicPlayerCurrentPath(null)
+    if (!dir) { setScannedSongs([]); return }
+    setScanningDir(true)
+    window.worshipsync.music.scanDirectory(dir)
+      .then(setScannedSongs)
+      .catch(() => setScannedSongs([]))
+      .finally(() => setScanningDir(false))
+  }, [currentItem?.id, currentItem?.itemType, currentItem?.musicPlayerDir])
 
   const songStyleOverrides: Partial<ThemeStyle> = useMemo(() => {
     if (!currentSong?.styleOverrides) return {}
@@ -564,6 +601,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
   // lineup index. After any add completes (items append to end), we immediately
   // reorder them to sit just after the last item in the target section.
   const [insertAfterSectionIdx, setInsertAfterSectionIdx] = useState<number | null>(null)
+  const [expandedCollectionIds, setExpandedCollectionIds] = useState<Set<number>>(new Set())
 
   const repositionAfterSection = async (sectionIdx: number, prevLen: number) => {
     const fresh = useServiceStore.getState().lineup
@@ -598,6 +636,14 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
     const isAudio = /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(path)
     const label = isVideo ? "Video" : isAudio ? "Audio" : "Image"
     await addMediaToLineup({ title: `${label}: ${filename}`, mediaPath: path })
+    if (insertAfterSectionIdx !== null) {
+      await repositionAfterSection(insertAfterSectionIdx, prevLen)
+    }
+  }
+
+  const handleAddMediaCollection = async (paths: string[]) => {
+    const prevLen = useServiceStore.getState().lineup.length
+    await addMediaCollectionToLineup({ title: `Collection (${paths.length} items)`, items: paths })
     if (insertAfterSectionIdx !== null) {
       await repositionAfterSection(insertAfterSectionIdx, prevLen)
     }
@@ -913,8 +959,10 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
                         const isCountdown = item.itemType === 'countdown'
                         const isScripture = item.itemType === 'scripture'
                         const isMedia = item.itemType === 'media'
+                        const isMediaCollection = item.itemType === 'media_collection'
                         const isAnnouncement = item.itemType === 'announcement'
                         const isBible = item.itemType === 'bible'
+                        const isMusicPlayer = item.itemType === 'music_player'
                         const colorIdx = sectionColor[i] ?? 0
 
                         if (isSection) {
@@ -967,13 +1015,15 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
                             isSelected={isSelected}
                             indent={underSection[i]}
                             colorIdx={underSection[i] ? colorIdx : -1}
-                            title={isCountdown ? "Countdown Timer" : isBible ? "Bible Browser" : isScripture || isMedia || isAnnouncement ? item.title ?? "—" : item.song?.title ?? "—"}
+                            title={isCountdown ? "Countdown Timer" : isBible ? "Bible Browser" : isMusicPlayer ? "Music Player" : isScripture || isMedia || isMediaCollection || isAnnouncement ? item.title ?? "—" : item.song?.title ?? "—"}
                             subtitle={(() => {
                               const dur = fmtDur(estimateDuration(item, defaultMaxLines))
                               const base = isCountdown ? "Countdown"
                                 : isBible ? "Bible Browser"
                                 : isScripture ? "Scripture"
                                 : isMedia ? "Media"
+                                : isMediaCollection ? "Collection"
+                                : isMusicPlayer ? (item.musicPlayerDir ? basenameOf(item.musicPlayerDir) : "No folder set")
                                 : isAnnouncement ? "Announcement"
                                 : `${item.song?.artist || "Unknown"}${item.song?.key ? ` · ${item.song.key}` : ""}`
                               return dur ? `${base} · ${dur}` : base
@@ -981,14 +1031,53 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
                             isPast={isPast}
                             onSelect={() => setSelectedSongIdx(i)}
                             onDelete={() => {
-                              const label = isCountdown ? "Countdown Timer" : isBible ? "Bible Browser" : isScripture || isMedia ? item.title ?? "item" : item.song?.title ?? "item"
+                              const label = isCountdown ? "Countdown Timer" : isBible ? "Bible Browser" : isMusicPlayer ? "Music Player" : isScripture || isMedia || isMediaCollection ? item.title ?? "item" : item.song?.title ?? "item"
                               if (confirm(`Remove "${label}" from lineup?`)) {
                                 removeSongFromLineup(item.id)
                                 if (selectedSongIdx >= lineup.length - 1)
                                   setSelectedSongIdx(Math.max(0, lineup.length - 2))
                               }
                             }}
-                          />
+                            expandable={isMediaCollection}
+                            isExpanded={expandedCollectionIds.has(item.id)}
+                            onToggleExpand={() => setExpandedCollectionIds(prev => {
+                              const next = new Set(prev)
+                              next.has(item.id) ? next.delete(item.id) : next.add(item.id)
+                              return next
+                            })}
+                          >
+                            {isMediaCollection && (() => {
+                              const cfg = parseMediaCollection(item.mediaCollection)
+                              return (
+                                <div className="pb-1">
+                                  {cfg.items.map((p, mi) => {
+                                    const filename = p.split("/").pop() ?? p
+                                    const vid = /\.(mp4|webm|mov)$/i.test(p)
+                                    const isPreviewed = isSelected && collectionPreviewIndex === mi
+                                    return (
+                                      <div
+                                        key={`${item.id}-${mi}`}
+                                        role="button"
+                                        tabIndex={0}
+                                        onClick={() => { suppressCollectionPreviewResetRef.current = true; setSelectedSongIdx(i); setCollectionPreviewIndex(mi) }}
+                                        onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); suppressCollectionPreviewResetRef.current = true; setSelectedSongIdx(i); setCollectionPreviewIndex(mi) } }}
+                                        className={`flex items-center gap-1.5 pl-9 pr-3 py-1 text-[11px] cursor-pointer transition-colors ${
+                                          isPreviewed ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-accent/40 hover:text-foreground"
+                                        }`}
+                                      >
+                                        <span className="text-[9px] text-muted-foreground/50 tabular-nums w-4 text-right shrink-0">{mi + 1}</span>
+                                        {vid ? <Play className="h-2.5 w-2.5 shrink-0" /> : <ImageIcon className="h-2.5 w-2.5 shrink-0" />}
+                                        <span className="flex-1 min-w-0 truncate" title={filename}>{filename}</span>
+                                      </div>
+                                    )
+                                  })}
+                                  {cfg.items.length === 0 && (
+                                    <p className="pl-9 pr-3 py-1.5 text-[10px] text-muted-foreground/40">No items in this collection.</p>
+                                  )}
+                                </div>
+                              )
+                            })()}
+                          </SortableLineupItem>
                         )
                       })}
                     </SortableContext>
@@ -1393,6 +1482,297 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
                 </>
               )
             })()
+          ) : currentItem?.itemType === 'media_collection' ? (
+            /* ── Media Collection preview — click a file in the sidebar tree to focus it here.
+                 Reuses the same video/image preview machinery as a standalone media item. ── */
+            (() => {
+              const cfg = parseMediaCollection(currentItem.mediaCollection)
+              const items = cfg.items
+              const idx = Math.min(collectionPreviewIndex, Math.max(0, items.length - 1))
+              const path = items[idx] ?? null
+              const isVideo = !!path && /\.(mp4|webm|mov)$/i.test(path)
+              const filename = path ? (path.split('/').pop() ?? path) : ''
+              const ext = filename.split('.').pop()?.toUpperCase() ?? ''
+              const fmt = (s: number) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(Math.floor(s % 60)).padStart(2, '0')}`
+              const goTo = (i: number) => setCollectionPreviewIndex(Math.max(0, Math.min(items.length - 1, i)))
+
+              const navHeader = () => (
+                <div className="px-5 py-3 border-b border-border bg-card flex items-center justify-between gap-4 shrink-0">
+                  <div className="min-w-0 flex items-center gap-2">
+                    <button onClick={() => goTo(idx - 1)} disabled={idx === 0} title="Previous item" className="shrink-0 text-muted-foreground hover:text-foreground disabled:opacity-25 disabled:cursor-not-allowed transition-colors">
+                      <ChevronLeft className="h-4 w-4" />
+                    </button>
+                    <div className="min-w-0">
+                      <h1 className="text-base font-semibold truncate">{filename || 'Collection'}</h1>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
+                        <span>{isVideo ? 'Video' : 'Image'}</span><span>·</span><span>{ext}</span>
+                        <span>·</span><span className="tabular-nums">{idx + 1} / {items.length}</span>
+                      </div>
+                    </div>
+                    <button onClick={() => goTo(idx + 1)} disabled={idx === items.length - 1} title="Next item" className="shrink-0 text-muted-foreground hover:text-foreground disabled:opacity-25 disabled:cursor-not-allowed transition-colors">
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              )
+
+              if (items.length === 0) {
+                return (
+                  <>
+                    {navHeader()}
+                    <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
+                      <Layers className="h-12 w-12 text-muted-foreground/30 mb-4" />
+                      <p className="text-sm text-muted-foreground">No items in this collection yet — use "Add" in the settings panel.</p>
+                    </div>
+                  </>
+                )
+              }
+
+              if (isVideo && path) {
+                const pct = previewVideoDuration ? (previewVideoTime / previewVideoDuration) * 100 : 0
+                const handlePlay = () => {
+                  const v = previewVideoRef.current; if (!v) return
+                  v.play(); setPreviewVideoPlaying(true)
+                  if (previewVideoTimerRef.current) clearInterval(previewVideoTimerRef.current)
+                  previewVideoTimerRef.current = setInterval(() => setPreviewVideoTime(previewVideoRef.current?.currentTime ?? 0), 100)
+                }
+                const handlePause = () => { previewVideoRef.current?.pause(); setPreviewVideoPlaying(false); if (previewVideoTimerRef.current) { clearInterval(previewVideoTimerRef.current); previewVideoTimerRef.current = null } }
+                const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => { if (!previewVideoDuration || !previewVideoRef.current) return; const r = e.currentTarget.getBoundingClientRect(); previewVideoRef.current.currentTime = Math.max(0, Math.min(previewVideoDuration, ((e.clientX - r.left) / r.width) * previewVideoDuration)); setPreviewVideoTime(previewVideoRef.current.currentTime) }
+                const handleSkip = (d: number) => { if (!previewVideoRef.current) return; previewVideoRef.current.currentTime = Math.max(0, Math.min(previewVideoDuration, previewVideoRef.current.currentTime + d)); setPreviewVideoTime(previewVideoRef.current.currentTime) }
+                return (
+                  <>
+                    {navHeader()}
+                    <div className="flex-1 flex flex-col items-center justify-center p-8 bg-muted/20 overflow-y-auto">
+                      <div className="w-full max-w-2xl flex flex-col gap-5">
+                        <div className="relative rounded-xl overflow-hidden bg-black border border-border shadow-md" style={{ aspectRatio: '16/9' }}>
+                          <video
+                            ref={previewVideoRef}
+                            src={`${toFileUrl(path)}`}
+                            className="w-full h-full object-cover"
+                            playsInline preload="auto"
+                            onLoadedMetadata={() => { const v = previewVideoRef.current; if (!v) return; setPreviewVideoDuration(v.duration); v.currentTime = 0.001 }}
+                            onEnded={() => { setPreviewVideoPlaying(false); setPreviewVideoTime(0); if (previewVideoTimerRef.current) { clearInterval(previewVideoTimerRef.current); previewVideoTimerRef.current = null } }}
+                          />
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                          <div className="relative flex items-center cursor-pointer group py-2" onClick={handleSeek}>
+                            <div className="w-full h-1.5 bg-secondary rounded-full relative">
+                              <div className="absolute left-0 top-0 h-full bg-primary rounded-full" style={{ width: `${pct}%` }} />
+                              <div className="absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-white border-2 border-primary rounded-full shadow-md -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity" style={{ left: `${pct}%` }} />
+                            </div>
+                          </div>
+                          <div className="flex justify-between text-[11px] text-muted-foreground tabular-nums px-0.5">
+                            <span>{fmt(previewVideoTime)}</span><span>{fmt(previewVideoDuration)}</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-center gap-5">
+                          <button onClick={() => handleSkip(-previewVideoDuration)} className="text-muted-foreground hover:text-foreground transition-colors"><SkipBack className="h-5 w-5" /></button>
+                          <button onClick={() => handleSkip(-10)} className="text-muted-foreground hover:text-foreground transition-colors text-[11px] font-bold w-8 text-center">−10s</button>
+                          <button onClick={previewVideoPlaying ? handlePause : handlePlay} className="w-14 h-14 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all shadow-lg">
+                            {previewVideoPlaying ? <Pause className="h-6 w-6 fill-current" /> : <Play className="h-6 w-6 fill-current ml-0.5" />}
+                          </button>
+                          <button onClick={() => handleSkip(10)} className="text-muted-foreground hover:text-foreground transition-colors text-[11px] font-bold w-8 text-center">+10s</button>
+                          <button onClick={() => handleSkip(previewVideoDuration)} className="text-muted-foreground hover:text-foreground transition-colors"><SkipForward className="h-5 w-5" /></button>
+                        </div>
+                        <p className="text-center text-[11px] text-muted-foreground">Preview only · playback resets when you switch items</p>
+                      </div>
+                    </div>
+                  </>
+                )
+              }
+
+              // Image item
+              return (
+                <>
+                  {navHeader()}
+                  <div className="flex-1 flex items-center justify-center p-4 bg-muted/20 min-h-0">
+                    <div className="w-full h-full max-w-4xl flex items-center">
+                      <div className="rounded-xl overflow-hidden border border-border bg-black shadow-md w-full" style={{ aspectRatio: '16/9' }}>
+                        {path ? (
+                          <img src={`${toFileUrl(path)}`} className="w-full h-full object-contain" alt="" />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <ImageIcon className="h-16 w-16 text-muted-foreground/30" />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )
+            })()
+          ) : currentItem?.itemType === 'music_player' ? (
+            /* ── Music Player — browse a folder, play one file at a time, waveform on the current one ── */
+            (() => {
+              const dir = currentItem.musicPlayerDir
+              const pct = previewAudioDuration ? (previewAudioTime / previewAudioDuration) * 100 : 0
+              const fmt = (s: number) => `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(Math.floor(s % 60)).padStart(2, '0')}`
+
+              const pickDir = async () => {
+                const picked = await window.worshipsync.music.pickDirectory()
+                if (picked) await setMusicPlayerDir(currentItem.id, picked)
+              }
+
+              const stopViz = () => { if (previewVizFrameRef.current) { cancelAnimationFrame(previewVizFrameRef.current); previewVizFrameRef.current = null } setPreviewWaveformBars(new Array(64).fill(0)) }
+              const startViz = () => {
+                const analyser = previewAnalyserRef.current; if (!analyser) return
+                const data = new Uint8Array(analyser.frequencyBinCount)
+                const tick = () => { analyser.getByteFrequencyData(data); setPreviewWaveformBars(Array.from({ length: 64 }, (_, ii) => data[Math.floor((ii / 64) * data.length)] / 255)); previewVizFrameRef.current = requestAnimationFrame(tick) }
+                previewVizFrameRef.current = requestAnimationFrame(tick)
+              }
+              const stopCurrent = () => {
+                previewAudioRef.current?.pause()
+                if (previewAudioTimerRef.current) { clearInterval(previewAudioTimerRef.current); previewAudioTimerRef.current = null }
+                stopViz()
+                setPreviewAudioPlaying(false)
+              }
+              const playSong = (path: string) => {
+                if (musicPlayerCurrentPath !== path) {
+                  stopCurrent()
+                  previewAudioRef.current = null
+                  previewAudioCtxRef.current?.close()
+                  previewAudioCtxRef.current = null
+                  previewAnalyserRef.current = null
+                  setMusicPlayerCurrentPath(path)
+                  setPreviewAudioTime(0)
+                  setPreviewAudioDuration(0)
+                }
+                let audio = previewAudioRef.current
+                if (!audio) {
+                  audio = new Audio(`${toFileUrl(path)}`)
+                  audio.onloadedmetadata = () => setPreviewAudioDuration(audio!.duration ?? 0)
+                  audio.onended = () => {
+                    setPreviewAudioPlaying(false); setPreviewAudioTime(0)
+                    if (previewAudioTimerRef.current) { clearInterval(previewAudioTimerRef.current); previewAudioTimerRef.current = null }
+                    stopViz()
+                    // Auto-advance — look the finished track up fresh (not the stale
+                    // closure array) so a shuffle mid-playback is respected.
+                    const list = scannedSongsRef.current
+                    const idx = list.findIndex(s => s.path === path)
+                    const next = idx >= 0 ? list[idx + 1] : undefined
+                    if (next) playSong(next.path)
+                  }
+                  const ctx = new AudioContext()
+                  const analyser = ctx.createAnalyser()
+                  analyser.fftSize = 256
+                  ctx.createMediaElementSource(audio).connect(analyser)
+                  analyser.connect(ctx.destination)
+                  previewAudioCtxRef.current = ctx
+                  previewAnalyserRef.current = analyser
+                  previewAudioRef.current = audio
+                }
+                previewAudioCtxRef.current?.resume()
+                audio.play()
+                setPreviewAudioPlaying(true)
+                if (previewAudioTimerRef.current) clearInterval(previewAudioTimerRef.current)
+                previewAudioTimerRef.current = setInterval(() => setPreviewAudioTime(previewAudioRef.current?.currentTime ?? 0), 100)
+                startViz()
+              }
+              const togglePlay = (path: string) => {
+                if (musicPlayerCurrentPath === path && previewAudioPlaying) stopCurrent()
+                else playSong(path)
+              }
+              const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
+                if (!previewAudioDuration || !previewAudioRef.current) return
+                const r = e.currentTarget.getBoundingClientRect()
+                previewAudioRef.current.currentTime = Math.max(0, Math.min(previewAudioDuration, ((e.clientX - r.left) / r.width) * previewAudioDuration))
+                setPreviewAudioTime(previewAudioRef.current.currentTime)
+              }
+              const shufflePlaylist = () => {
+                setScannedSongs(prev => {
+                  const arr = [...prev]
+                  for (let i = arr.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1))
+                    ;[arr[i], arr[j]] = [arr[j], arr[i]]
+                  }
+                  return arr
+                })
+              }
+
+              return (
+                <>
+                  <div className="px-5 py-3 border-b border-border bg-card flex items-center justify-between gap-4 shrink-0">
+                    <div className="min-w-0">
+                      <h1 className="text-base font-semibold truncate">Music Player</h1>
+                      <p className="text-xs text-muted-foreground truncate mt-0.5">{dir || 'No folder selected'}</p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      {scannedSongs.length > 1 && (
+                        <Button variant="secondary" size="sm" className="gap-1.5 h-8 text-xs" onClick={shufflePlaylist} title="Reshuffle playlist order">
+                          <Shuffle className="h-3.5 w-3.5" /> Shuffle
+                        </Button>
+                      )}
+                      <Button variant="secondary" size="sm" className="gap-1.5 h-8 text-xs" onClick={pickDir}>
+                        <Folder className="h-3.5 w-3.5" /> {dir ? 'Change Folder' : 'Choose Folder'}
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                    {!dir ? (
+                      <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
+                        <Music2 className="h-12 w-12 text-muted-foreground/30 mb-4" />
+                        <p className="text-sm text-muted-foreground mb-4">Choose a folder to scan for audio files</p>
+                        <Button size="sm" className="gap-1.5" onClick={pickDir}><Folder className="h-3.5 w-3.5" /> Choose Folder</Button>
+                      </div>
+                    ) : scanningDir ? (
+                      <div className="flex-1 flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+                    ) : scannedSongs.length === 0 ? (
+                      <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
+                        <Music2 className="h-12 w-12 text-muted-foreground/30 mb-4" />
+                        <p className="text-sm text-muted-foreground">No audio files found in this folder</p>
+                      </div>
+                    ) : (
+                      <>
+                        {musicPlayerCurrentPath && (
+                          <div className="p-5 border-b border-border bg-muted/10 shrink-0 flex justify-center">
+                            <div className="w-full max-w-2xl">
+                              <p className="text-xs font-semibold text-foreground truncate mb-2">{basenameOf(musicPlayerCurrentPath)}</p>
+                              <div className="relative rounded-xl overflow-hidden bg-black/70 border border-border/60 cursor-pointer" style={{ height: 100 }} onClick={handleSeek}>
+                                <div className="absolute inset-0 flex items-center gap-[2px] px-4 py-4">
+                                  {previewWaveformBars.map((v, wi) => {
+                                    const h = Math.max(3, v * 100)
+                                    return (
+                                      <div key={wi} className="flex-1 flex flex-col" style={{ height: '100%' }}>
+                                        <div className="flex-1 flex flex-col justify-end"><div className="w-full rounded-t-[1px] bg-primary" style={{ height: `${h}%`, opacity: 0.85 }} /></div>
+                                        <div className="flex-1 flex flex-col justify-start"><div className="w-full rounded-b-[1px] bg-primary" style={{ height: `${h * 0.55}%`, opacity: 0.35 }} /></div>
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                                <div className="absolute left-0 top-0 h-full bg-white/5" style={{ width: `${pct}%` }} />
+                              </div>
+                              <div className="flex justify-between text-[10px] text-muted-foreground tabular-nums mt-1 px-0.5">
+                                <span>{fmt(previewAudioTime)}</span><span>{fmt(previewAudioDuration)}</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="flex-1 overflow-y-auto p-2">
+                          {scannedSongs.map(song => {
+                            const isCurrent = musicPlayerCurrentPath === song.path
+                            const isPlaying = isCurrent && previewAudioPlaying
+                            return (
+                              <button
+                                key={song.path}
+                                onClick={() => togglePlay(song.path)}
+                                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg mb-0.5 text-left transition-colors ${isCurrent ? 'bg-primary/10' : 'hover:bg-accent/50'}`}
+                              >
+                                <div className={`h-8 w-8 shrink-0 rounded-full flex items-center justify-center ${isCurrent ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>
+                                  {isPlaying ? <Pause className="h-3.5 w-3.5 fill-current" /> : <Play className="h-3.5 w-3.5 fill-current ml-0.5" />}
+                                </div>
+                                <span className={`flex-1 min-w-0 truncate text-sm ${isCurrent ? 'text-primary font-medium' : 'text-foreground'}`}>{song.filename}</span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </>
+              )
+            })()
           ) : currentItem?.itemType === 'scripture' ? (
             <>
               {/* Header */}
@@ -1759,6 +2139,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
             if (insertAfterSectionIdx !== null) await repositionAfterSection(insertAfterSectionIdx, prevLen)
           }}
           onAddMedia={handleAddMedia}
+          onAddMediaCollection={handleAddMediaCollection}
           onAddAnnouncement={async (title, content) => {
             const prevLen = useServiceStore.getState().lineup.length
             await addAnnouncementToLineup({ title, content })
@@ -1767,6 +2148,11 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
           onAddBibleBrowser={async () => {
             const prevLen = useServiceStore.getState().lineup.length
             await addBibleBrowserToLineup()
+            if (insertAfterSectionIdx !== null) await repositionAfterSection(insertAfterSectionIdx, prevLen)
+          }}
+          onAddMusicPlayer={async () => {
+            const prevLen = useServiceStore.getState().lineup.length
+            await addMusicPlayerToLineup()
             if (insertAfterSectionIdx !== null) await repositionAfterSection(insertAfterSectionIdx, prevLen)
           }}
           excludeIds={lineup.filter(item => item.songId != null).map(item => item.songId!)}
@@ -1832,6 +2218,135 @@ function SortableSectionTab({ id, label, color }: { id: number; label: string; c
       className={`${color} text-white text-[10px] font-bold px-2 py-0.5 rounded cursor-grab active:cursor-grabbing touch-none select-none`}
     >
       {label}
+    </div>
+  )
+}
+
+// ── Media Collection Settings (items, reorder, auto-advance) ────────────────
+
+function MediaCollectionSettings({ item, readOnly }: { item: LineupItemWithSong; readOnly?: boolean }) {
+  const setMediaCollectionConfig = useServiceStore(state => state.setMediaCollectionConfig)
+  const [adding, setAdding] = useState(false)
+  const config = parseMediaCollection(item.mediaCollection)
+
+  const patch = (p: Partial<MediaCollectionConfig>) => setMediaCollectionConfig(item.id, p)
+
+  const moveItem = (idx: number, dir: -1 | 1) => {
+    const next = idx + dir
+    if (next < 0 || next >= config.items.length) return
+    const items = [...config.items]
+    ;[items[idx], items[next]] = [items[next], items[idx]]
+    patch({ items })
+  }
+
+  const removeItem = (idx: number) => patch({ items: config.items.filter((_, i) => i !== idx) })
+
+  const addMore = async () => {
+    setAdding(true)
+    try {
+      const picked: string[] = await window.worshipsync.backgrounds.pickImages()
+      // Audio isn't supported inside a collection — filter it out so it doesn't
+      // silently break as a broken thumbnail.
+      const paths = picked.filter(p => !/\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(p))
+      if (paths.length > 0) patch({ items: [...config.items, ...paths] })
+    } finally {
+      setAdding(false)
+    }
+  }
+
+  const Toggle = ({ checked, onChange }: { checked: boolean; onChange: () => void }) => (
+    <button
+      onClick={onChange}
+      disabled={readOnly}
+      role="switch"
+      aria-checked={checked}
+      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors focus:outline-none disabled:opacity-40 ${
+        checked ? "bg-primary border-primary" : "bg-muted border-border"
+      }`}
+    >
+      <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${checked ? "translate-x-5" : "translate-x-1"}`} />
+    </button>
+  )
+
+  return (
+    <div className="px-4 py-3 border-b border-border">
+      <div className="flex items-center justify-between mb-2">
+        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+          Collection ({config.items.length} {config.items.length === 1 ? "item" : "items"})
+        </label>
+        {!readOnly && (
+          <button
+            onClick={addMore}
+            disabled={adding}
+            className="flex items-center gap-1 text-[10px] font-semibold text-primary hover:text-primary/80 transition-colors disabled:opacity-40"
+          >
+            {adding ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+            Add
+          </button>
+        )}
+      </div>
+
+      <div className="space-y-1 mb-3 max-h-48 overflow-y-auto">
+        {config.items.map((path, idx) => {
+          const filename = path.split("/").pop() ?? path
+          const isVideo = /\.(mp4|webm|mov)$/i.test(path)
+          return (
+            <div key={`${path}-${idx}`} className="flex items-center gap-1.5 bg-background border border-border rounded-md px-2 py-1.5">
+              <span className="text-[10px] text-muted-foreground/50 tabular-nums w-4 text-right shrink-0">{idx + 1}</span>
+              {isVideo ? <Play className="h-3 w-3 text-muted-foreground shrink-0" /> : <ImageIcon className="h-3 w-3 text-muted-foreground shrink-0" />}
+              <span className="flex-1 min-w-0 truncate text-[11px] text-foreground" title={filename}>{filename}</span>
+              {!readOnly && (
+                <div className="flex items-center gap-0.5 shrink-0">
+                  <button onClick={() => moveItem(idx, -1)} disabled={idx === 0} title="Move up" className="p-0.5 text-muted-foreground/50 hover:text-foreground disabled:opacity-20 disabled:cursor-not-allowed transition-colors">
+                    <ChevronUp className="h-3 w-3" />
+                  </button>
+                  <button onClick={() => moveItem(idx, 1)} disabled={idx === config.items.length - 1} title="Move down" className="p-0.5 text-muted-foreground/50 hover:text-foreground disabled:opacity-20 disabled:cursor-not-allowed transition-colors">
+                    <ChevronDown className="h-3 w-3" />
+                  </button>
+                  <button onClick={() => removeItem(idx)} title="Remove from collection" className="p-0.5 text-muted-foreground/50 hover:text-destructive transition-colors">
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              )}
+            </div>
+          )
+        })}
+        {config.items.length === 0 && (
+          <p className="text-[11px] text-muted-foreground/40 text-center py-3">No items yet — click Add.</p>
+        )}
+      </div>
+
+      <label className="flex items-center justify-between mb-2">
+        <span className="text-[11px] font-medium text-foreground">Auto-advance</span>
+        <Toggle checked={config.autoAdvance} onChange={() => patch({ autoAdvance: !config.autoAdvance })} />
+      </label>
+
+      {config.autoAdvance && (
+        <>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[11px] text-muted-foreground">Seconds per image</span>
+            <input
+              type="number"
+              min={1}
+              max={300}
+              value={config.intervalSeconds}
+              disabled={readOnly}
+              onChange={e => {
+                const n = parseInt(e.target.value)
+                if (n >= 1) patch({ intervalSeconds: n })
+              }}
+              className="w-14 h-6 px-1.5 text-[11px] text-center bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+            />
+          </div>
+          <p className="text-[10px] text-muted-foreground/40 leading-relaxed mb-2">
+            Videos advance automatically when they finish playing, regardless of this setting.
+          </p>
+          <label className="flex items-center justify-between">
+            <span className="text-[11px] font-medium text-foreground">Loop back to start</span>
+            <Toggle checked={config.loop} onChange={() => patch({ loop: !config.loop })} />
+          </label>
+        </>
+      )}
     </div>
   )
 }
@@ -1924,6 +2439,11 @@ function ItemSettingsPanel({
             </div>
           )
         })()}
+
+        {/* Media collection — items, reorder, auto-advance ─────────────── */}
+        {currentItem?.itemType === 'media_collection' && (
+          <MediaCollectionSettings item={currentItem} readOnly={readOnly} />
+        )}
 
         {/* Slide preview */}
         {canCustomize && (
@@ -2333,6 +2853,7 @@ function SortableSectionHeader({
 function SortableLineupItem({
   id, index, isSelected, indent, colorIdx,
   title, subtitle, isPast, onSelect, onDelete,
+  expandable, isExpanded, onToggleExpand, children,
 }: {
   id: number
   index: number
@@ -2344,6 +2865,10 @@ function SortableLineupItem({
   isPast: boolean
   onSelect: () => void
   onDelete: () => void
+  expandable?: boolean
+  isExpanded?: boolean
+  onToggleExpand?: () => void
+  children?: React.ReactNode
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
   const color = colorIdx !== undefined && colorIdx >= 0 ? getSectionColor(colorIdx) : null
@@ -2373,6 +2898,15 @@ function SortableLineupItem({
             tabIndex={-1}
           >
             <GripVertical className="h-3.5 w-3.5" />
+          </button>
+        )}
+        {expandable && (
+          <button
+            onClick={e => { e.stopPropagation(); onToggleExpand?.() }}
+            title={isExpanded ? "Collapse" : "Expand"}
+            className="shrink-0 p-1 text-muted-foreground/50 hover:text-foreground transition-colors"
+          >
+            <ChevronRight className={`h-3 w-3 transition-transform ${isExpanded ? "rotate-90" : ""}`} />
           </button>
         )}
         <button
@@ -2405,7 +2939,7 @@ function SortableLineupItem({
           </button>
         )}
       </div>
-
+      {expandable && isExpanded && children}
     </div>
   )
 }

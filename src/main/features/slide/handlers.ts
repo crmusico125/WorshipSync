@@ -143,6 +143,17 @@ export function registerSlideHandlers(): void {
     windows.projection.webContents.send('slide:videoControl', action)
   })
 
+  // Re-issues a trusted-gesture play() call on demand. The immediate/50ms retries
+  // above assume the video is ready to play almost instantly; on a slower disk
+  // (large files, Windows) it can still be buffering when both fire, so the
+  // element's own canplay handler ends up calling play() untrusted — Chromium then
+  // starts playback muted rather than silently. The renderer asks for this once
+  // canplay actually fires, guaranteeing the play that starts real playback is trusted.
+  ipcMain.on('slide:requestVideoPlayGesture', () => {
+    if (!windows.projection || windows.projection.isDestroyed()) return
+    windows.projection.webContents.executeJavaScript('window.__projVideoPlay?.()', true).catch(() => {})
+  })
+
   ipcMain.on('slide:videoSeek', (_event, time: number) => {
     if (windows.projection && !windows.projection.isDestroyed()) {
       windows.projection.webContents.send('slide:videoSeek', time)

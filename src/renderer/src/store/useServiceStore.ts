@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type LineupItemType = 'song' | 'scripture' | 'media' | 'countdown' | 'announcement' | 'note' | 'section' | 'bible'
+export type LineupItemType = 'song' | 'scripture' | 'media' | 'media_collection' | 'countdown' | 'announcement' | 'note' | 'section' | 'bible' | 'music_player'
 
 export interface LineupItem {
   id: number
@@ -18,6 +18,8 @@ export interface LineupItem {
   sectionOrder: string | null
   itemStyle: string | null
   imageScaleMode: 'cover' | 'contain' | 'stretch' | null
+  mediaCollection: string | null
+  musicPlayerDir: string | null
   song: {
     id: number
     title: string
@@ -62,6 +64,10 @@ interface ServiceStore {
   addSongToLineup: (songId: number) => Promise<void>
   addScriptureToLineup: (data: { title: string; scriptureRef: string }) => Promise<void>
   addMediaToLineup: (data: { title: string; mediaPath: string }) => Promise<void>
+  addMediaCollectionToLineup: (data: { title: string; items: string[] }) => Promise<void>
+  setMediaCollectionConfig: (lineupItemId: number, patch: { items?: string[]; autoAdvance?: boolean; intervalSeconds?: number; loop?: boolean }) => Promise<void>
+  addMusicPlayerToLineup: () => Promise<void>
+  setMusicPlayerDir: (lineupItemId: number, dirPath: string | null) => Promise<void>
   addCountdownToLineup: () => Promise<void>
   addBibleBrowserToLineup: () => Promise<void>
   addAnnouncementToLineup: (data: { title: string; content: string }) => Promise<void>
@@ -164,6 +170,34 @@ export const useServiceStore = create<ServiceStore>((set, get) => ({
     await window.worshipsync.lineup.addMedia(selectedService.id, data)
     await get().loadLineup(selectedService.id)
     if (selectedService.status === 'empty') await get().updateStatus(selectedService.id, 'in-progress')
+  },
+
+  addMediaCollectionToLineup: async (data: { title: string; items: string[] }) => {
+    const { selectedService } = get()
+    if (!selectedService) return
+    await window.worshipsync.lineup.addMediaCollection(selectedService.id, data)
+    await get().loadLineup(selectedService.id)
+    if (selectedService.status === 'empty') await get().updateStatus(selectedService.id, 'in-progress')
+  },
+
+  setMediaCollectionConfig: async (lineupItemId, patch) => {
+    const { selectedService } = get()
+    await window.worshipsync.lineup.setMediaCollectionConfig(lineupItemId, patch)
+    if (selectedService) await get().loadLineup(selectedService.id)
+  },
+
+  addMusicPlayerToLineup: async () => {
+    const { selectedService } = get()
+    if (!selectedService) return
+    await window.worshipsync.lineup.addMusicPlayer(selectedService.id)
+    await get().loadLineup(selectedService.id)
+    if (selectedService.status === 'empty') await get().updateStatus(selectedService.id, 'in-progress')
+  },
+
+  setMusicPlayerDir: async (lineupItemId, dirPath) => {
+    const { selectedService } = get()
+    await window.worshipsync.lineup.setMusicPlayerDir(lineupItemId, dirPath)
+    if (selectedService) await get().loadLineup(selectedService.id)
   },
 
   addCountdownToLineup: async () => {

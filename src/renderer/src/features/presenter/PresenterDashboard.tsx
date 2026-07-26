@@ -12,6 +12,8 @@ import {
   ChevronDown,
   ChevronUp,
   Music,
+  Music2,
+  Folder,
   Pencil,
   Cast,
   Play,
@@ -38,6 +40,7 @@ import {
   CheckCircle2,
   Circle,
   Loader2,
+  Shuffle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -48,6 +51,7 @@ import EditLyricsModal from "../../components/EditLyricsModal";
 import type { AnnouncementCard } from "../../../../../shared/types";
 import { fetchBiblePassage, bibleResultToScriptureRef, FREE_TRANSLATIONS, fetchApiBibleTranslations, COMMON_TRANSLATION_LABELS, type BibleTranslation, type BibleApiResult, type BibleApiVerse } from "../../lib/bibleApi";
 import { toFileUrl, basenameOf } from "../../lib/utils";
+import { parseMediaCollection, type MediaCollectionConfig } from "../../lib/mediaCollection";
 
 
 // ── Audio singleton — survives PresenterDashboard unmounts ───────────────────
@@ -71,7 +75,7 @@ interface Slide {
 
 interface LiveSong {
   lineupItemId: number;
-  itemType: "song" | "countdown" | "scripture" | "media" | "announcement" | "section" | "bible";
+  itemType: "song" | "countdown" | "scripture" | "media" | "media_collection" | "announcement" | "section" | "bible" | "music_player";
   songId: number;
   title: string;
   artist: string;
@@ -84,6 +88,8 @@ interface LiveSong {
   notes: string | null;
   itemStyle: string | null;
   imageScaleMode: 'cover' | 'contain' | 'stretch' | null;
+  mediaCollection: string | null;
+  musicPlayerDir: string | null;
   slides: Slide[];
 }
 
@@ -242,9 +248,12 @@ export default function PresenterDashboard({
     addScriptureToLineup,
     addMediaToLineup,
     addAnnouncementToLineup,
+    addMusicPlayerToLineup,
+    setMusicPlayerDir,
     reorderLineup,
     mediaLoopPrefs,
     patchImageScaleMode,
+    setMediaCollectionConfig,
   } = useServiceStore();
 
   const [liveSongs, setLiveSongs] = useState<LiveSong[]>([]);
@@ -261,7 +270,33 @@ export default function PresenterDashboard({
   const defaultScriptureThemeBgRef = useRef<string | null>(null);
   const defaultAnnouncementThemeBgRef = useRef<string | null>(null);
   const [imgScaleMode, setImgScaleMode] = useState<'cover' | 'contain' | 'stretch'>('contain');
+  const [mediaCollectionIndex, setMediaCollectionIndex] = useState(0);
+  const mediaCollectionIndexRef = useRef(0);
+  // Tracks which sub-item is actually live/projected, separate from
+  // mediaCollectionIndex which also moves while merely previewing a video
+  // (previewing must never look "live" if a different item is on screen).
+  const liveMediaCollectionIndexRef = useRef(-1);
+  // Set right before previewCollectionItem changes selectedSongIdx, so the
+  // generic "reset to item 0" effect below doesn't clobber an explicit pick.
+  const suppressCollectionResetRef = useRef(false);
+  const mediaCollectionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showCollectionItemRef = useRef<(idx: number) => void>(() => {});
+  const [expandedCollectionIds, setExpandedCollectionIds] = useState<Set<number>>(new Set());
   const [showLibrary, setShowLibrary] = useState(false);
+  // When set, the Library modal appends picked media to this collection's
+  // items instead of creating a new lineup entry.
+  const [collectionAppendTarget, setCollectionAppendTarget] = useState<number | null>(null);
+  // Accumulates paths across a batch of onAddMedia calls (LibraryModal calls it
+  // once per file for "Add as N Separate Items") so a multi-file append doesn't
+  // race itself — each call re-reads liveSongs, which lags behind rapid-fire calls.
+  const pendingCollectionAppendRef = useRef<string[]>([]);
+  // Music player — scanned folder contents + which file is loaded (reuses the
+  // standalone audio state/refs below, since only one plays at a time)
+  const [scannedSongs, setScannedSongs] = useState<{ path: string; filename: string }[]>([]);
+  const scannedSongsRef = useRef<{ path: string; filename: string }[]>([]);
+  useEffect(() => { scannedSongsRef.current = scannedSongs; }, [scannedSongs]);
+  const [scanningDir, setScanningDir] = useState(false);
+  const [musicPlayerCurrentPath, setMusicPlayerCurrentPath] = useState<string | null>(null);
   const [insertAfterSectionId, setInsertAfterSectionId] = useState<number | null>(null);
   const [showBgPicker, setShowBgPicker] = useState(false);
   const [pendingBgSave, setPendingBgSave] = useState<{ songId: number; lineupItemId: number; itemType: string; path: string | null } | null>(null);
@@ -417,6 +452,9 @@ export default function PresenterDashboard({
   const [bibleBrowserProjectedRef, setBibleBrowserProjectedRef] = useState<string | null>(null);
   const [bibleBrowserProjectedTranslation, setBibleBrowserProjectedTranslation] = useState<string | null>(null);
   const [liveBibleVerse, setLiveBibleVerse] = useState<{ text: string; sectionLabel: string; bg: string | undefined } | null>(null);
+  // Tracks the path currently live from a media collection, so the output-bar
+  // thumbnail can show it (collections have no slides/backgroundPath of their own).
+  const [liveMediaCollectionBg, setLiveMediaCollectionBg] = useState<string | undefined>(undefined);
 
   const SPLIT_DEFAULT = 40;
   const [splitPct, setSplitPct] = useState<number>(() => {
@@ -706,6 +744,8 @@ export default function PresenterDashboard({
           notes: null,
           itemStyle: null,
           imageScaleMode: null,
+          mediaCollection: null,
+          musicPlayerDir: null,
           slides: [],
         };
       }
@@ -725,6 +765,8 @@ export default function PresenterDashboard({
           notes: item.notes ?? null,
           itemStyle: null,
           imageScaleMode: null,
+          mediaCollection: null,
+          musicPlayerDir: null,
           slides: [],
         };
       }
@@ -745,6 +787,8 @@ export default function PresenterDashboard({
           notes: item.notes ?? null,
           itemStyle: null,
           imageScaleMode: null,
+          mediaCollection: null,
+          musicPlayerDir: null,
           slides: [],
         };
       }
@@ -778,6 +822,8 @@ export default function PresenterDashboard({
           notes: item.notes ?? null,
           itemStyle: null,
           imageScaleMode: null,
+          mediaCollection: null,
+          musicPlayerDir: null,
           slides: scriptureSlides,
         };
       }
@@ -813,6 +859,8 @@ export default function PresenterDashboard({
           notes: item.notes ?? null,
           itemStyle: item.itemStyle ?? null,
           imageScaleMode: null,
+          mediaCollection: null,
+          musicPlayerDir: null,
           slides: announcementSlides,
         };
       }
@@ -834,6 +882,54 @@ export default function PresenterDashboard({
           notes: item.notes ?? null,
           itemStyle: null,
           imageScaleMode: (item.imageScaleMode as 'cover' | 'contain' | 'stretch') ?? 'contain',
+          mediaCollection: null,
+          musicPlayerDir: null,
+          slides: [],
+        };
+      }
+
+      // Media collection — an ordered set of images/videos that auto-advance
+      if (item.itemType === "media_collection") {
+        return {
+          lineupItemId: item.id,
+          itemType: "media_collection" as const,
+          songId: 0,
+          title: item.title ?? "Collection",
+          artist: "",
+          key: null,
+          ccliNumber: null,
+          backgroundPath: null,
+          mediaPath: null,
+          themeId: null,
+          styleOverrides: null,
+          notes: item.notes ?? null,
+          itemStyle: null,
+          imageScaleMode: null,
+          mediaCollection: item.mediaCollection ?? null,
+          musicPlayerDir: null,
+          slides: [],
+        };
+      }
+
+      // Music player — scans a folder for audio files, no slides
+      if (item.itemType === "music_player") {
+        return {
+          lineupItemId: item.id,
+          itemType: "music_player" as const,
+          songId: 0,
+          title: item.title ?? "Music Player",
+          artist: "",
+          key: null,
+          ccliNumber: null,
+          backgroundPath: null,
+          mediaPath: null,
+          themeId: null,
+          styleOverrides: null,
+          notes: item.notes ?? null,
+          itemStyle: null,
+          imageScaleMode: null,
+          mediaCollection: null,
+          musicPlayerDir: item.musicPlayerDir ?? null,
           slides: [],
         };
       }
@@ -855,6 +951,8 @@ export default function PresenterDashboard({
           notes: item.notes ?? null,
           itemStyle: null,
           imageScaleMode: null,
+          mediaCollection: null,
+          musicPlayerDir: null,
           slides: [],
         };
       }
@@ -891,6 +989,8 @@ export default function PresenterDashboard({
         notes: item.notes ?? null,
         itemStyle: null,
         imageScaleMode: null,
+        mediaCollection: null,
+        musicPlayerDir: null,
         slides: buildSlidesForSong(filtered, maxLines),
       };
     });
@@ -959,6 +1059,83 @@ export default function PresenterDashboard({
     window.worshipsync.pwa?.syncLineup?.(items, selectedSongIdx, selectedService?.date ?? null, serviceTime)
   }, [liveSongs, selectedSongIdx, resolveTheme, resolveBg, selectedService, serviceTime, projectionFontSize])
 
+  // ── Media collection projection ──────────────────────────────────────────
+  // Self-contained (looks up liveSongs fresh) so it can be called from the
+  // sidebar tree for a collection that isn't the currently selected item,
+  // not just from within the center-panel branch's own closure.
+  const showCollectionItemAt = useCallback((songIdx: number, mediaIdx: number) => {
+    const song = liveSongs[songIdx];
+    if (!song || song.itemType !== "media_collection") return;
+    const cfg = parseMediaCollection(song.mediaCollection);
+    const p = cfg.items[mediaIdx];
+    if (!p) return;
+    const vid = /\.(mp4|webm|mov)$/i.test(p);
+    window.worshipsync.slide.blank(false);
+    window.worshipsync.slide.logo(false);
+    window.worshipsync.slide.show({
+      lines: [],
+      songTitle: song.title,
+      sectionLabel: "",
+      itemType: "media",
+      slideIndex: mediaIdx,
+      totalSlides: cfg.items.length,
+      lineupItemId: song.lineupItemId,
+      backgroundPath: p,
+      theme: {
+        fontFamily: DEFAULT_THEME.fontFamily,
+        fontSize: DEFAULT_THEME.fontSize,
+        fontWeight: DEFAULT_THEME.fontWeight,
+        textColor: DEFAULT_THEME.textColor,
+        textAlign: DEFAULT_THEME.textAlign,
+        textPosition: DEFAULT_THEME.textPosition,
+        overlayOpacity: 0,
+        textShadowOpacity: 0,
+        maxLinesPerSlide: DEFAULT_THEME.maxLinesPerSlide,
+        backgroundScaleMode: "contain",
+      },
+    });
+    if (vid) {
+      // Pause any playing standalone audio before this video claims the audio pipeline
+      if (_audio.el && !_audio.el.paused) {
+        _audio.el.pause();
+        _audio.ctx?.suspend();
+        setAudioPlaying(false);
+        if (audioTimerRef.current) { clearInterval(audioTimerRef.current); audioTimerRef.current = null; }
+        stopViz();
+      }
+      window.worshipsync.slide.videoLoop(false);
+      window.worshipsync.slide.videoControl("play");
+      setVideoDuration(0);
+      setVideoCurrentTime(0);
+      setVideoPlaying(true);
+      if (videoTimerRef.current) clearInterval(videoTimerRef.current);
+      videoTimerRef.current = setInterval(() => setVideoCurrentTime(videoPreviewRef.current?.currentTime ?? 0), 250);
+    } else {
+      if (videoTimerRef.current) { clearInterval(videoTimerRef.current); videoTimerRef.current = null; }
+      setVideoPlaying(false);
+    }
+    setSelectedSongIdx(songIdx);
+    setIsBlank(false);
+    setIsLogo(false);
+    setActiveSlideIdx(0);
+    liveItemIdxRef.current = songIdx;
+    liveSlideIdxRef.current = 0;
+    setMediaCollectionIndex(mediaIdx);
+    mediaCollectionIndexRef.current = mediaIdx;
+    liveMediaCollectionIndexRef.current = mediaIdx;
+    setLiveMediaCollectionBg(p);
+  }, [liveSongs]);
+
+  // Select/preview a collection item without projecting it — matches how
+  // selecting a standalone video/image item just shows it, and requires an
+  // explicit Play action to actually go live.
+  const previewCollectionItem = useCallback((songIdx: number, mediaIdx: number) => {
+    suppressCollectionResetRef.current = true;
+    setSelectedSongIdx(songIdx);
+    setMediaCollectionIndex(mediaIdx);
+    mediaCollectionIndexRef.current = mediaIdx;
+  }, []);
+
   // ── Slide projection ─────────────────────────────────────────────────────
   const sendSlide = useCallback(
     (songIdx: number, slideIdx: number) => {
@@ -976,6 +1153,7 @@ export default function PresenterDashboard({
       setIsLogo(false);
       setIsTextCleared(false);
       setLiveBibleVerse(null);
+      setLiveMediaCollectionBg(undefined);
       if (countdownRunningRef.current) {
         setCountdownRunning(false);
         if (countdownIntervalRef.current) {
@@ -1381,6 +1559,15 @@ export default function PresenterDashboard({
     const prevLen = useServiceStore.getState().lineup.length;
     await addMediaToLineup({ title: `${label}: ${filename}`, mediaPath: path });
     if (insertAfterSectionId !== null) await repositionAfterSection(insertAfterSectionId, prevLen);
+  };
+
+  // Appends already-uploaded (or newly picked) media to an existing
+  // collection's items, instead of creating a new lineup entry.
+  const appendToMediaCollection = (lineupItemId: number, paths: string[]) => {
+    const target = liveSongs.find(s => s.lineupItemId === lineupItemId);
+    const cfg = parseMediaCollection(target?.mediaCollection);
+    const filtered = paths.filter(p => !/\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(p));
+    if (filtered.length > 0) setMediaCollectionConfig(lineupItemId, { items: [...cfg.items, ...filtered] });
   };
 
   // ── Background picker ────────────────────────────────────────────────────
@@ -1905,6 +2092,65 @@ export default function PresenterDashboard({
     return null;
   })();
 
+  // ── Media collection: index sync + reset-on-select + auto-advance ────────
+  useEffect(() => { mediaCollectionIndexRef.current = mediaCollectionIndex; }, [mediaCollectionIndex]);
+
+  // Reset to the first item when browsing to a collection that isn't currently
+  // live — but leave a live collection's position alone if you select back to
+  // it, and don't override an explicit previewCollectionItem pick.
+  useEffect(() => {
+    if (suppressCollectionResetRef.current) { suppressCollectionResetRef.current = false; return; }
+    if (currentSong?.itemType === "media_collection" && liveItemIdxRef.current !== selectedSongIdx) {
+      setMediaCollectionIndex(0);
+      mediaCollectionIndexRef.current = 0;
+    }
+  }, [currentSong?.lineupItemId, selectedSongIdx]);
+
+  // Reset the video progress display when browsing to a video item that isn't
+  // the one currently live. videoCurrentTime/videoDuration are shared across
+  // every video item (standalone or in a collection) rather than per-item, so
+  // without this, merely clicking a freshly-selected video carries over stale
+  // numbers from whatever video was viewed before it — e.g. having been 4
+  // minutes into a 5-minute video and then selecting an unrelated 1-minute
+  // video computes a >100% progress fill until its own metadata loads.
+  useEffect(() => {
+    if (liveItemIdxRef.current === selectedSongIdx) return;
+    setVideoCurrentTime(0);
+    setVideoDuration(0);
+  }, [currentSong?.lineupItemId, selectedSongIdx]);
+
+  // Scan the music player's folder whenever it's selected or the folder changes
+  useEffect(() => {
+    if (currentSong?.itemType !== "music_player") return;
+    const dir = currentSong.musicPlayerDir;
+    setMusicPlayerCurrentPath(null);
+    if (!dir) { setScannedSongs([]); return; }
+    setScanningDir(true);
+    window.worshipsync.music.scanDirectory(dir)
+      .then(setScannedSongs)
+      .catch(() => setScannedSongs([]))
+      .finally(() => setScanningDir(false));
+  }, [currentSong?.lineupItemId, currentSong?.itemType, currentSong?.musicPlayerDir]);
+
+  // Auto-advance: images advance on a timer; videos advance via their own "ended"
+  // event (wired in the render branch below) so they're never cut off early.
+  useEffect(() => {
+    if (mediaCollectionTimerRef.current) { clearTimeout(mediaCollectionTimerRef.current); mediaCollectionTimerRef.current = null; }
+    if (!currentSong || currentSong.itemType !== "media_collection") return;
+    const isLive = !isBlank && !isLogo && liveItemIdxRef.current === selectedSongIdx;
+    if (!isLive) return;
+    const cfg = parseMediaCollection(currentSong.mediaCollection);
+    if (!cfg.autoAdvance || cfg.items.length === 0) return;
+    const path = cfg.items[mediaCollectionIndex];
+    if (path && /\.(mp4|webm|mov)$/i.test(path)) return;
+    mediaCollectionTimerRef.current = setTimeout(() => {
+      const next = mediaCollectionIndex + 1;
+      if (next < cfg.items.length) showCollectionItemRef.current(next);
+      else if (cfg.loop) showCollectionItemRef.current(0);
+    }, Math.max(1, cfg.intervalSeconds) * 1000);
+    return () => { if (mediaCollectionTimerRef.current) clearTimeout(mediaCollectionTimerRef.current); };
+  }, [currentSong, mediaCollectionIndex, isBlank, isLogo, selectedSongIdx]);
+
   // Shown in the mini confidence-monitor preview on the last lyrics slide of an item —
   // mirrors the actual confidence monitor, which only shows this strip when the next
   // slide is a later section of the SAME song. When the next item is a different song,
@@ -2237,6 +2483,8 @@ export default function PresenterDashboard({
             const isMedia = song.itemType === "media";
             const isAudioItem = isMedia && /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(song.mediaPath ?? "");
             const isVideoItem = isMedia && /\.(mp4|webm|mov)$/i.test(song.mediaPath ?? "");
+            const isMediaCollection = song.itemType === "media_collection";
+            const isMusicPlayer = song.itemType === "music_player";
             const isAnnouncement = song.itemType === "announcement";
 
             // Section headers — visual dividers with per-section add button
@@ -2259,39 +2507,36 @@ export default function PresenterDashboard({
               );
             }
 
-            const Icon = isCountdown ? Timer : isScripture || isBible ? BookOpen : isMedia ? (isVideoItem ? Film : isAudioItem ? Volume2 : ImageIcon) : isAnnouncement ? Megaphone : Music;
-            return (
-              <button
-                key={song.lineupItemId}
-                onClick={() => {
-                  const isLiveItem = i === liveItemIdxRef.current;
-                  setSelectedSongIdx(i);
-                  if (isLiveItem) {
-                    // Restore the projected slide so the grid scrolls back to it
-                    setActiveSlideIdx(liveSlideIdxRef.current);
-                  } else {
-                    // New item — reset to -1 and scroll grid to top
-                    setActiveSlideIdx(-1);
-                    requestAnimationFrame(() => {
-                      if (slideGridRef.current) slideGridRef.current.scrollTop = 0;
-                    });
-                  }
-                  // Stop the timer — stamp when we stopped so restore can calculate elapsed time
-                  if (videoTimerRef.current) {
-                    clearInterval(videoTimerRef.current);
-                    videoTimerRef.current = null;
-                    if (videoPlaying) videoTimerStoppedAtRef.current = Date.now();
-                  }
-                  if (vizFrameRef.current) { cancelAnimationFrame(vizFrameRef.current); vizFrameRef.current = null; }
-                  // Keep audio playing — viz/timer are handled by the currentSong effect
-                  audioRef.current = null;
-                  audioContextRef.current = null;
-                  analyserRef.current = null;
-                }}
-                className={`w-full text-left flex items-center gap-2 px-3 py-3 border-b border-border/60 transition-colors ${
-                  isCurrent ? "bg-red-500/10 border-l-[3px] border-l-red-500" : isFinished ? "opacity-40" : "hover:bg-accent/40"
-                }`}
-              >
+            const Icon = isCountdown ? Timer : isScripture || isBible ? BookOpen : isMedia ? (isVideoItem ? Film : isAudioItem ? Volume2 : ImageIcon) : isMediaCollection ? Layers : isMusicPlayer ? Music2 : isAnnouncement ? Megaphone : Music;
+
+            const selectItem = () => {
+              const isLiveItem = i === liveItemIdxRef.current;
+              setSelectedSongIdx(i);
+              if (isLiveItem) {
+                // Restore the projected slide so the grid scrolls back to it
+                setActiveSlideIdx(liveSlideIdxRef.current);
+              } else {
+                // New item — reset to -1 and scroll grid to top
+                setActiveSlideIdx(-1);
+                requestAnimationFrame(() => {
+                  if (slideGridRef.current) slideGridRef.current.scrollTop = 0;
+                });
+              }
+              // Stop the timer — stamp when we stopped so restore can calculate elapsed time
+              if (videoTimerRef.current) {
+                clearInterval(videoTimerRef.current);
+                videoTimerRef.current = null;
+                if (videoPlaying) videoTimerStoppedAtRef.current = Date.now();
+              }
+              if (vizFrameRef.current) { cancelAnimationFrame(vizFrameRef.current); vizFrameRef.current = null; }
+              // Keep audio playing — viz/timer are handled by the currentSong effect
+              audioRef.current = null;
+              audioContextRef.current = null;
+              analyserRef.current = null;
+            };
+
+            const rowContent = (
+              <>
                 <div className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 ${isCurrent ? "bg-red-500 text-white shadow-[0_0_8px_rgba(239,68,68,0.4)]" : "bg-muted text-muted-foreground"}`}>
                   <Icon className="h-3 w-3" />
                 </div>
@@ -2300,8 +2545,8 @@ export default function PresenterDashboard({
                     {isMedia && song.mediaPath ? basenameOf(song.mediaPath) || song.title : song.title}
                   </p>
                   <p className="text-[10px] text-muted-foreground truncate">
-                    {isCountdown ? "Countdown" : isBible ? "Bible Browser" : isScripture ? "Scripture" : isMedia ? (isVideoItem ? "Video" : isAudioItem ? "Audio" : "Image") : isAnnouncement ? "Announcement" : song.artist || "Song"}
-                    {!isCountdown && !isMedia && song.slides.length > 0 && (
+                    {isCountdown ? "Countdown" : isBible ? "Bible Browser" : isScripture ? "Scripture" : isMedia ? (isVideoItem ? "Video" : isAudioItem ? "Audio" : "Image") : isMediaCollection ? `Collection · ${parseMediaCollection(song.mediaCollection).items.length} items` : isMusicPlayer ? (song.musicPlayerDir ? basenameOf(song.musicPlayerDir) : "No folder set") : isAnnouncement ? "Announcement" : song.artist || "Song"}
+                    {!isCountdown && !isMedia && !isMediaCollection && !isMusicPlayer && song.slides.length > 0 && (
                       <span className="ml-1 opacity-50">· {song.slides.filter(s => s.sectionType !== "blank").length} slides</span>
                     )}
                   </p>
@@ -2309,6 +2554,124 @@ export default function PresenterDashboard({
                 {isFinished && <span className="text-[9px] font-semibold text-muted-foreground/70 shrink-0 bg-muted px-1 py-0.5 rounded leading-none">Done</span>}
                 {isNextItem && <span className="text-[9px] font-semibold text-primary shrink-0 bg-primary/10 px-1 py-0.5 rounded leading-none">NEXT</span>}
                 {isCurrent && <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse shrink-0" />}
+              </>
+            );
+
+            // Media collections expand like a tree node — chevron reveals each
+            // file underneath, clickable to jump straight to it.
+            if (isMediaCollection) {
+              const cfg = parseMediaCollection(song.mediaCollection);
+              const isExpanded = expandedCollectionIds.has(song.lineupItemId);
+              const patchCfg = (patch: Partial<MediaCollectionConfig>) => setMediaCollectionConfig(song.lineupItemId, patch);
+              const moveItem = (mi: number, dir: -1 | 1) => {
+                const next = mi + dir;
+                if (next < 0 || next >= cfg.items.length) return;
+                const items = [...cfg.items];
+                [items[mi], items[next]] = [items[next], items[mi]];
+                patchCfg({ items });
+              };
+              const removeItem = (mi: number) => patchCfg({ items: cfg.items.filter((_, j) => j !== mi) });
+              const addMoreItems = () => {
+                // Open the Library so already-uploaded media can be picked, not
+                // just files browsed fresh from disk.
+                pendingCollectionAppendRef.current = [];
+                setCollectionAppendTarget(song.lineupItemId);
+                setShowLibrary(true);
+              };
+              return (
+                <div key={song.lineupItemId}>
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={selectItem}
+                    onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); selectItem(); } }}
+                    className={`w-full text-left flex items-center gap-1 px-1.5 py-3 border-b border-border/60 transition-colors cursor-pointer ${
+                      isCurrent ? "bg-red-500/10 border-l-[3px] border-l-red-500" : isFinished ? "opacity-40" : "hover:bg-accent/40"
+                    }`}
+                  >
+                    <button
+                      onClick={e => {
+                        e.stopPropagation();
+                        setExpandedCollectionIds(prev => {
+                          const next = new Set(prev);
+                          next.has(song.lineupItemId) ? next.delete(song.lineupItemId) : next.add(song.lineupItemId);
+                          return next;
+                        });
+                      }}
+                      title={isExpanded ? "Collapse" : "Expand"}
+                      className="shrink-0 p-1 text-muted-foreground/50 hover:text-foreground transition-colors"
+                    >
+                      <ChevronRight className={`h-3.5 w-3.5 transition-transform ${isExpanded ? "rotate-90" : ""}`} />
+                    </button>
+                    {rowContent}
+                  </div>
+                  {isExpanded && (
+                    <div className="pb-1">
+                      {cfg.items.map((p, mi) => {
+                        const filename = basenameOf(p) || p;
+                        const vid = /\.(mp4|webm|mov)$/i.test(p);
+                        const isThisLive = liveItemIdxRef.current === i && liveMediaCollectionIndexRef.current === mi && !isBlank && !isLogo;
+                        return (
+                          <div
+                            key={`${song.lineupItemId}-${mi}`}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => vid ? previewCollectionItem(i, mi) : showCollectionItemAt(i, mi)}
+                            onKeyDown={e => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                vid ? previewCollectionItem(i, mi) : showCollectionItemAt(i, mi);
+                              }
+                            }}
+                            className={`group w-full text-left flex items-center gap-1.5 pl-9 pr-1.5 py-1.5 border-b border-border/30 transition-colors cursor-pointer ${
+                              isThisLive ? "bg-red-500/10" : "hover:bg-accent/30"
+                            }`}
+                          >
+                            <span className="text-[9px] text-muted-foreground/50 tabular-nums w-4 text-right shrink-0">{mi + 1}</span>
+                            {vid ? <Play className="h-2.5 w-2.5 text-muted-foreground shrink-0" /> : <ImageIcon className="h-2.5 w-2.5 text-muted-foreground shrink-0" />}
+                            <span className="flex-1 min-w-0 truncate text-[11px] text-foreground" title={filename}>{filename}</span>
+                            {isThisLive && <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse shrink-0" />}
+                            <div
+                              className="flex items-center gap-0 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                              onClick={e => e.stopPropagation()}
+                            >
+                              <button onClick={() => moveItem(mi, -1)} disabled={mi === 0} title="Move up" className="p-0.5 text-muted-foreground/50 hover:text-foreground disabled:opacity-20 disabled:cursor-not-allowed transition-colors">
+                                <ChevronUp className="h-3 w-3" />
+                              </button>
+                              <button onClick={() => moveItem(mi, 1)} disabled={mi === cfg.items.length - 1} title="Move down" className="p-0.5 text-muted-foreground/50 hover:text-foreground disabled:opacity-20 disabled:cursor-not-allowed transition-colors">
+                                <ChevronDown className="h-3 w-3" />
+                              </button>
+                              <button onClick={() => removeItem(mi)} title="Remove from collection" className="p-0.5 text-muted-foreground/50 hover:text-destructive transition-colors">
+                                <X className="h-3 w-3" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {cfg.items.length === 0 && (
+                        <p className="pl-9 pr-3 py-2 text-[10px] text-muted-foreground/40">No items in this collection.</p>
+                      )}
+                      <button
+                        onClick={addMoreItems}
+                        className="w-full text-left flex items-center gap-1.5 pl-9 pr-3 py-1.5 text-[11px] font-semibold text-primary hover:text-primary/80 transition-colors"
+                      >
+                        <Plus className="h-3 w-3" /> Add item
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            }
+
+            return (
+              <button
+                key={song.lineupItemId}
+                onClick={selectItem}
+                className={`w-full text-left flex items-center gap-2 px-3 py-3 border-b border-border/60 transition-colors ${
+                  isCurrent ? "bg-red-500/10 border-l-[3px] border-l-red-500" : isFinished ? "opacity-40" : "hover:bg-accent/40"
+                }`}
+              >
+                {rowContent}
               </button>
             );
           })}
@@ -2924,11 +3287,12 @@ export default function PresenterDashboard({
               });
               window.worshipsync.slide.videoLoop(videoLoop);
               setIsBlank(false);
+              liveItemIdxRef.current = selectedSongIdx;
               window.worshipsync.slide.videoControl("play");
-              if (preview) { preview.loop = videoLoop; preview.play(); }
+              if (preview) { preview.loop = videoLoop; preview.play().catch(() => {}); }
               setVideoPlaying(true);
               if (videoTimerRef.current) clearInterval(videoTimerRef.current);
-              videoTimerRef.current = setInterval(() => { setVideoCurrentTime(videoPreviewRef.current?.currentTime ?? 0); }, 250);
+              videoTimerRef.current = setInterval(() => setVideoCurrentTime(videoPreviewRef.current?.currentTime ?? 0), 250);
               window.worshipsync.pwa?.broadcastVideoState?.({ isPlaying: true, currentTime: 0, duration: dur, lineupItemId: currentSong.lineupItemId });
             };
             const handlePause = () => {
@@ -2939,11 +3303,12 @@ export default function PresenterDashboard({
               window.worshipsync.pwa?.broadcastVideoState?.({ isPlaying: false, currentTime: videoPreviewRef.current?.currentTime ?? 0, duration: videoPreviewRef.current?.duration || videoDuration, lineupItemId: currentSong.lineupItemId });
             };
             const handleResume = () => {
-              const syncTime = videoPreviewRef.current?.currentTime ?? 0;
+              const syncTime = videoPreviewRef.current?.currentTime ?? videoCurrentTime;
               // Ensure the slide is visible and projection is pre-positioned before playing.
               // This fixes blank→resume de-sync (projection remounts from 0 without a seek).
               window.worshipsync.slide.blank(false);
               setIsBlank(false);
+              liveItemIdxRef.current = selectedSongIdx;
               window.worshipsync.slide.videoSeek(syncTime);
               window.worshipsync.slide.videoControl("play");
               videoPreviewRef.current?.play().catch(() => {});
@@ -3346,6 +3711,469 @@ export default function PresenterDashboard({
                   </div>
                 </div>
 
+              </div>
+            );
+          })()
+        ) : currentSong?.itemType === "media_collection" ? (
+          /* ── Media Collection ──
+               Image items: hero preview + thumbnail grid, matching the song/
+               scripture layout. Video items: the same dedicated transport-
+               controlled player as a standalone video lineup item (seek bar,
+               skip, play/pause, loop) — reusing that item type's own shared
+               state/refs so it's the exact same experience, not a copy.
+               File list lives in the sidebar tree; auto-advance settings
+               live in the right Controls Panel; reordering/removing items
+               is done from the Builder screen. ── */
+          (() => {
+            const cfg = parseMediaCollection(currentSong.mediaCollection);
+            const items = cfg.items;
+            const idx = Math.min(mediaCollectionIndex, Math.max(0, items.length - 1));
+            const path = items[idx] ?? null;
+            const isVideo = !!path && /\.(mp4|webm|mov)$/i.test(path);
+            const isLive = !isBlank && !isLogo && liveItemIdxRef.current === selectedSongIdx;
+
+            const showCollectionItem = (i: number) => showCollectionItemAt(selectedSongIdx, i);
+            showCollectionItemRef.current = showCollectionItem;
+
+            if (isVideo && path) {
+              /* ── Video item — full transport controls, same as a standalone video.
+                   Selecting/browsing only PREVIEWS (loads paused, no projection) —
+                   exactly like selecting a standalone video item does. Going live
+                   requires an explicit Play, same as everywhere else in the app. ── */
+              const bg = path;
+              const isThisLive = isLive && liveMediaCollectionIndexRef.current === idx;
+              const pct = videoDuration ? (videoCurrentTime / videoDuration) * 100 : 0;
+              const fmt = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+              const ext = bg.split(".").pop()?.toUpperCase() ?? "VIDEO";
+
+              const handlePause = () => {
+                window.worshipsync.slide.videoControl("pause");
+                videoPreviewRef.current?.pause();
+                setVideoPlaying(false);
+                if (videoTimerRef.current) { clearInterval(videoTimerRef.current); videoTimerRef.current = null; }
+              };
+              const handleResume = () => {
+                window.worshipsync.slide.blank(false);
+                setIsBlank(false);
+                window.worshipsync.slide.videoControl("play");
+                videoPreviewRef.current?.play().catch(() => {});
+                setVideoPlaying(true);
+                if (videoTimerRef.current) clearInterval(videoTimerRef.current);
+                videoTimerRef.current = setInterval(() => setVideoCurrentTime(videoPreviewRef.current?.currentTime ?? 0), 250);
+              };
+              const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
+                if (!videoDuration) return;
+                const rect = e.currentTarget.getBoundingClientRect();
+                const seekTo = Math.max(0, Math.min(videoDuration, ((e.clientX - rect.left) / rect.width) * videoDuration));
+                if (videoPreviewRef.current) videoPreviewRef.current.currentTime = seekTo;
+                setVideoCurrentTime(seekTo);
+                if (isThisLive) window.worshipsync.slide.videoSeek(seekTo);
+              };
+              const handleSkipVideo = (delta: number) => {
+                const newTime = Math.max(0, Math.min(videoDuration, (videoPreviewRef.current?.currentTime ?? 0) + delta));
+                if (videoPreviewRef.current) videoPreviewRef.current.currentTime = newTime;
+                setVideoCurrentTime(newTime);
+                if (isThisLive) window.worshipsync.slide.videoSeek(newTime);
+              };
+              const handleEnded = () => {
+                if (cfg.autoAdvance) {
+                  if (idx < items.length - 1) { showCollectionItem(idx + 1); return; }
+                  if (cfg.loop) { showCollectionItem(0); return; }
+                }
+                setVideoPlaying(false);
+                if (videoTimerRef.current) { clearInterval(videoTimerRef.current); videoTimerRef.current = null; }
+              };
+              triggerVideoPlayRef.current   = () => (isThisLive ? handleResume() : showCollectionItem(idx));
+              triggerVideoResumeRef.current = handleResume;
+              triggerVideoPauseRef.current  = handlePause;
+
+              const goToItem = (i: number) => (isThisLive ? showCollectionItem(i) : previewCollectionItem(selectedSongIdx, i));
+
+              return (
+                <>
+                  {/* Header */}
+                  <div className="px-5 py-3 border-b border-border bg-card flex items-center justify-between gap-4 shrink-0">
+                    <div className="min-w-0 flex items-center gap-2">
+                      <button onClick={() => goToItem(idx - 1)} disabled={idx === 0 && !cfg.loop} title="Previous item" className="shrink-0 text-muted-foreground hover:text-foreground disabled:opacity-25 disabled:cursor-not-allowed transition-colors">
+                        <ChevronLeft className="h-4 w-4" />
+                      </button>
+                      <div className="min-w-0">
+                        <h1 className="text-base font-semibold truncate">{basenameOf(bg)}</h1>
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
+                          <span>Video</span><span>·</span><span className="tabular-nums">{fmt(videoDuration)}</span><span>·</span><span>{ext}</span>
+                          <span>·</span><span className="tabular-nums">{idx + 1} / {items.length}</span>
+                        </div>
+                      </div>
+                      <button onClick={() => goToItem(idx + 1)} disabled={idx === items.length - 1 && !cfg.loop} title="Next item" className="shrink-0 text-muted-foreground hover:text-foreground disabled:opacity-25 disabled:cursor-not-allowed transition-colors">
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <span className="flex items-center gap-2 shrink-0">
+                      {cfg.autoAdvance && (
+                        <span className="text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded">AUTO</span>
+                      )}
+                      <span className="text-[11px] text-muted-foreground">{isThisLive ? "On screen" : "Not on screen"}</span>
+                    </span>
+                  </div>
+
+                  {/* Player body */}
+                  <div className="flex-1 flex flex-col min-h-0 bg-muted/20 overflow-hidden">
+                    <div className="flex-1 min-h-0 flex items-center justify-center p-4 pb-2">
+                      <video
+                        ref={videoPreviewRef}
+                        src={`${toFileUrl(bg)}`}
+                        className="rounded-xl border border-border shadow-lg bg-black"
+                        style={{ maxWidth: "100%", maxHeight: "100%", display: "block" }}
+                        muted playsInline preload="auto" autoPlay={isThisLive}
+                        onLoadedMetadata={() => setVideoDuration(videoPreviewRef.current?.duration ?? 0)}
+                        onEnded={handleEnded}
+                      />
+                    </div>
+
+                    <div className="shrink-0 px-6 pb-5 flex flex-col gap-3 w-full max-w-2xl mx-auto">
+                      <div className="flex flex-col gap-1.5">
+                        <div className="relative flex items-center cursor-pointer group py-2" onClick={handleSeek}>
+                          <div className="w-full h-1.5 bg-secondary rounded-full relative">
+                            <div className="absolute left-0 top-0 h-full bg-primary rounded-full" style={{ width: `${pct}%` }} />
+                            <div
+                              className="absolute top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-white border-2 border-primary rounded-full shadow-md -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity"
+                              style={{ left: `${pct}%` }}
+                            />
+                          </div>
+                        </div>
+                        <div className="flex justify-between text-[11px] text-muted-foreground tabular-nums px-0.5">
+                          <span>{fmt(videoCurrentTime)}</span>
+                          <span>{fmt(videoDuration)}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-center gap-5">
+                        <button onClick={() => handleSkipVideo(-videoDuration)} title="Skip to start" className="text-muted-foreground hover:text-foreground transition-colors">
+                          <SkipBack className="h-5 w-5" />
+                        </button>
+                        <button onClick={() => handleSkipVideo(-10)} title="Back 10s" className="text-muted-foreground hover:text-foreground transition-colors text-[11px] font-bold w-8 text-center">
+                          −10s
+                        </button>
+                        <button
+                          onClick={!isThisLive ? () => showCollectionItem(idx) : (videoPlaying ? handlePause : handleResume)}
+                          title={!isThisLive ? "Play — goes live on the projection screen" : videoPlaying ? "Pause" : "Resume"}
+                          className="w-14 h-14 rounded-full bg-primary text-primary-foreground flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-all shadow-lg"
+                        >
+                          {isThisLive && videoPlaying ? <Pause className="h-6 w-6 fill-current" /> : <Play className="h-6 w-6 fill-current ml-0.5" />}
+                        </button>
+                        <button onClick={() => handleSkipVideo(10)} title="Forward 10s" className="text-muted-foreground hover:text-foreground transition-colors text-[11px] font-bold w-8 text-center">
+                          +10s
+                        </button>
+                        <button onClick={() => handleSkipVideo(videoDuration)} title="Skip to end" className="text-muted-foreground hover:text-foreground transition-colors">
+                          <SkipForward className="h-5 w-5" />
+                        </button>
+                      </div>
+
+                      <p className="text-center text-[11px] text-muted-foreground">
+                        Preview plays here (muted) · Audio plays on the projection screen
+                      </p>
+                    </div>
+                  </div>
+                </>
+              );
+            }
+
+            return (
+              <div
+                ref={centerPanelRef}
+                className="flex-1 min-h-0 overflow-hidden"
+                style={{ display: 'grid', gridTemplateRows: `${splitPct}fr 5px ${100 - splitPct}fr` }}
+              >
+                {/* LIVE Preview — fills top grid row, matches song/scripture hero */}
+                <div className="flex flex-col overflow-hidden border-b border-border bg-card px-4 pt-3 pb-3 min-h-0">
+                  <div className="flex items-center gap-2 mb-2 shrink-0">
+                    <span className="flex h-2 w-2 relative shrink-0">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-60" />
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
+                    </span>
+                    <span className="text-[10px] font-black text-red-400 tracking-widest">LIVE — AUDIENCE VIEW</span>
+                    <span className="flex-1" />
+                    {items.length > 0 && <span className="text-[10px] font-medium text-muted-foreground bg-muted/60 px-1.5 py-0.5 rounded">{idx + 1} / {items.length}</span>}
+                  </div>
+                  <div className="flex-1 min-h-0 flex justify-center overflow-hidden">
+                    <div className="relative overflow-hidden rounded-xl border-2 border-red-500/70 bg-black shadow-[0_0_24px_rgba(239,68,68,0.18)]" style={{ height: "100%", maxWidth: "100%", aspectRatio: "16/9" }}>
+                      {path ? (
+                        <img src={`${toFileUrl(path)}`} className="absolute inset-0 w-full h-full object-contain" alt="" />
+                      ) : (
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <ImageIcon className="h-10 w-10 text-gray-600" />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Draggable splitter — same one songs/scripture use */}
+                <div
+                  className="relative z-10 flex items-center justify-center cursor-row-resize bg-border hover:bg-primary/30 transition-colors select-none group"
+                  onMouseDown={handleSplitterMouseDown}
+                  onDoubleClick={handleSplitterDblClick}
+                  title="Drag to resize · Double-click to reset"
+                >
+                  <div className="w-8 h-0.5 rounded-full bg-muted-foreground/25 group-hover:bg-primary/60 transition-colors" />
+                </div>
+
+                {/* Bottom section: header + thumbnail grid (click a tile = go live), same visual language as the song slide grid */}
+                <div className="flex flex-col min-h-0 overflow-hidden">
+                  <div className="shrink-0 px-4 py-2.5 border-b border-border bg-card flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <Layers className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <h2 className="text-sm font-bold truncate max-w-[220px]">{currentSong.title}</h2>
+                      {cfg.autoAdvance && (
+                        <span className="shrink-0 text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded">AUTO</span>
+                      )}
+                    </div>
+                    <span className="text-[10px] text-muted-foreground shrink-0">{isLive ? "On screen" : "Not on screen"}</span>
+                  </div>
+                  <div className="flex-1 overflow-y-auto p-3">
+                    <div className="grid gap-x-3 gap-y-4" style={{ gridTemplateColumns: "repeat(auto-fill, 206px)" }}>
+                      {items.map((p, i) => {
+                        const vid = /\.(mp4|webm|mov)$/i.test(p);
+                        const isActive = idx === i;
+                        const isNextItem = idx >= 0 && i === idx + 1;
+                        const isTileLive = liveItemIdxRef.current === selectedSongIdx && liveMediaCollectionIndexRef.current === i && !isBlank && !isLogo;
+                        const filename = basenameOf(p) || p;
+                        return (
+                          <div key={`${p}-${i}`} className="flex flex-col gap-1.5">
+                            <button
+                              onClick={() => vid ? previewCollectionItem(selectedSongIdx, i) : showCollectionItem(i)}
+                              className={`relative w-full overflow-hidden rounded-lg focus:outline-none transition-all duration-150 ${
+                                isTileLive
+                                  ? "ring-2 ring-red-500 scale-[1.015]"
+                                  : isActive
+                                  ? "ring-2 ring-primary/50"
+                                  : isNextItem
+                                  ? "ring-1 ring-green-500/60"
+                                  : "ring-1 ring-transparent hover:ring-white/15"
+                              }`}
+                            >
+                              <div className="w-full" style={{ paddingBottom: "56.25%" }} />
+                              <div className="absolute inset-0 bg-black">
+                                {vid ? (
+                                  <video src={`${toFileUrl(p)}`} className="absolute inset-0 w-full h-full object-cover" muted preload="none" />
+                                ) : (
+                                  <img src={`${toFileUrl(p)}`} className="absolute inset-0 w-full h-full object-cover" alt="" />
+                                )}
+                                {isTileLive && (
+                                  <span className="absolute top-1 right-1 text-[8px] font-black text-white bg-red-500 px-1 py-0.5 rounded leading-none">LIVE</span>
+                                )}
+                              </div>
+                            </button>
+                            <p className="text-[10px] text-muted-foreground truncate px-0.5">{i + 1}. {filename}</p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {items.length === 0 && (
+                      <div className="flex flex-col items-center justify-center text-center px-8 py-12 gap-2">
+                        <ImageIcon className="h-8 w-8 text-muted-foreground/20" />
+                        <p className="text-sm text-muted-foreground/60">No items in this collection yet</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()
+        ) : currentSong?.itemType === "music_player" ? (
+          /* ── Music Player — scans a folder, plays one file at a time, waveform on the
+               live one. Reuses the same audio singleton/state as a standalone audio
+               item, so it blanks the screen + reports to the confidence monitor the
+               same way. ── */
+          (() => {
+            const dir = currentSong.musicPlayerDir;
+            const pct = audioDuration ? (audioCurrentTime / audioDuration) * 100 : 0;
+            const fmt = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+
+            const pickDir = async () => {
+              const picked = await window.worshipsync.music.pickDirectory();
+              if (picked) await setMusicPlayerDir(currentSong.lineupItemId, picked);
+            };
+
+            const stopCurrent = () => {
+              audioRef.current?.pause();
+              _audio.ctx?.suspend();
+              setAudioPlaying(false);
+              if (audioTimerRef.current) { clearInterval(audioTimerRef.current); audioTimerRef.current = null; }
+              stopViz();
+              window.worshipsync.pwa?.broadcastAudioState?.({ isPlaying: false, currentTime: audioRef.current?.currentTime ?? 0, duration: audioRef.current?.duration || audioDuration, lineupItemId: currentSong.lineupItemId });
+            };
+
+            const playSong = (path: string) => {
+              window.worshipsync.slide.blank(true);
+              setIsBlank(true);
+              window.worshipsync.slide.confidenceHint({
+                lines: [],
+                songTitle: basenameOf(path),
+                sectionLabel: "",
+                itemType: "media",
+                slideIndex: 0,
+                totalSlides: 1,
+                lineupItemId: currentSong.lineupItemId,
+              });
+
+              if (_audio.path !== path) {
+                // Different file — tear down whatever was loaded before
+                if (_audio.el) _audio.el.pause();
+                if (_audio.ctx) _audio.ctx.close();
+                const audio = new Audio(`${toFileUrl(path)}`);
+                audio.onloadedmetadata = () => setAudioDuration(audio.duration ?? 0);
+                audio.onended = () => {
+                  setAudioPlaying(false); setAudioCurrentTime(0);
+                  if (audioTimerRef.current) { clearInterval(audioTimerRef.current); audioTimerRef.current = null; }
+                  stopViz();
+                  window.worshipsync.pwa?.broadcastAudioState?.({ isPlaying: false, currentTime: 0, duration: audio.duration ?? 0, lineupItemId: currentSong.lineupItemId });
+                  // Auto-advance — look the finished track up fresh (not the stale
+                  // closure array) so a shuffle mid-playback is respected.
+                  const list = scannedSongsRef.current;
+                  const idx = list.findIndex(s => s.path === path);
+                  const next = idx >= 0 ? list[idx + 1] : undefined;
+                  if (next) playSong(next.path);
+                };
+                const ctx = new AudioContext();
+                const analyser = ctx.createAnalyser();
+                analyser.fftSize = 256;
+                ctx.createMediaElementSource(audio).connect(analyser);
+                analyser.connect(ctx.destination);
+                audioRef.current = audio;
+                audioContextRef.current = ctx;
+                analyserRef.current = analyser;
+                _audio.el = audio; _audio.ctx = ctx; _audio.analyser = analyser; _audio.path = path;
+                setMusicPlayerCurrentPath(path);
+                setAudioCurrentTime(0);
+                setAudioDuration(0);
+              }
+
+              setAudioPlaying(true);
+              if (audioTimerRef.current) clearInterval(audioTimerRef.current);
+              audioTimerRef.current = setInterval(() => setAudioCurrentTime(audioRef.current?.currentTime ?? 0), 100);
+              const ctx = audioContextRef.current;
+              const startPlayback = () => {
+                audioRef.current?.play().catch(() => {});
+                startViz();
+                window.worshipsync.pwa?.broadcastAudioState?.({ isPlaying: true, currentTime: audioRef.current?.currentTime ?? 0, duration: audioRef.current?.duration || audioDuration, lineupItemId: currentSong.lineupItemId });
+              };
+              if (ctx && ctx.state !== "running") { ctx.resume().then(startPlayback).catch(startPlayback); }
+              else startPlayback();
+            };
+
+            const togglePlay = (path: string) => {
+              if (musicPlayerCurrentPath === path && audioPlaying) stopCurrent();
+              else playSong(path);
+            };
+
+            triggerAudioPlayRef.current = () => { if (musicPlayerCurrentPath) playSong(musicPlayerCurrentPath); };
+            triggerAudioPauseRef.current = stopCurrent;
+
+            const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
+              if (!audioDuration || !audioRef.current) return;
+              const rect = e.currentTarget.getBoundingClientRect();
+              const seekTo = Math.max(0, Math.min(audioDuration, ((e.clientX - rect.left) / rect.width) * audioDuration));
+              audioRef.current.currentTime = seekTo;
+              setAudioCurrentTime(seekTo);
+              window.worshipsync.pwa?.broadcastAudioState?.({ isPlaying: audioPlaying, currentTime: seekTo, duration: audioRef.current.duration || audioDuration, lineupItemId: currentSong.lineupItemId });
+            };
+
+            const shufflePlaylist = () => {
+              setScannedSongs(prev => {
+                const arr = [...prev];
+                for (let i = arr.length - 1; i > 0; i--) {
+                  const j = Math.floor(Math.random() * (i + 1));
+                  [arr[i], arr[j]] = [arr[j], arr[i]];
+                }
+                return arr;
+              });
+            };
+
+            return (
+              <div className="flex-1 flex flex-col overflow-hidden">
+                <div className="px-5 py-3 border-b border-border bg-card flex items-center justify-between gap-4 shrink-0">
+                  <div className="min-w-0">
+                    <h1 className="text-base font-semibold truncate">{currentSong.title}</h1>
+                    <p className="text-xs text-muted-foreground truncate mt-0.5">{dir || "No folder selected"}</p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {scannedSongs.length > 1 && (
+                      <Button variant="secondary" size="sm" className="gap-1.5 h-8 text-xs" onClick={shufflePlaylist} title="Reshuffle playlist order">
+                        <Shuffle className="h-3.5 w-3.5" /> Shuffle
+                      </Button>
+                    )}
+                    <Button variant="secondary" size="sm" className="gap-1.5 h-8 text-xs" onClick={pickDir}>
+                      <Folder className="h-3.5 w-3.5" /> {dir ? "Change Folder" : "Choose Folder"}
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                  {!dir ? (
+                    <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
+                      <Music2 className="h-12 w-12 text-muted-foreground/30 mb-4" />
+                      <p className="text-sm text-muted-foreground mb-4">Choose a folder to scan for audio files</p>
+                      <Button size="sm" className="gap-1.5" onClick={pickDir}><Folder className="h-3.5 w-3.5" /> Choose Folder</Button>
+                    </div>
+                  ) : scanningDir ? (
+                    <div className="flex-1 flex items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+                  ) : scannedSongs.length === 0 ? (
+                    <div className="flex-1 flex flex-col items-center justify-center text-center px-8">
+                      <Music2 className="h-12 w-12 text-muted-foreground/30 mb-4" />
+                      <p className="text-sm text-muted-foreground">No audio files found in this folder</p>
+                    </div>
+                  ) : (
+                    <>
+                      {musicPlayerCurrentPath && (
+                        <div className="p-5 border-b border-border bg-muted/10 shrink-0 flex justify-center">
+                          <div className="w-full max-w-2xl">
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${audioPlaying ? "bg-red-500 animate-pulse" : "bg-muted-foreground/25"}`} />
+                              <p className="text-xs font-semibold text-foreground truncate">{basenameOf(musicPlayerCurrentPath)}</p>
+                            </div>
+                            <div className="relative rounded-xl overflow-hidden bg-black/70 border border-border/60 cursor-pointer" style={{ height: 100 }} onClick={handleSeek}>
+                              <div className="absolute inset-0 flex items-center gap-[2px] px-4 py-4">
+                                {waveformBars.map((v, wi) => {
+                                  const h = Math.max(3, v * 100);
+                                  return (
+                                    <div key={wi} className="flex-1 flex flex-col" style={{ height: "100%" }}>
+                                      <div className="flex-1 flex flex-col justify-end"><div className="w-full rounded-t-[1px] bg-primary" style={{ height: `${h}%`, opacity: 0.85 }} /></div>
+                                      <div className="flex-1 flex flex-col justify-start"><div className="w-full rounded-b-[1px] bg-primary" style={{ height: `${h * 0.55}%`, opacity: 0.35 }} /></div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                              <div className="absolute left-0 top-0 h-full bg-white/5" style={{ width: `${pct}%` }} />
+                            </div>
+                            <div className="flex justify-between text-[10px] text-muted-foreground tabular-nums mt-1 px-0.5">
+                              <span>{fmt(audioCurrentTime)}</span><span>{fmt(audioDuration)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex-1 overflow-y-auto p-2">
+                        {scannedSongs.map(song => {
+                          const isCurrent = musicPlayerCurrentPath === song.path;
+                          const isPlaying = isCurrent && audioPlaying;
+                          return (
+                            <button
+                              key={song.path}
+                              onClick={() => togglePlay(song.path)}
+                              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg mb-0.5 text-left transition-colors ${isCurrent ? "bg-primary/10" : "hover:bg-accent/50"}`}
+                            >
+                              <div className={`h-8 w-8 shrink-0 rounded-full flex items-center justify-center ${isCurrent ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
+                                {isPlaying ? <Pause className="h-3.5 w-3.5 fill-current" /> : <Play className="h-3.5 w-3.5 fill-current ml-0.5" />}
+                              </div>
+                              <span className={`flex-1 min-w-0 truncate text-sm ${isCurrent ? "text-primary font-medium" : "text-foreground"}`}>{song.filename}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
             );
           })()
@@ -3981,6 +4809,91 @@ export default function PresenterDashboard({
           );
         })()}
 
+        {/* ── Media collection controls — Play Collection + auto-advance.
+             Play Collection is hidden when the current item is a video (the
+             video player's own Play button in the center panel already covers
+             that, so it doesn't need a duplicate). Auto-advance always stays
+             visible here — it's a collection-wide setting, not a per-item
+             control, so it must be reachable even when every item happens to
+             be a video. Playlist lives in the sidebar tree; reorder is in
+             Builder. ── */}
+        {currentSong?.itemType === "media_collection" && (() => {
+          const cfg = parseMediaCollection(currentSong.mediaCollection);
+          const items = cfg.items;
+          const idx = Math.min(mediaCollectionIndex, Math.max(0, items.length - 1));
+          const currentPath = items[idx];
+          const isCurrentVideo = !!currentPath && /\.(mp4|webm|mov)$/i.test(currentPath);
+          const patchCfg = (patch: Partial<MediaCollectionConfig>) => setMediaCollectionConfig(currentSong.lineupItemId, patch);
+
+          return (
+            <div className="px-3 py-3 border-b border-border shrink-0 flex flex-col gap-2.5">
+              {/* Play Collection — re-pushes the current tile, e.g. after Blank.
+                  Hidden for video since the center player already has Play. */}
+              {!isCurrentVideo && (
+                <button
+                  onClick={() => showCollectionItemRef.current(idx)}
+                  disabled={items.length === 0}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-black uppercase tracking-wide transition-all duration-150 disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98] bg-primary hover:bg-primary/90 text-primary-foreground shadow-[0_0_12px_rgba(139,92,246,0.2)]"
+                >
+                  <Play className="h-4 w-4 fill-current" />
+                  Play Collection
+                </button>
+              )}
+
+              {/* Auto-advance */}
+              <div className="flex flex-col gap-2">
+                <label className="flex items-center justify-between">
+                  <span className="text-[11px] font-medium text-foreground">Auto-advance</span>
+                  <button
+                    onClick={() => patchCfg({ autoAdvance: !cfg.autoAdvance })}
+                    role="switch"
+                    aria-checked={cfg.autoAdvance}
+                    className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors focus:outline-none ${
+                      cfg.autoAdvance ? "bg-primary border-primary" : "bg-muted border-border"
+                    }`}
+                  >
+                    <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${cfg.autoAdvance ? "translate-x-4" : "translate-x-0.5"}`} />
+                  </button>
+                </label>
+                {cfg.autoAdvance && (
+                  <>
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] text-muted-foreground">Seconds per image</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={300}
+                        value={cfg.intervalSeconds}
+                        onChange={e => {
+                          const n = parseInt(e.target.value);
+                          if (n >= 1) patchCfg({ intervalSeconds: n });
+                        }}
+                        className="w-14 h-6 px-1.5 text-[11px] text-center bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      />
+                    </div>
+                    <p className="text-[10px] text-muted-foreground/40 leading-relaxed -mt-1">
+                      Videos advance when they finish playing, not on this timer.
+                    </p>
+                    <label className="flex items-center justify-between">
+                      <span className="text-[11px] font-medium text-foreground">Loop back to start</span>
+                      <button
+                        onClick={() => patchCfg({ loop: !cfg.loop })}
+                        role="switch"
+                        aria-checked={cfg.loop}
+                        className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors focus:outline-none ${
+                          cfg.loop ? "bg-primary border-primary" : "bg-muted border-border"
+                        }`}
+                      >
+                        <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${cfg.loop ? "translate-x-4" : "translate-x-0.5"}`} />
+                      </button>
+                    </label>
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
         {/* Active Background — only for text-based projectable items */}
         {(currentSong?.itemType === "song" || currentSong?.itemType === "scripture" || currentSong?.itemType === "announcement" || !currentSong) && <div className="px-3 py-3 border-b border-border shrink-0">
           <h3 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">Active Background</h3>
@@ -4122,8 +5035,8 @@ export default function PresenterDashboard({
             <div className="flex-1 flex items-center min-h-0 mb-1">
               <div className="h-full aspect-video max-w-full relative rounded overflow-hidden border border-border bg-black">
                 {/* Background layer */}
-                {!isBlank && !isLogo && (liveSlide?.sectionType !== "blank" || liveBibleVerse) && (() => {
-                  const outputBg = liveBibleVerse ? (liveBibleVerse.bg ?? liveBg) : liveBg;
+                {!isBlank && !isLogo && (liveSlide?.sectionType !== "blank" || liveBibleVerse || liveMediaCollectionBg) && (() => {
+                  const outputBg = liveBibleVerse ? (liveBibleVerse.bg ?? liveBg) : liveMediaCollectionBg ?? liveBg;
                   if (!outputBg) return null;
                   return outputBg.startsWith("color:") ? (
                     <div className="absolute inset-0" style={{ background: outputBg.replace("color:", "") }} />
@@ -4574,7 +5487,7 @@ export default function PresenterDashboard({
       {/* Library modal */}
       {showLibrary && (
         <LibraryModal
-          onClose={() => { setShowLibrary(false); setInsertAfterSectionId(null); }}
+          onClose={() => { setShowLibrary(false); setInsertAfterSectionId(null); setCollectionAppendTarget(null); }}
           onAdd={handleLibraryAdd}
           onAddCountdown={async () => {
             const prevLen = useServiceStore.getState().lineup.length;
@@ -4587,7 +5500,21 @@ export default function PresenterDashboard({
             if (insertAfterSectionId !== null) await repositionAfterSection(insertAfterSectionId, prevLen);
             setSelectedSongIdx(useServiceStore.getState().lineup.length - 1);
           }}
-          onAddMedia={handleAddMedia}
+          onAddMusicPlayer={async () => {
+            const prevLen = useServiceStore.getState().lineup.length;
+            await addMusicPlayerToLineup();
+            if (insertAfterSectionId !== null) await repositionAfterSection(insertAfterSectionId, prevLen);
+            setSelectedSongIdx(useServiceStore.getState().lineup.length - 1);
+          }}
+          onAddMedia={collectionAppendTarget !== null ? (path) => {
+            pendingCollectionAppendRef.current = [...pendingCollectionAppendRef.current, path];
+            appendToMediaCollection(collectionAppendTarget, pendingCollectionAppendRef.current);
+          } : handleAddMedia}
+          onAddMediaCollection={collectionAppendTarget !== null ? (paths) => {
+            pendingCollectionAppendRef.current = [...pendingCollectionAppendRef.current, ...paths];
+            appendToMediaCollection(collectionAppendTarget, pendingCollectionAppendRef.current);
+          } : undefined}
+          initialTab={collectionAppendTarget !== null ? "media" : undefined}
           onAddAnnouncement={async (title, content) => {
             const prevLen = useServiceStore.getState().lineup.length;
             await addAnnouncementToLineup({ title, content });

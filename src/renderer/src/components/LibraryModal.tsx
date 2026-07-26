@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react"
-import { Search, Music2, Timer, Upload, Trash2, Check, Image as ImageIcon, Play, Volume2, Calendar, BookOpen, Megaphone, Loader2 } from "lucide-react"
+import { Search, Music2, Timer, Upload, Trash2, Check, Image as ImageIcon, Play, Volume2, Calendar, BookOpen, Megaphone, Loader2, ChevronUp, ChevronDown, X } from "lucide-react"
 import { FREE_TRANSLATIONS, type BibleTranslation, type BibleApiResult, fetchBiblePassage } from "../lib/bibleApi"
 import { toFileUrl } from "../lib/utils"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -39,6 +39,8 @@ interface Props {
   onAddCountdown?: () => void
   onAddBibleBrowser?: () => void
   onAddMedia?: (path: string) => void
+  onAddMediaCollection?: (paths: string[]) => void
+  onAddMusicPlayer?: () => void
   onAddAnnouncement?: (title: string, content: string) => void
   excludeIds?: number[]
   availableTranslations?: BibleTranslation[]
@@ -46,6 +48,7 @@ interface Props {
   recentScriptures?: { query: string; translationId: string; translationLabel: string; reference: string }[]
   onAddScriptureByRef?: (query: string, translationId: string) => Promise<void>
   onTranslationChange?: (id: string) => void
+  initialTab?: "songs" | "scriptures" | "media" | "presentations" | "widgets"
 }
 
 // ── Book name autocomplete ────────────────────────────────────────────────────
@@ -82,8 +85,8 @@ function getBookSuggestions(query: string): string[] {
   return BIBLE_BOOKS.filter(b => b.toLowerCase().startsWith(query.toLowerCase())).slice(0, 6)
 }
 
-export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddBibleBrowser, onAddMedia, onAddAnnouncement, excludeIds = [], availableTranslations, defaultTranslation, recentScriptures, onAddScriptureByRef, onTranslationChange }: Props) {
-  const [tab, setTab] = useState("songs")
+export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddBibleBrowser, onAddMedia, onAddMediaCollection, onAddMusicPlayer, onAddAnnouncement, excludeIds = [], availableTranslations, defaultTranslation, recentScriptures, onAddScriptureByRef, onTranslationChange, initialTab }: Props) {
+  const [tab, setTab] = useState<string>(initialTab ?? "songs")
   const [songs, setSongs] = useState<SongRow[]>([])
   const [selectedIds, setSelectedIds] = useState<number[]>([])
   const [previewId, setPreviewId] = useState<number | null>(null)
@@ -243,6 +246,19 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddBibl
       const next = new Set(prev)
       next.has(path) ? next.delete(path) : next.add(path)
       return next
+    })
+  }, [])
+
+  // Sets preserve insertion order, so this reorders by rebuilding the Set —
+  // that order becomes the collection's playback order.
+  const moveSelected = useCallback((path: string, dir: -1 | 1) => {
+    setMediaSelectedPaths(prev => {
+      const arr = Array.from(prev)
+      const i = arr.indexOf(path)
+      const next = i + dir
+      if (i < 0 || next < 0 || next >= arr.length) return prev
+      ;[arr[i], arr[next]] = [arr[next], arr[i]]
+      return new Set(arr)
     })
   }, [])
 
@@ -497,6 +513,7 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddBibl
                 <WidgetsTab
                   onAddCountdown={() => { onAddCountdown?.(); onClose() }}
                   onAddBibleBrowser={() => { onAddBibleBrowser?.(); onClose() }}
+                  onAddMusicPlayer={onAddMusicPlayer ? () => { onAddMusicPlayer(); onClose() } : undefined}
                   onAddAnnouncement={(title, content) => { onAddAnnouncement?.(title, content); onClose() }}
                 />
               ) : tab === "scriptures" ? (
@@ -570,7 +587,7 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddBibl
                                     src={`${toFileUrl(item.path)}`}
                                     className="absolute inset-0 w-full h-full object-cover"
                                     muted
-                                    preload="metadata"
+                                    preload="none"
                                   />
                                 ) : (
                                   <div
@@ -611,6 +628,44 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddBibl
                       )}
                     </ScrollArea>
                   </div>
+
+                  {/* Multi-selection sidebar — order here becomes collection playback order */}
+                  {mediaSelectedPaths.size > 1 && (
+                    <div className="w-56 shrink-0 border-l border-border flex flex-col min-h-0 overflow-hidden">
+                      <div className="px-3 py-2.5 border-b border-border shrink-0">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                          Selected ({mediaSelectedPaths.size})
+                        </span>
+                        <p className="text-[10px] text-muted-foreground/60 mt-0.5 leading-relaxed">
+                          This order becomes the playback order if you import as a collection.
+                        </p>
+                      </div>
+                      <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                        {Array.from(mediaSelectedPaths).map((path, i) => {
+                          const filename = path.split("/").pop() ?? path
+                          const isVideo = /\.(mp4|webm|mov)$/i.test(path)
+                          return (
+                            <div key={path} className="flex items-center gap-1.5 bg-muted/40 border border-border rounded-md px-2 py-1.5">
+                              <span className="text-[10px] text-muted-foreground/50 tabular-nums w-4 text-right shrink-0">{i + 1}</span>
+                              {isVideo ? <Play className="h-3 w-3 text-muted-foreground shrink-0" /> : <ImageIcon className="h-3 w-3 text-muted-foreground shrink-0" />}
+                              <span className="flex-1 min-w-0 truncate text-[11px] text-foreground" title={filename}>{filename}</span>
+                              <div className="flex items-center gap-0.5 shrink-0">
+                                <button onClick={() => moveSelected(path, -1)} disabled={i === 0} title="Move up" className="p-0.5 text-muted-foreground/50 hover:text-foreground disabled:opacity-20 disabled:cursor-not-allowed transition-colors">
+                                  <ChevronUp className="h-3 w-3" />
+                                </button>
+                                <button onClick={() => moveSelected(path, 1)} disabled={i === mediaSelectedPaths.size - 1} title="Move down" className="p-0.5 text-muted-foreground/50 hover:text-foreground disabled:opacity-20 disabled:cursor-not-allowed transition-colors">
+                                  <ChevronDown className="h-3 w-3" />
+                                </button>
+                                <button onClick={() => toggleMediaSelect(path)} title="Remove from selection" className="p-0.5 text-muted-foreground/50 hover:text-destructive transition-colors">
+                                  <X className="h-3 w-3" />
+                                </button>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Detail sidebar — only for single selection */}
                   {singleMediaSelected && (() => {
@@ -724,28 +779,72 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddBibl
                   + Add to Lineup
                 </Button>
               </>
-            ) : tab === "media" ? (
+            ) : tab === "media" ? (() => {
+              // Audio isn't supported inside a collection (collection items only
+              // know how to render "video" or "image") — filter it out so an
+              // accidental audio pick doesn't silently break as a broken thumbnail.
+              const collectionPaths = Array.from(mediaSelectedPaths).filter(p => !/\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(p))
+              const audioExcludedCount = mediaSelectedPaths.size - collectionPaths.length
+              return (
               <>
-                <span className="flex-1 text-xs text-muted-foreground">
-                  {mediaSelectedPaths.size > 0
-                    ? `${mediaSelectedPaths.size} ${mediaSelectedPaths.size === 1 ? "file" : "files"} selected`
-                    : "No files selected"}
-                </span>
+                <div className="flex-1 min-w-0">
+                  <span className="text-xs text-muted-foreground block">
+                    {mediaSelectedPaths.size > 0
+                      ? `${mediaSelectedPaths.size} ${mediaSelectedPaths.size === 1 ? "file" : "files"} selected`
+                      : "No files selected"}
+                  </span>
+                  {mediaSelectedPaths.size > 1 && (
+                    <span className="text-[10px] text-muted-foreground/60">
+                      Collection = one auto-advancing slideshow item. Separate = {mediaSelectedPaths.size} individual lineup items.
+                      {audioExcludedCount > 0 && ` Audio can't join a collection — ${audioExcludedCount} will be left out.`}
+                    </span>
+                  )}
+                </div>
                 <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
-                <Button
-                  size="sm"
-                  disabled={mediaSelectedPaths.size === 0}
-                  onClick={() => {
-                    for (const path of mediaSelectedPaths) {
-                      onAddMedia?.(path)
-                    }
-                    onClose()
-                  }}
-                >
-                  + Add {mediaSelectedPaths.size > 1 ? `${mediaSelectedPaths.size} Files` : "to Lineup"}
-                </Button>
+                {mediaSelectedPaths.size > 1 && onAddMediaCollection ? (
+                  <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        for (const path of mediaSelectedPaths) {
+                          onAddMedia?.(path)
+                        }
+                        onClose()
+                      }}
+                      title="Add each file as its own separate lineup item"
+                    >
+                      Add as {mediaSelectedPaths.size} Separate Items
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={collectionPaths.length < 2}
+                      onClick={() => {
+                        onAddMediaCollection(collectionPaths)
+                        onClose()
+                      }}
+                      title={collectionPaths.length < 2 ? "Select at least 2 non-audio files to make a collection" : "Add all selected non-audio files as one auto-advancing lineup item, in the order shown"}
+                    >
+                      + Add as Collection ({collectionPaths.length})
+                    </Button>
+                  </>
+                ) : (
+                  <Button
+                    size="sm"
+                    disabled={mediaSelectedPaths.size === 0}
+                    onClick={() => {
+                      for (const path of mediaSelectedPaths) {
+                        onAddMedia?.(path)
+                      }
+                      onClose()
+                    }}
+                  >
+                    + Add to Lineup
+                  </Button>
+                )}
               </>
-            ) : (
+              )
+            })() : (
               <>
                 <span className="flex-1 text-xs text-muted-foreground">{selectionLabel}</span>
                 <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
@@ -857,9 +956,10 @@ function ScriptureTab({ translation, availableTranslations, recentScriptures, on
 
 // ── WidgetsTab ────────────────────────────────────────────────────────────────
 
-function WidgetsTab({ onAddCountdown, onAddBibleBrowser, onAddAnnouncement }: {
+function WidgetsTab({ onAddCountdown, onAddBibleBrowser, onAddMusicPlayer, onAddAnnouncement }: {
   onAddCountdown: () => void
   onAddBibleBrowser: () => void
+  onAddMusicPlayer?: () => void
   onAddAnnouncement: (title: string, content: string) => void
 }) {
   const [annTitle,   setAnnTitle]   = useState("")
@@ -894,6 +994,22 @@ function WidgetsTab({ onAddCountdown, onAddBibleBrowser, onAddAnnouncement }: {
           <p className="text-xs text-muted-foreground mt-0.5">Search, compare translations, and project scripture live</p>
         </div>
       </button>
+
+      {/* Music Player */}
+      {onAddMusicPlayer && (
+        <button
+          onClick={onAddMusicPlayer}
+          className="flex items-center gap-4 p-4 rounded-xl border border-border bg-card hover:bg-accent hover:border-primary/30 transition-colors text-left group"
+        >
+          <div className="h-10 w-10 rounded-lg bg-green-500/10 flex items-center justify-center group-hover:bg-green-500/20 transition-colors shrink-0">
+            <Music2 className="h-5 w-5 text-green-500" />
+          </div>
+          <div>
+            <p className="text-sm font-medium">Music Player</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Browse a folder of audio files and play them one at a time</p>
+          </div>
+        </button>
+      )}
 
       {/* Announcement */}
       <div className="flex flex-col gap-3 p-4 rounded-xl border border-border bg-card">

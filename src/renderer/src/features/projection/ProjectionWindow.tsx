@@ -35,7 +35,7 @@ interface FrameProps {
   textRef?: React.RefObject<HTMLDivElement>;
   videoRef?: React.RefObject<HTMLVideoElement>;
   scaledFontSize: number;
-  onVideoProgress?: (force?: boolean) => void;
+  onVideoProgress?: (force?: boolean, isEndedEvent?: boolean) => void;
   showCounter?: boolean;
 }
 
@@ -96,7 +96,7 @@ function SlideFrame({
             onPlay={() => onVideoProgress?.(true)}
             onPause={() => onVideoProgress?.(true)}
             onSeeked={() => onVideoProgress?.(true)}
-            onEnded={() => onVideoProgress?.(true)}
+            onEnded={() => onVideoProgress?.(true, true)}
           />
         ) : (
           <div
@@ -474,11 +474,15 @@ export default function ProjectionWindow() {
             pendingVideoAction.current = null;
             if (action === "play") {
               // If the video isn't ready yet, wait for canplay rather than
-              // silently swallowing a rejected play() promise.
+              // silently swallowing a rejected play() promise. That first play()
+              // must go through the main process so it carries a trusted user
+              // gesture — otherwise Chromium starts playback muted instead of
+              // rejecting it outright, which is why slow-loading videos on
+              // Windows can end up silent even though the picture plays fine.
               if (vid.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA) {
-                vid.play().catch(() => {});
+                window.worshipsync.slide.requestVideoPlayGesture();
               } else {
-                vid.addEventListener("canplay", () => vid.play().catch(() => {}), { once: true });
+                vid.addEventListener("canplay", () => window.worshipsync.slide.requestVideoPlayGesture(), { once: true });
               }
             } else if (action === "pause") vid.pause();
             else if (action === "stop") { vid.pause(); vid.currentTime = 0; setDisplayState("blank"); }
@@ -488,7 +492,7 @@ export default function ProjectionWindow() {
     }
   }, [displayState, currentFrame]);
 
-  const reportVideoProgress = useCallback((force = false) => {
+  const reportVideoProgress = useCallback((force = false, isEndedEvent = false) => {
     const vid = videoRef.current;
     if (!vid) return;
     const now = Date.now();
@@ -498,6 +502,12 @@ export default function ProjectionWindow() {
       currentTime: vid.currentTime,
       duration: Number.isFinite(vid.duration) ? vid.duration : 0,
       isPlaying: !vid.paused,
+      // Only the actual "ended" DOM event reports this — by the time "pause" fires
+      // for a naturally-finished video, vid.ended is already true too, and reporting
+      // it from both events double-fires the presenter's ended handling (which was
+      // skipping the next item in a collection: end of item 1 advanced twice before
+      // item 2 was ever shown).
+      ended: isEndedEvent,
       lineupItemId: currentFrame?.lineupItemId,
     });
     // When the video finishes naturally (not looping), go blank immediately

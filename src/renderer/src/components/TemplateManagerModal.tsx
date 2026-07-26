@@ -627,7 +627,7 @@ export function TemplateManagerModal({
                                         src={`${toFileUrl(path)}`}
                                         className="absolute inset-0 w-full h-full object-cover"
                                         muted
-                                        preload="metadata"
+                                        preload="none"
                                       />
                                     ) : (
                                       <div

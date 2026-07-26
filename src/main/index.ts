@@ -10,6 +10,13 @@ app.commandLine.appendSwitch('disable-frame-rate-limit')
 // rendering on secondary monitors, causing video stutter.
 app.commandLine.appendSwitch('enable-gpu-rasterization')
 app.commandLine.appendSwitch('ignore-gpu-blocklist')
+// Force software video decode. Hardware video decode on a GPU/driver combo that
+// Chromium's blocklist normally protects against (which ignore-gpu-blocklist above
+// bypasses) is a known source of exactly this symptom: stutter that gets worse over
+// time and eventually drops the audio track entirely, because the hardware decoder
+// itself is degrading rather than just being resource-constrained. Software decode
+// costs more CPU but is far more predictable.
+app.commandLine.appendSwitch('disable-accelerated-video-decode')
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import { screen } from 'electron'
 import { runMigrations } from './db/migrate'
@@ -38,6 +45,7 @@ import { registerAnalyticsHandlers } from './features/analytics/handlers'
 import { registerAppStateHandlers, readAppState, writeAppState } from './features/app-state/handlers'
 import { registerDataHandlers } from './features/data/handlers'
 import { registerPwaHandlers } from './features/pwa/handlers'
+import { registerMusicHandlers } from './features/music/handlers'
 
 // ── App lifecycle ──────────────────────────────────────────────────────────────
 
@@ -65,6 +73,7 @@ app.whenReady().then(() => {
   registerAppStateHandlers()
   registerDataHandlers()
   registerPwaHandlers()
+  registerMusicHandlers()
 
   // Create the control window
   createControlWindow()

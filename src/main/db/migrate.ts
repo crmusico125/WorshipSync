@@ -236,5 +236,27 @@ export function runMigrations(): void {
     console.error('[db] migration error (songs style_overrides):', e)
   }
 
+  // ── Migration: add media_collection column to lineup_items ──────────────
+  try {
+    const colsMediaCollection = sqlite.prepare("PRAGMA table_info(lineup_items)").all() as { name: string }[]
+    if (!colsMediaCollection.some(c => c.name === 'media_collection')) {
+      sqlite.exec(`ALTER TABLE lineup_items ADD COLUMN media_collection TEXT`)
+      console.log('[db] migration: added media_collection column to lineup_items')
+    }
+  } catch (e) {
+    console.error('[db] migration error (lineup_items media_collection):', e)
+  }
+
+  // ── Migration: add music_player_dir column to lineup_items ──────────────
+  try {
+    const colsMusicPlayer = sqlite.prepare("PRAGMA table_info(lineup_items)").all() as { name: string }[]
+    if (!colsMusicPlayer.some(c => c.name === 'music_player_dir')) {
+      sqlite.exec(`ALTER TABLE lineup_items ADD COLUMN music_player_dir TEXT`)
+      console.log('[db] migration: added music_player_dir column to lineup_items')
+    }
+  } catch (e) {
+    console.error('[db] migration error (lineup_items music_player_dir):', e)
+  }
+
   console.log('[db] migrations complete')
 }

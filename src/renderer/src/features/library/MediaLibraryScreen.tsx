@@ -871,7 +871,7 @@ function MediaCard({
         <video
           src={`${toFileUrl(item.path)}`}
           className="absolute inset-0 w-full h-full object-cover"
-          muted preload="metadata"
+          muted preload="none"
         />
       ) : isAudio ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-2"

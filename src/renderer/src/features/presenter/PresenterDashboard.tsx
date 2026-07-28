@@ -346,6 +346,21 @@ export default function PresenterDashboard({
   const [availableTranslations, setAvailableTranslations] = useState<BibleTranslation[]>(FREE_TRANSLATIONS)
   const [recentScriptures, setRecentScriptures] = useState<{ query: string; translationId: string; translationLabel: string; reference: string }[]>([])
   const autoProjectRef = useRef(false)
+  // Recent-passage chip row can overflow horizontally — track whether there's
+  // more to scroll to on each side so the chevron affordances only show when needed.
+  const recentChipsRef = useRef<HTMLDivElement | null>(null)
+  const [recentCanScrollLeft, setRecentCanScrollLeft] = useState(false)
+  const [recentCanScrollRight, setRecentCanScrollRight] = useState(false)
+  const updateRecentScrollState = useCallback(() => {
+    const el = recentChipsRef.current
+    if (!el) { setRecentCanScrollLeft(false); setRecentCanScrollRight(false); return }
+    setRecentCanScrollLeft(el.scrollLeft > 2)
+    setRecentCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 2)
+  }, [])
+  const scrollRecentChips = (dir: -1 | 1) => {
+    recentChipsRef.current?.scrollBy({ left: dir * 160, behavior: "smooth" })
+  }
+  useEffect(() => { updateRecentScrollState() }, [recentScriptures, updateRecentScrollState])
 
   useEffect(() => {
     let lastTranslationId: string | null = null
@@ -387,7 +402,7 @@ export default function PresenterDashboard({
     await addScriptureToLineup({ title: result.reference, scriptureRef: bibleResultToScriptureRef(result) })
     const translationLabel = availableTranslations.find(t => t.id === translationId)?.label ?? translationId.toUpperCase()
     const entry = { query, translationId, translationLabel, reference: result.reference }
-    const updated = [entry, ...recentScriptures.filter(r => r.query !== entry.query || r.translationId !== entry.translationId)].slice(0, 5)
+    const updated = [entry, ...recentScriptures.filter(r => r.query !== entry.query || r.translationId !== entry.translationId)].slice(0, 10)
     setRecentScriptures(updated)
     window.worshipsync.appState.set({ lastBibleTranslation: translationId, recentScriptures: updated }).catch(() => {})
     let selectIdx = prevLen
@@ -454,6 +469,9 @@ export default function PresenterDashboard({
   // Verse numbers from the original search, kept highlighted once "Read Full
   // Chapter" expands the result to the whole chapter. Non-empty = chapter mode.
   const [bibleBrowserHighlightedVerseNums, setBibleBrowserHighlightedVerseNums] = useState<Set<number>>(new Set());
+  // "Jump to verse" — only shown once in chapter mode. Pure navigation (scroll +
+  // focus), same as arrow-key nav; doesn't project anything on its own.
+  const [jumpVerseInput, setJumpVerseInput] = useState("");
   const [liveBibleVerse, setLiveBibleVerse] = useState<{ text: string; sectionLabel: string; bg: string | undefined } | null>(null);
   // Tracks the path currently live from a media collection, so the output-bar
   // thumbnail can show it (collections have no slides/backgroundPath of their own).
@@ -489,6 +507,7 @@ export default function PresenterDashboard({
     setBibleBrowserResult(null);
     setBibleBrowserCompareResults({});
     setBibleBrowserHighlightedVerseNums(new Set());
+    setJumpVerseInput("");
     try {
       const result = await fetchBiblePassage(query, translationId, bibleApiKey);
       setBibleBrowserResult(result);
@@ -550,6 +569,20 @@ export default function PresenterDashboard({
       setBibleBrowserLoading(false);
     }
   }, [bibleBrowserResult, scriptureTranslation, bibleApiKey, bibleBrowserProjectedRef, bibleBrowserCompareIds]);
+
+  // Scrolls/focuses a specific verse number within the currently loaded chapter.
+  // Pure navigation — same as arrow-key nav, doesn't project anything by itself.
+  const jumpToVerse = useCallback(() => {
+    const n = parseInt(jumpVerseInput, 10);
+    if (!bibleBrowserResult || Number.isNaN(n)) return;
+    const v = bibleBrowserResult.verses.find(v => v.verse === n);
+    if (!v) return;
+    const ref = `${v.book_name} ${v.chapter}:${v.verse}`;
+    const el = verseListRef.current?.querySelector<HTMLElement>(`[data-verse-ref="${CSS.escape(ref)}"]`);
+    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    el?.focus();
+    setJumpVerseInput("");
+  }, [jumpVerseInput, bibleBrowserResult]);
 
   const projectBibleVerse = useCallback((verse: BibleApiVerse, reference: string, translationId?: string) => {
     const bg = defaultScriptureThemeBgRef.current ?? defaultThemeBg ?? undefined;
@@ -2944,29 +2977,53 @@ export default function PresenterDashboard({
 
               {/* Recent passages as horizontal scrollable chips */}
               {recentScriptures.length > 0 && (
-                <div className="flex items-center gap-1.5 mt-2.5 overflow-x-auto">
+                <div className="flex items-center gap-1 mt-2.5">
                   <span className="text-[11px] font-semibold text-muted-foreground/50 shrink-0">Recent</span>
-                  {recentScriptures.slice(0, 8).map(r => {
-                    const isActive = bibleBrowserQuery === r.query && scriptureTranslation === r.translationId && !!bibleBrowserResult;
-                    return (
-                      <button
-                        key={r.query + r.translationId}
-                        onClick={() => {
-                          setBibleBrowserQuery(r.query);
-                          setScriptureTranslation(r.translationId);
-                          bibleBrowserSearch(r.query, r.translationId, bibleBrowserCompareIds);
-                        }}
-                        title={`${r.reference} · ${r.translationLabel}`}
-                        className={`shrink-0 h-6 px-2.5 rounded-full text-xs font-medium border transition-colors whitespace-nowrap capitalize ${
-                          isActive
-                            ? 'bg-primary/15 text-primary border-primary/30'
-                            : 'bg-muted/60 text-muted-foreground border-border/50 hover:text-foreground hover:bg-accent/40'
-                        }`}
-                      >
-                        {r.reference}
-                      </button>
-                    );
-                  })}
+                  {recentCanScrollLeft && (
+                    <button
+                      onClick={() => scrollRecentChips(-1)}
+                      title="Scroll left"
+                      className="shrink-0 h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent/40 transition-colors"
+                    >
+                      <ChevronLeft className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                  <div
+                    ref={recentChipsRef}
+                    onScroll={updateRecentScrollState}
+                    className="flex items-center gap-1.5 overflow-x-auto scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                  >
+                    {recentScriptures.slice(0, 10).map(r => {
+                      const isActive = bibleBrowserQuery === r.query && scriptureTranslation === r.translationId && !!bibleBrowserResult;
+                      return (
+                        <button
+                          key={r.query + r.translationId}
+                          onClick={() => {
+                            setBibleBrowserQuery(r.query);
+                            setScriptureTranslation(r.translationId);
+                            bibleBrowserSearch(r.query, r.translationId, bibleBrowserCompareIds);
+                          }}
+                          title={`${r.reference} · ${r.translationLabel}`}
+                          className={`shrink-0 h-6 px-2.5 rounded-full text-xs font-medium border transition-colors whitespace-nowrap capitalize ${
+                            isActive
+                              ? 'bg-primary/15 text-primary border-primary/30'
+                              : 'bg-muted/60 text-muted-foreground border-border/50 hover:text-foreground hover:bg-accent/40'
+                          }`}
+                        >
+                          {r.reference}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {recentCanScrollRight && (
+                    <button
+                      onClick={() => scrollRecentChips(1)}
+                      title="Scroll right"
+                      className="shrink-0 h-5 w-5 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent/40 transition-colors"
+                    >
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -3067,6 +3124,33 @@ export default function PresenterDashboard({
                     <Plus className="h-3.5 w-3.5" /> Add to Lineup
                   </button>
                 </div>
+              </div>
+            )}
+
+            {/* ─ Jump to verse — docked to the list it navigates, only in chapter view ─ */}
+            {bibleBrowserHighlightedVerseNums.size > 0 && (
+              <div className="shrink-0 px-4 py-2 border-b border-border/60 bg-muted/20 flex items-center gap-1.5">
+                <label htmlFor="bible-jump-verse-input" className="text-[11px] font-semibold text-muted-foreground/50 shrink-0">
+                  Jump to verse
+                </label>
+                <input
+                  id="bible-jump-verse-input"
+                  type="number"
+                  min={1}
+                  value={jumpVerseInput}
+                  onChange={e => setJumpVerseInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); jumpToVerse(); } }}
+                  placeholder="Verse #"
+                  title="Jump to a verse in this chapter"
+                  className="w-16 h-7 px-2 text-xs bg-input border border-border rounded-lg text-center focus:outline-none focus:ring-2 focus:ring-primary/30 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                />
+                <button
+                  onClick={jumpToVerse}
+                  disabled={!jumpVerseInput.trim()}
+                  className="h-7 px-2.5 rounded-lg border border-border text-muted-foreground text-xs font-semibold hover:bg-accent hover:text-foreground transition-colors disabled:opacity-40 disabled:pointer-events-none"
+                >
+                  Go
+                </button>
               </div>
             )}
 

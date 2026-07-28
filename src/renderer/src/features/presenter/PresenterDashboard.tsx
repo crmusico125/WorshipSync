@@ -2985,6 +2985,14 @@ export default function PresenterDashboard({
                           setBibleBrowserCompareIds(prev => prev.filter(x => x !== cid));
                           setBibleBrowserCompareResults(prev => { const n = { ...prev }; delete n[cid]; return n; });
                           setBibleBrowserCompareLoadingSet(prev => { const s = new Set(prev); s.delete(cid); return s; });
+                          // Dropping the last comparison collapses the verse rows from
+                          // a multi-column layout back to a single column, which
+                          // remounts the DOM nodes and drops keyboard focus. Restore it
+                          // to whatever's live so arrow-key navigation keeps working.
+                          setTimeout(() => {
+                            if (!bibleBrowserProjectedRef) return;
+                            verseListRef.current?.querySelector<HTMLElement>(`[data-verse-ref="${CSS.escape(bibleBrowserProjectedRef)}"]`)?.focus();
+                          }, 0);
                         }}
                         className="ml-0.5 leading-none opacity-50 hover:opacity-100 text-sm"
                       >×</button>
@@ -3013,6 +3021,13 @@ export default function PresenterDashboard({
                           .catch(() => setBibleBrowserCompareResults(prev => ({ ...prev, [cid]: null })))
                           .finally(() => setBibleBrowserCompareLoadingSet(prev => { const s = new Set(prev); s.delete(cid); return s; }));
                       }
+                      // Adding the first comparison switches the verse rows from a
+                      // single column to a multi-column layout, remounting the DOM
+                      // nodes — restore focus to whatever's live afterward.
+                      setTimeout(() => {
+                        if (!bibleBrowserProjectedRef) return;
+                        verseListRef.current?.querySelector<HTMLElement>(`[data-verse-ref="${CSS.escape(bibleBrowserProjectedRef)}"]`)?.focus();
+                      }, 0);
                     }}
                     className="h-6 px-2 text-xs bg-input border border-border rounded-md text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
                   >

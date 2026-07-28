@@ -451,6 +451,9 @@ export default function PresenterDashboard({
   const [bibleBrowserCompareLoadingSet, setBibleBrowserCompareLoadingSet] = useState<Set<string>>(new Set());
   const [bibleBrowserProjectedRef, setBibleBrowserProjectedRef] = useState<string | null>(null);
   const [bibleBrowserProjectedTranslation, setBibleBrowserProjectedTranslation] = useState<string | null>(null);
+  // Verse numbers from the original search, kept highlighted once "Read Full
+  // Chapter" expands the result to the whole chapter. Non-empty = chapter mode.
+  const [bibleBrowserHighlightedVerseNums, setBibleBrowserHighlightedVerseNums] = useState<Set<number>>(new Set());
   const [liveBibleVerse, setLiveBibleVerse] = useState<{ text: string; sectionLabel: string; bg: string | undefined } | null>(null);
   // Tracks the path currently live from a media collection, so the output-bar
   // thumbnail can show it (collections have no slides/backgroundPath of their own).
@@ -485,6 +488,7 @@ export default function PresenterDashboard({
     setBibleBrowserError(null);
     setBibleBrowserResult(null);
     setBibleBrowserCompareResults({});
+    setBibleBrowserHighlightedVerseNums(new Set());
     try {
       const result = await fetchBiblePassage(query, translationId, bibleApiKey);
       setBibleBrowserResult(result);
@@ -503,6 +507,49 @@ export default function PresenterDashboard({
       setBibleBrowserLoading(false);
     }
   }, [bibleApiKey]);
+
+  // Expands the current (narrow) search result to its full chapter, keeping the
+  // originally searched verse(s) highlighted — including in any translations
+  // currently being compared side-by-side. One-directional — there's no way
+  // back to the narrow result short of running a new search.
+  const readFullChapter = useCallback(async () => {
+    if (!bibleBrowserResult || bibleBrowserResult.verses.length === 0) return;
+    const first = bibleBrowserResult.verses[0];
+    const chapterRef = `${first.book_name} ${first.chapter}`;
+    const searchedNums = new Set(bibleBrowserResult.verses.map(v => v.verse));
+    const compareIds = bibleBrowserCompareIds;
+    setBibleBrowserLoading(true);
+    setBibleBrowserError(null);
+    try {
+      const chapterResult = await fetchBiblePassage(chapterRef, scriptureTranslation, bibleApiKey);
+      setBibleBrowserResult(chapterResult);
+      setBibleBrowserHighlightedVerseNums(searchedNums);
+      if (compareIds.length) {
+        setBibleBrowserCompareResults({});
+        setBibleBrowserCompareLoadingSet(new Set(compareIds));
+        for (const cid of compareIds) {
+          fetchBiblePassage(chapterRef, cid, bibleApiKey)
+            .then(r => setBibleBrowserCompareResults(prev => ({ ...prev, [cid]: r })))
+            .catch(() => setBibleBrowserCompareResults(prev => ({ ...prev, [cid]: null })))
+            .finally(() => setBibleBrowserCompareLoadingSet(prev => { const s = new Set(prev); s.delete(cid); return s; }));
+        }
+      }
+      setTimeout(() => {
+        // Scroll to whatever's currently live — falling back to the first
+        // searched verse if nothing is projected yet.
+        const fallbackRef = `${first.book_name} ${first.chapter}:${first.verse}`;
+        const targetRef = bibleBrowserProjectedRef ?? fallbackRef;
+        const el = verseListRef.current?.querySelector<HTMLElement>(`[data-verse-ref="${CSS.escape(targetRef)}"]`)
+          ?? verseListRef.current?.querySelector<HTMLElement>(`[data-verse-ref="${CSS.escape(fallbackRef)}"]`);
+        el?.scrollIntoView({ behavior: "smooth", block: "center" });
+        el?.focus();
+      }, 50);
+    } catch (err) {
+      setBibleBrowserError(err instanceof Error ? err.message : "Failed to load chapter");
+    } finally {
+      setBibleBrowserLoading(false);
+    }
+  }, [bibleBrowserResult, scriptureTranslation, bibleApiKey, bibleBrowserProjectedRef, bibleBrowserCompareIds]);
 
   const projectBibleVerse = useCallback((verse: BibleApiVerse, reference: string, translationId?: string) => {
     const bg = defaultScriptureThemeBgRef.current ?? defaultThemeBg ?? undefined;
@@ -1074,7 +1121,9 @@ export default function PresenterDashboard({
     window.worshipsync.slide.logo(false);
     window.worshipsync.slide.show({
       lines: [],
-      songTitle: song.title,
+      // The playing file's name, not the collection's own title — matches how a
+      // regular standalone video/audio item shows on the confidence monitor.
+      songTitle: basenameOf(p),
       sectionLabel: "",
       itemType: "media",
       slideIndex: mediaIdx,
@@ -2862,9 +2911,23 @@ export default function PresenterDashboard({
                 <select
                   value={scriptureTranslation}
                   onChange={e => {
-                    setScriptureTranslation(e.target.value);
-                    window.worshipsync.appState.set({ lastBibleTranslation: e.target.value }).catch(() => {});
-                    if (bibleBrowserResult) bibleBrowserSearch(bibleBrowserQuery, e.target.value, bibleBrowserCompareIds);
+                    const newTid = e.target.value;
+                    setScriptureTranslation(newTid);
+                    window.worshipsync.appState.set({ lastBibleTranslation: newTid }).catch(() => {});
+                    if (!bibleBrowserResult) return;
+                    const first = bibleBrowserResult.verses[0];
+                    if (bibleBrowserHighlightedVerseNums.size > 0 && first) {
+                      // In chapter view — refetch the same chapter in the new
+                      // translation instead of collapsing back to the narrow result.
+                      setBibleBrowserLoading(true);
+                      setBibleBrowserError(null);
+                      fetchBiblePassage(`${first.book_name} ${first.chapter}`, newTid, bibleApiKey)
+                        .then(setBibleBrowserResult)
+                        .catch(err => setBibleBrowserError(err instanceof Error ? err.message : "Failed to load chapter"))
+                        .finally(() => setBibleBrowserLoading(false));
+                    } else {
+                      bibleBrowserSearch(bibleBrowserQuery, newTid, bibleBrowserCompareIds);
+                    }
                   }}
                   className="h-9 px-2.5 text-sm font-medium bg-input border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 shrink-0"
                 >
@@ -2937,8 +3000,15 @@ export default function PresenterDashboard({
                       const newIds = [...bibleBrowserCompareIds, cid];
                       setBibleBrowserCompareIds(newIds);
                       if (bibleBrowserResult) {
+                        // In chapter view (after Read Full Chapter), fetch the whole
+                        // chapter for the new comparison too — the original narrow
+                        // query would return a shorter, misaligned verse list.
+                        const first = bibleBrowserResult.verses[0];
+                        const ref = bibleBrowserHighlightedVerseNums.size > 0 && first
+                          ? `${first.book_name} ${first.chapter}`
+                          : bibleBrowserQuery;
                         setBibleBrowserCompareLoadingSet(prev => new Set([...prev, cid]));
-                        fetchBiblePassage(bibleBrowserQuery, cid, bibleApiKey)
+                        fetchBiblePassage(ref, cid, bibleApiKey)
                           .then(r => setBibleBrowserCompareResults(prev => ({ ...prev, [cid]: r })))
                           .catch(() => setBibleBrowserCompareResults(prev => ({ ...prev, [cid]: null })))
                           .finally(() => setBibleBrowserCompareLoadingSet(prev => { const s = new Set(prev); s.delete(cid); return s; }));
@@ -2964,12 +3034,24 @@ export default function PresenterDashboard({
                     {bibleBrowserResult.verses.length}v
                   </span>
                 </div>
-                <button
-                  onClick={async () => { await handleScriptureByRef(bibleBrowserQuery, scriptureTranslation); }}
-                  className="shrink-0 h-7 px-3 rounded-lg bg-primary/10 border border-primary/20 text-primary text-xs font-semibold hover:bg-primary hover:text-primary-foreground transition-colors flex items-center gap-1.5"
-                >
-                  <Plus className="h-3.5 w-3.5" /> Add to Lineup
-                </button>
+                <div className="flex items-center gap-2 shrink-0">
+                  {bibleBrowserHighlightedVerseNums.size === 0 && (
+                    <button
+                      onClick={readFullChapter}
+                      disabled={bibleBrowserLoading}
+                      title="Show the whole chapter with this passage highlighted"
+                      className="h-7 px-3 rounded-lg border border-border text-muted-foreground text-xs font-semibold hover:bg-accent hover:text-foreground transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:pointer-events-none"
+                    >
+                      <BookOpen className="h-3.5 w-3.5" /> Read Full Chapter
+                    </button>
+                  )}
+                  <button
+                    onClick={async () => { await handleScriptureByRef(bibleBrowserQuery, scriptureTranslation); }}
+                    className="h-7 px-3 rounded-lg bg-primary/10 border border-primary/20 text-primary text-xs font-semibold hover:bg-primary hover:text-primary-foreground transition-colors flex items-center gap-1.5"
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Add to Lineup
+                  </button>
+                </div>
               </div>
             )}
 
@@ -3055,6 +3137,7 @@ export default function PresenterDashboard({
                       const ref = `${verse.book_name} ${verse.chapter}:${verse.verse}`;
                       const isPrimaryLive = bibleBrowserProjectedRef === ref && bibleBrowserProjectedTranslation === scriptureTranslation;
                       const isAnyVerseProjected = bibleBrowserProjectedRef === ref;
+                      const isSearched = bibleBrowserHighlightedVerseNums.has(verse.verse);
 
                       return bibleBrowserCompareIds.length > 0 ? (
                         <React.Fragment key={ref}>
@@ -3062,9 +3145,9 @@ export default function PresenterDashboard({
                           <div
                             data-verse-ref={ref}
                             tabIndex={-1}
-                            style={isPrimaryLive ? { boxShadow: 'inset 3px 0 0 hsl(var(--primary))' } : undefined}
+                            style={isPrimaryLive ? { boxShadow: 'inset 3px 0 0 hsl(var(--primary))' } : isSearched ? { boxShadow: 'inset 3px 0 0 rgb(245 158 11 / 0.5)' } : undefined}
                             className={`group flex items-start gap-2.5 px-3 py-3.5 border-b border-border/20 transition-colors ${
-                              isPrimaryLive ? 'bg-primary/8' : isAnyVerseProjected ? 'bg-primary/3' : 'hover:bg-accent/10'
+                              isPrimaryLive ? 'bg-primary/8' : isSearched ? 'bg-amber-500/8' : isAnyVerseProjected ? 'bg-primary/3' : 'hover:bg-accent/10'
                             }`}
                           >
                             <span className="text-xs font-medium text-muted-foreground/50 tabular-nums w-5 text-right shrink-0 mt-[2px] select-none">{verse.verse}</span>
@@ -3091,9 +3174,9 @@ export default function PresenterDashboard({
                             return (
                               <div
                                 key={cid}
-                                style={isCompareLive ? { boxShadow: 'inset 3px 0 0 hsl(var(--primary))' } : undefined}
+                                style={isCompareLive ? { boxShadow: 'inset 3px 0 0 hsl(var(--primary))' } : isSearched ? { boxShadow: 'inset 3px 0 0 rgb(245 158 11 / 0.5)' } : undefined}
                                 className={`group flex items-start gap-2.5 px-3 py-3.5 border-b border-border/20 transition-colors ${
-                                  isCompareLive ? 'bg-primary/8' : isAnyVerseProjected ? 'bg-primary/3' : 'hover:bg-accent/10'
+                                  isCompareLive ? 'bg-primary/8' : isSearched ? 'bg-amber-500/8' : isAnyVerseProjected ? 'bg-primary/3' : 'hover:bg-accent/10'
                                 }`}
                               >
                                 <span className="text-xs font-medium text-muted-foreground/45 tabular-nums w-5 text-right shrink-0 mt-[2px] select-none">{verse.verse}</span>
@@ -3122,9 +3205,9 @@ export default function PresenterDashboard({
                           key={ref}
                           data-verse-ref={ref}
                           tabIndex={-1}
-                          style={isPrimaryLive ? { boxShadow: 'inset 3px 0 0 hsl(var(--primary))' } : undefined}
+                          style={isPrimaryLive ? { boxShadow: 'inset 3px 0 0 hsl(var(--primary))' } : isSearched ? { boxShadow: 'inset 3px 0 0 rgb(245 158 11 / 0.5)' } : undefined}
                           className={`group flex items-start gap-3 px-4 py-4 border-b border-border/15 last:border-0 transition-all ${
-                            isPrimaryLive ? 'bg-primary/10' : 'hover:bg-accent/15'
+                            isPrimaryLive ? 'bg-primary/10' : isSearched ? 'bg-amber-500/8' : 'hover:bg-accent/15'
                           }`}
                         >
                           <span className="text-xs font-medium text-muted-foreground/50 tabular-nums w-5 text-right shrink-0 mt-[2px] select-none">{verse.verse}</span>

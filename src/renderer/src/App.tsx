@@ -14,6 +14,7 @@ import BibleScreen from "./features/bible/BibleScreen"
 import GoLiveModal from "./components/GoLiveModal"
 import type { GoLiveConfirmOpts } from "./components/GoLiveModal"
 import { useServiceStore } from "./store/useServiceStore"
+import { useSyncStore } from "./store/useSyncStore"
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<AppScreen>("overview")
@@ -24,6 +25,7 @@ export default function App() {
   const [liveRuntime, setLiveRuntime] = useState("00:00:00")
   const liveStartRef = useRef<number>(0)
   const liveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const refreshSync = useSyncStore(s => s.refresh)
 
   // Reset projectionOpen when the user closes the projection window from the OS
   useEffect(() => {
@@ -32,6 +34,15 @@ export default function App() {
     })
     return cleanup
   }, [])
+
+  // Refresh the shared Sync Workspace status on launch and whenever the
+  // window regains focus (e.g. after a sync provider finishes downloading in
+  // the background) — never polled or watched continuously.
+  useEffect(() => {
+    refreshSync()
+    window.addEventListener("focus", refreshSync)
+    return () => window.removeEventListener("focus", refreshSync)
+  }, [refreshSync])
 
   // Track live runtime globally so any screen can show the live bar
   useEffect(() => {

@@ -12,6 +12,7 @@ import {
   Radio,
   BookOpen,
 } from "lucide-react";
+import { useSyncStore } from "../../store/useSyncStore";
 
 interface Props {
   current: AppScreen;
@@ -41,6 +42,7 @@ const NAV_TOP: NavItem[] = [
 const LIVE_DIMMED: AppScreen[] = ["library", "media", "themes", "analytics"]
 
 export default function Sidebar({ current, onChange, projectionOpen: _projectionOpen, isLive, onReturnToLive }: Props) {
+  const syncUpdateCount = useSyncStore(s => s.updateCount);
   return (
     <nav className="w-[88px] shrink-0 bg-sidebar border-r border-border flex flex-col items-center">
       {/* Draggable logo area */}
@@ -95,8 +97,8 @@ export default function Sidebar({ current, onChange, projectionOpen: _projection
         )}
         <button
           onClick={() => onChange("settings")}
-          title="Settings"
-          className={`w-full flex flex-col items-center justify-center gap-1.5 py-2.5 px-1 rounded-xl transition-all ${
+          title={syncUpdateCount > 0 ? `Settings (${syncUpdateCount} sync update${syncUpdateCount > 1 ? "s" : ""} available)` : "Settings"}
+          className={`relative w-full flex flex-col items-center justify-center gap-1.5 py-2.5 px-1 rounded-xl transition-all ${
             current === "settings"
               ? "bg-sidebar-primary text-sidebar-primary-foreground"
               : isLive
@@ -106,6 +108,11 @@ export default function Sidebar({ current, onChange, projectionOpen: _projection
         >
           <Settings className="h-6 w-6" />
           <span className="text-[11px] font-semibold leading-none">Settings</span>
+          {syncUpdateCount > 0 && (
+            <span className="absolute top-1.5 right-3 min-w-[16px] h-4 px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold leading-4 text-center">
+              {syncUpdateCount}
+            </span>
+          )}
         </button>
       </div>
     </nav>

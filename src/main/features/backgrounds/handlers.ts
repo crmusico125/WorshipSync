@@ -5,7 +5,7 @@ import { db } from '../../db/index'
 import { songs, lineupItems, themes, serviceDates } from '../../db/schema'
 import { eq, count, or } from 'drizzle-orm'
 
-const mediaDir = (ext: string): string => {
+export const mediaDir = (ext: string): string => {
   const sub =
     /\.(mp4|webm|mov)$/i.test(ext) ? 'Videos' :
     /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(ext) ? 'Audio Tracks' :

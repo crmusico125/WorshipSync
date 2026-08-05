@@ -25,6 +25,8 @@ import LibraryModal from "../../components/LibraryModal"
 import AddSongModal from "../../components/AddSongModal"
 import EditLyricsModal from "../../components/EditLyricsModal"
 import BackgroundPickerPanel from "../../components/BackgroundPickerPanel"
+import PublishButton from "../../components/PublishButton"
+import ImportUpdateButton from "../../components/ImportUpdateButton"
 import { parseBibleGatewayText } from "../../lib/parseBibleGateway"
 import { fetchBiblePassage, bibleResultToScriptureRef, FREE_TRANSLATIONS, fetchApiBibleTranslations, type BibleTranslation } from "../../lib/bibleApi"
 import { fmtDur, toFileUrl, basenameOf } from "../../lib/utils"
@@ -878,6 +880,13 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
               >
                 <ListTodo className="h-3.5 w-3.5" /> Templates
               </Button>
+              <ImportUpdateButton
+                syncUuid={selectedService.syncUuid}
+                variant="button"
+                className="h-8 text-xs"
+                onImported={() => loadLineup(selectedService.id)}
+              />
+              <PublishButton serviceId={selectedService.id} variant="button" className="h-8 text-xs" />
               <Button size="sm" className="gap-1.5 h-8 text-xs bg-red-600 hover:bg-red-700 text-white" disabled={lineup.length === 0} onClick={onGoLive}>
                 <Radio className="h-3.5 w-3.5" /> Go Live
               </Button>

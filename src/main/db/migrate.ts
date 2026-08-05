@@ -258,5 +258,54 @@ export function runMigrations(): void {
     console.error('[db] migration error (lineup_items music_player_dir):', e)
   }
 
+  // ── Migration: add sync_uuid column to songs and service_dates ──────────
+  try {
+    const songCols3 = sqlite.prepare("PRAGMA table_info(songs)").all() as { name: string }[]
+    if (!songCols3.some(c => c.name === 'sync_uuid')) {
+      sqlite.exec(`ALTER TABLE songs ADD COLUMN sync_uuid TEXT`)
+      sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_songs_sync_uuid ON songs(sync_uuid) WHERE sync_uuid IS NOT NULL`)
+      console.log('[db] migration: added sync_uuid column to songs')
+    }
+  } catch (e) {
+    console.error('[db] migration error (songs sync_uuid):', e)
+  }
+
+  try {
+    const serviceCols = sqlite.prepare("PRAGMA table_info(service_dates)").all() as { name: string }[]
+    if (!serviceCols.some(c => c.name === 'sync_uuid')) {
+      sqlite.exec(`ALTER TABLE service_dates ADD COLUMN sync_uuid TEXT`)
+      sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_service_dates_sync_uuid ON service_dates(sync_uuid) WHERE sync_uuid IS NOT NULL`)
+      console.log('[db] migration: added sync_uuid column to service_dates')
+    }
+  } catch (e) {
+    console.error('[db] migration error (service_dates sync_uuid):', e)
+  }
+
+  // ── Migration: Sync Workspace tables ─────────────────────────────────────
+  try {
+    sqlite.exec(`
+      CREATE TABLE IF NOT EXISTS sync_import_log (
+        id                     INTEGER PRIMARY KEY AUTOINCREMENT,
+        sync_uuid              TEXT NOT NULL,
+        version                INTEGER NOT NULL,
+        package_filename       TEXT NOT NULL,
+        imported_at            TEXT NOT NULL DEFAULT (datetime('now')),
+        source_device_id       TEXT NOT NULL,
+        source_device_name     TEXT NOT NULL,
+        checksum               TEXT NOT NULL,
+        local_service_date_id  INTEGER REFERENCES service_dates(id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_sync_import_log_sync_uuid ON sync_import_log(sync_uuid);
+
+      CREATE TABLE IF NOT EXISTS sync_known_assets (
+        checksum      TEXT PRIMARY KEY,
+        absolute_path TEXT NOT NULL,
+        kind          TEXT NOT NULL CHECK(kind IN ('image','audio','video'))
+      );
+    `)
+  } catch (e) {
+    console.error('[db] migration error (sync workspace tables):', e)
+  }
+
   console.log('[db] migrations complete')
 }

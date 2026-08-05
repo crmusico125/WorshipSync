@@ -41,6 +41,7 @@ export interface ServiceDate {
   label: string
   status: 'empty' | 'in-progress' | 'ready'
   notes: string | null
+  syncUuid: string | null
   createdAt: string
   updatedAt: string
 }

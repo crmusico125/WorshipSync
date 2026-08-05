@@ -6,6 +6,7 @@ interface ServiceDate {
   label: string
   status: 'empty' | 'in-progress' | 'ready'
   notes: string | null
+  syncUuid: string | null
   createdAt: string
   updatedAt: string
 }
@@ -57,6 +58,81 @@ interface SongWithUsage extends Song {
   usageCount: number
   lastUsedDate: string | null
   lastUsedLabel: string | null
+}
+
+interface SyncStatus {
+  workspaceFolder: string | null
+  packageCount: number
+  diskUsageBytes: number
+  lastPublishAt: string | null
+  lastImportAt: string | null
+}
+
+interface PackageManifest {
+  packageId: string
+  version: number
+  packageFormatVersion: number
+  schemaVersion: number
+  minAppVersion: string
+  title: string
+  serviceDate: string
+  publishedAt: string
+  publishedByDeviceId: string
+  publishedByDeviceName: string
+  counts: { songs: number; scriptures: number; images: number; audio: number; video: number }
+  totalSizeBytes: number
+  serviceJsonChecksum: string
+  assetChecksums: Record<string, string>
+  hasUnpackagedMusicPlayer: boolean
+}
+
+interface PublishPreview {
+  serviceDateId: number
+  title: string
+  counts: PackageManifest['counts']
+  totalSizeBytes: number
+  hasMusicPlayerItem: boolean
+  nextVersion: number
+}
+
+interface AvailablePackage {
+  filename: string
+  manifest: PackageManifest
+  localState: 'new' | 'update-available' | 'already-imported'
+  localVersion: number | null
+}
+
+interface SyncVerifyResult {
+  ok: boolean
+  reason?: 'corrupted' | 'incompatible' | 'invalid'
+  detail?: string
+  expected?: string
+  actual?: string
+  manifest?: PackageManifest
+}
+
+interface SyncImportResult {
+  ok: boolean
+  error?: string
+  serviceDateId?: number
+  created?: boolean
+}
+
+interface SyncPublishResult {
+  ok: boolean
+  error?: string
+  filename?: string
+  manifest?: PackageManifest
+}
+
+interface SyncHistoryEntry {
+  type: 'publish' | 'import'
+  syncUuid: string
+  version: number
+  title: string
+  at: string
+  deviceId: string
+  deviceName: string
 }
 
 interface TodayServiceResult {
@@ -210,6 +286,19 @@ declare global {
         ready:    ()                   => void
         onClosed: (cb: () => void)     => () => void
         onOpened: (cb: () => void)     => () => void
+      }
+      sync: {
+        getStatus:               () => Promise<SyncStatus>
+        chooseWorkspaceFolder:   () => Promise<string | null>
+        openWorkspaceFolder:     () => Promise<void>
+        listPublishableServices: () => Promise<ServiceDate[]>
+        previewPublish:          (serviceDateId: number) => Promise<PublishPreview>
+        publishService:          (serviceDateId: number) => Promise<SyncPublishResult>
+        checkWorkspace:          () => Promise<AvailablePackage[]>
+        verifyPackage:           (filename: string) => Promise<SyncVerifyResult>
+        importPackage:           (filename: string) => Promise<SyncImportResult>
+        deletePackage:           (filename: string) => Promise<{ ok: boolean; error?: string }>
+        getHistory:              () => Promise<SyncHistoryEntry[]>
       }
       pwa: {
         syncLineup: (items: PwaLineupItem[], currentIdx: number, serviceDate: string | null, serviceTime: string | null) => void

@@ -10,6 +10,8 @@ import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { useServiceStore } from "../../store/useServiceStore"
 import CreateServiceModal from "../../components/CreateServiceModal"
+import PublishButton from "../../components/PublishButton"
+import ImportUpdateButton from "../../components/ImportUpdateButton"
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -86,8 +88,7 @@ export default function PlannerScreen({ onOpenService, onGoLive }: Props) {
   useEffect(() => { loadServices() }, [])
 
   // Load lineup counts for all services
-  useEffect(() => {
-    if (services.length === 0) return
+  const refreshCounts = () => {
     window.worshipsync.services.getAllWithCounts().then((rows: any[]) => {
       const songs: Record<number, number> = {}
       const items: Record<number, number> = {}
@@ -95,6 +96,10 @@ export default function PlannerScreen({ onOpenService, onGoLive }: Props) {
       setSongCounts(songs)
       setItemCounts(items)
     }).catch(() => {})
+  }
+  useEffect(() => {
+    if (services.length === 0) return
+    refreshCounts()
   }, [services])
 
   // ── Derived: find the "next" service to prepare ─────────────────────────
@@ -106,7 +111,7 @@ export default function PlannerScreen({ onOpenService, onGoLive }: Props) {
 
   const nextService = sortedUpcoming[0] ?? null
 
-  useEffect(() => {
+  const refreshNextServiceLineup = () => {
     if (nextService) {
       window.worshipsync.lineup.getForService(nextService.id)
         .then((items: any) => setNextServiceLineup(items))
@@ -114,7 +119,8 @@ export default function PlannerScreen({ onOpenService, onGoLive }: Props) {
     } else {
       setNextServiceLineup([])
     }
-  }, [nextService?.id])
+  }
+  useEffect(refreshNextServiceLineup, [nextService?.id])
 
   const pastServices = useMemo(() =>
     [...services]
@@ -158,6 +164,7 @@ export default function PlannerScreen({ onOpenService, onGoLive }: Props) {
             service={nextService}
             itemCount={itemCounts[nextService.id] ?? 0}
             lineup={nextServiceLineup}
+            onImported={() => { refreshCounts(); refreshNextServiceLineup() }}
             onPrepare={() => openInBuilder(nextService)}
             onGoLive={goLive}
             onEdit={() => setEditingService(nextService)}
@@ -195,6 +202,7 @@ export default function PlannerScreen({ onOpenService, onGoLive }: Props) {
                   onOpen={() => openInBuilder(service)}
                   onEdit={() => setEditingService(service)}
                   onDelete={() => { if (confirm("Delete this service?")) deleteService(service.id) }}
+                  onImported={refreshCounts}
                 />
               ))}
             </div>
@@ -265,7 +273,7 @@ function lineupItemIcon(itemType: string) {
 }
 
 function NextServiceHero({
-  service, itemCount, lineup, onPrepare, onGoLive, onEdit,
+  service, itemCount, lineup, onPrepare, onGoLive, onEdit, onImported,
 }: {
   service: any
   itemCount: number
@@ -273,6 +281,7 @@ function NextServiceHero({
   onPrepare: () => void
   onGoLive: () => void
   onEdit: () => void
+  onImported: () => void
 }) {
   const daysAway = getDaysAway(service.date)
   const isToday = daysAway === 0
@@ -306,6 +315,8 @@ function NextServiceHero({
         <div className={`h-1.5 w-1.5 rounded-full ${isToday ? "bg-green-500 animate-pulse" : isSoon ? "bg-amber-500" : "bg-primary"}`} />
         {isToday ? "TODAY'S SERVICE" : isSoon ? `IN ${daysAway} DAYS` : "NEXT UP"}
         <span className="ml-auto font-normal text-[11px] tracking-normal text-muted-foreground">{formatDate(service.date)}</span>
+        <ImportUpdateButton syncUuid={service.syncUuid} variant="icon" className="ml-2" onImported={onImported} />
+        <PublishButton serviceId={service.id} variant="icon" className="ml-2" />
         <button onClick={onEdit} className="ml-2 p-1 rounded hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground">
           <Pencil className="h-3 w-3" />
         </button>
@@ -410,7 +421,7 @@ function NextServiceHero({
 // ── Service Row ──────────────────────────────────────────────────────────────
 
 function ServiceRow({
-  service, itemCount, past, onOpen, onEdit, onDelete,
+  service, itemCount, past, onOpen, onEdit, onDelete, onImported,
 }: {
   service: any
   itemCount: number
@@ -418,6 +429,7 @@ function ServiceRow({
   onOpen: () => void
   onEdit: () => void
   onDelete: () => void
+  onImported?: () => void
 }) {
   const daysAway = getDaysAway(service.date)
 
@@ -451,6 +463,8 @@ function ServiceRow({
 
       {/* Actions */}
       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        {!past && <ImportUpdateButton syncUuid={service.syncUuid} variant="icon" onImported={onImported} />}
+        {!past && <PublishButton serviceId={service.id} variant="icon" />}
         <Button
           variant="ghost" size="icon"
           className="h-7 w-7 text-muted-foreground hover:text-foreground"

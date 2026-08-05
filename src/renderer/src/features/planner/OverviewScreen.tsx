@@ -2,6 +2,8 @@ import { useState, useEffect } from "react"
 import CreateServiceModal from "../../components/CreateServiceModal"
 import { TemplateManagerModal } from "../../components/TemplateManagerModal"
 import { useSetlistTemplates } from "../../hooks/useSetlistTemplates"
+import PublishButton from "../../components/PublishButton"
+import ImportUpdateButton from "../../components/ImportUpdateButton"
 import {
   CalendarClock,
   Clock,
@@ -26,6 +28,7 @@ interface ServiceWithCount {
   label: string
   status: "empty" | "in-progress" | "ready"
   itemCount: number
+  syncUuid: string | null
 }
 
 interface Display {
@@ -80,12 +83,13 @@ function resolveServiceTime(
 }
 
 function ServiceTableRow({
-  s, past, time, onOpen,
+  s, past, time, onOpen, onImported,
 }: {
   s: ServiceWithCount
   past?: boolean
   time: string
   onOpen: () => void
+  onImported?: () => void
 }) {
   return (
     <tr className="border-b border-border last:border-0 hover:bg-accent/30 transition-colors">
@@ -99,9 +103,13 @@ function ServiceTableRow({
       <td className="py-3 px-4 text-muted-foreground">{s.itemCount} {s.itemCount === 1 ? "item" : "items"}</td>
       <td className="py-3 px-4"><StatusPill status={s.status} /></td>
       <td className="py-3 px-4 pr-5 text-right">
-        <Button variant="outline" size="sm" className="h-7 text-xs" onClick={onOpen}>
-          {past ? "View" : "Open"}
-        </Button>
+        <div className="flex items-center justify-end gap-1.5">
+          {!past && <ImportUpdateButton syncUuid={s.syncUuid} variant="icon" onImported={onImported} />}
+          {!past && <PublishButton serviceId={s.id} variant="icon" />}
+          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={onOpen}>
+            {past ? "View" : "Open"}
+          </Button>
+        </div>
       </td>
     </tr>
   )
@@ -139,8 +147,12 @@ export default function OverviewScreen({ onGoLive, onOpenBuilder, onNavigate, pr
     return () => clearInterval(tick)
   }, [])
 
-  useEffect(() => {
+  const refreshServices = () => {
     window.worshipsync.services.getAllWithCounts().then(setServices as any).catch(() => {})
+  }
+
+  useEffect(() => {
+    refreshServices()
     window.worshipsync.songs.getAll().then((s) => setSongCount(s.length)).catch(() => {})
     window.worshipsync.backgrounds.listImages().then((m) => setMediaCount(m.length)).catch(() => {})
     window.worshipsync.window.getDisplays().then(setDisplays as any).catch(() => {})
@@ -270,6 +282,8 @@ export default function OverviewScreen({ onGoLive, onOpenBuilder, onNavigate, pr
                       </Button>
                     </>
                   )}
+                  <ImportUpdateButton syncUuid={nextService.syncUuid} variant="button" onImported={refreshServices} />
+                  <PublishButton serviceId={nextService.id} variant="button" />
                 </div>
               </div>
             ) : (
@@ -359,7 +373,7 @@ export default function OverviewScreen({ onGoLive, onOpenBuilder, onNavigate, pr
                     </tr>
                   )}
                   {upcoming.slice(1).map((s) => (
-                    <ServiceTableRow key={s.id} s={s} time={resolveServiceTime(s.date, serviceSchedules, serviceTime)} onOpen={() => onOpenBuilder(s.id)} />
+                    <ServiceTableRow key={s.id} s={s} time={resolveServiceTime(s.date, serviceSchedules, serviceTime)} onOpen={() => onOpenBuilder(s.id)} onImported={refreshServices} />
                   ))}
                   {recent.length > 0 && (
                     <tr>

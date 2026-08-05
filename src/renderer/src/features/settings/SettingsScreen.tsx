@@ -4,10 +4,12 @@ import {
   Download, Upload, CheckCircle2, AlertCircle, Database, Clock,
   Church, CalendarDays, Plus, Trash2, X, Monitor, Wifi, Copy, Check,
   Users, Lock, BookOpen, Eye, EyeOff, Signal,
+  FolderSync, FolderOpen, RefreshCw, Loader2, PackageCheck, AlertTriangle,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select } from "@/components/ui/select"
+import { useSyncStore } from "../../store/useSyncStore"
 
 // ── Types & helpers ───────────────────────────────────────────────────────────
 
@@ -43,6 +45,18 @@ function fmt12(t: string): string {
   const ampm = h >= 12 ? "PM" : "AM"
   const h12 = h % 12 || 12
   return `${h12}:${m.toString().padStart(2, "0")} ${ampm}`
+}
+
+function fmtBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  const units = ["KB", "MB", "GB", "TB"]
+  let value = bytes / 1024
+  let unitIndex = 0
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024
+    unitIndex++
+  }
+  return `${value.toFixed(1)} ${units[unitIndex]}`
 }
 
 function hasConflict(
@@ -212,6 +226,8 @@ function SegmentedControl<T extends string | number>({
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
+type Tab = "general" | "schedule" | "display" | "network" | "data" | "sync"
+
 export default function SettingsScreen() {
   const [savedPulse, setSavedPulse] = useState(false)
 
@@ -265,8 +281,17 @@ export default function SettingsScreen() {
   // Data
   const [dataStatus, setDataStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null)
 
+  // Sync Workspace
+  const [syncStatus, setSyncStatus] = useState<Awaited<ReturnType<typeof window.worshipsync.sync.getStatus>> | null>(null)
+  const [syncServices, setSyncServices] = useState<Awaited<ReturnType<typeof window.worshipsync.sync.listPublishableServices>>>([])
+  const [selectedPublishServiceId, setSelectedPublishServiceId] = useState<number | null>(null)
+  const [syncPreview, setSyncPreview] = useState<Awaited<ReturnType<typeof window.worshipsync.sync.previewPublish>> | null>(null)
+  const [syncBusy, setSyncBusy] = useState(false)
+  const [syncMessage, setSyncMessage] = useState<{ type: "success" | "error"; msg: string } | null>(null)
+  const [availablePackages, setAvailablePackages] = useState<Awaited<ReturnType<typeof window.worshipsync.sync.checkWorkspace>>>([])
+  const [syncHistory, setSyncHistory] = useState<Awaited<ReturnType<typeof window.worshipsync.sync.getHistory>>>([])
+
   // Nav
-  type Tab = "general" | "schedule" | "display" | "network" | "data"
   const [activeTab, setActiveTab] = useState<Tab>("general")
 
   // Auto-save debounce
@@ -295,6 +320,33 @@ export default function SettingsScreen() {
     setStagePortInput(String(s.port))
     setStageClients(s.clients)
     setStageClientList(s.clientList ?? [])
+  }, [])
+
+  const refreshSyncStatus = useCallback(async () => {
+    const status = await window.worshipsync.sync.getStatus()
+    setSyncStatus(status)
+    if (!status.workspaceFolder) {
+      setAvailablePackages([])
+      setSyncHistory([])
+      useSyncStore.setState({ workspaceReady: false, availablePackages: [], updateCount: 0, checked: true })
+      return
+    }
+    const [services, packages, history] = await Promise.all([
+      window.worshipsync.sync.listPublishableServices(),
+      window.worshipsync.sync.checkWorkspace(),
+      window.worshipsync.sync.getHistory(),
+    ])
+    setSyncServices(services)
+    setAvailablePackages(packages)
+    setSyncHistory(history)
+    // Feed the same data into the shared store (used by the Settings badge and
+    // every Publish/Import button) instead of triggering a second, redundant fetch.
+    useSyncStore.setState({
+      workspaceReady: true,
+      availablePackages: packages,
+      updateCount: packages.filter(p => p.localState !== "already-imported").length,
+      checked: true,
+    })
   }, [])
 
   useEffect(() => {
@@ -329,7 +381,8 @@ export default function SettingsScreen() {
       if (typeof state.confidenceEnabled === 'boolean') setConfidenceEnabled(state.confidenceEnabled)
     })
     refreshStageStatus().catch(() => {})
-  }, [refreshStageStatus])
+    refreshSyncStatus().catch(() => {})
+  }, [refreshStageStatus, refreshSyncStatus])
 
   // ── Handlers ───────────────────────────────────────────────────────────────
 
@@ -390,6 +443,86 @@ export default function SettingsScreen() {
     else if (res?.error) setDataStatus({ type: "error",   msg: res.error })
   }
 
+  // ── Sync Workspace ─────────────────────────────────────────────────────────
+
+  const handleChooseWorkspaceFolder = async () => {
+    const picked = await window.worshipsync.sync.chooseWorkspaceFolder()
+    if (!picked) return
+    setSyncMessage(null)
+    await refreshSyncStatus()
+  }
+
+  const handleOpenWorkspaceFolder = async () => {
+    await window.worshipsync.sync.openWorkspaceFolder()
+  }
+
+  const handleSelectPublishService = async (id: number | null) => {
+    setSelectedPublishServiceId(id)
+    setSyncPreview(null)
+    if (id == null) return
+    try {
+      const preview = await window.worshipsync.sync.previewPublish(id)
+      setSyncPreview(preview)
+    } catch (e: any) {
+      setSyncMessage({ type: "error", msg: e?.message ?? "Could not preview this service." })
+    }
+  }
+
+  const handlePublish = async () => {
+    if (selectedPublishServiceId == null) return
+    setSyncBusy(true)
+    setSyncMessage(null)
+    try {
+      const result = await window.worshipsync.sync.publishService(selectedPublishServiceId)
+      if (result.ok) {
+        setSyncMessage({ type: "success", msg: `Published "${result.manifest?.title}" (version ${result.manifest?.version}).` })
+        setSyncPreview(null)
+        await refreshSyncStatus()
+      } else {
+        setSyncMessage({ type: "error", msg: result.error ?? "Publish failed." })
+      }
+    } finally {
+      setSyncBusy(false)
+    }
+  }
+
+  const handleCheckWorkspace = async () => {
+    setSyncBusy(true)
+    try {
+      const packages = await window.worshipsync.sync.checkWorkspace()
+      setAvailablePackages(packages)
+    } finally {
+      setSyncBusy(false)
+    }
+  }
+
+  const handleImportPackage = async (filename: string) => {
+    setSyncBusy(true)
+    setSyncMessage(null)
+    try {
+      const result = await window.worshipsync.sync.importPackage(filename)
+      if (result.ok) {
+        setSyncMessage({ type: "success", msg: result.created ? "Service imported." : "Service updated to the newer version." })
+        await refreshSyncStatus()
+      } else {
+        setSyncMessage({ type: "error", msg: result.error ?? "Import failed." })
+      }
+    } finally {
+      setSyncBusy(false)
+    }
+  }
+
+  const handleDeletePackage = async (filename: string) => {
+    if (!confirm(`Delete "${filename}" from the Sync Workspace? This cannot be undone.`)) return
+    setSyncBusy(true)
+    try {
+      await window.worshipsync.sync.deletePackage(filename)
+      await refreshSyncStatus()
+    } finally {
+      setSyncBusy(false)
+    }
+  }
+
   const sortedSchedules = [...schedules].sort(
     (a, b) => a.dayOfWeek - b.dayOfWeek || toMins(a.startTime) - toMins(b.startTime),
   )
@@ -421,6 +554,7 @@ export default function SettingsScreen() {
     { value: "display",  icon: Monitor,      label: "Display"    },
     { value: "network",  icon: Wifi,         label: "Network"    },
     { value: "data",     icon: Database,     label: "Data"       },
+    { value: "sync",     icon: FolderSync,   label: "Sync Workspace" },
   ]
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -1274,6 +1408,199 @@ export default function SettingsScreen() {
                   )}
                 </div>
               </SectionCard>
+            </div>
+          )}
+
+          {activeTab === "sync" && (
+            <div className="flex flex-col gap-5 max-w-2xl">
+              <SectionCard>
+                <SectionHeader
+                  icon={FolderSync}
+                  title="Sync Workspace"
+                  description="A folder inside Dropbox, iCloud Drive, OneDrive, Google Drive, Syncthing, or a NAS share where WorshipSync publishes and imports service packages. WorshipSync stays fully offline — the sync provider moves the files, WorshipSync never talks to the cloud directly and can't confirm a package has actually finished uploading elsewhere."
+                />
+                <div className="px-5 py-4 flex flex-col gap-1">
+                  {syncStatus?.workspaceFolder ? (
+                    <>
+                      <SettingRow label="Location" description={syncStatus.workspaceFolder}>
+                        <button
+                          onClick={handleOpenWorkspaceFolder}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-secondary/30 hover:bg-secondary/60 transition-colors text-xs font-medium"
+                        >
+                          <FolderOpen className="h-3.5 w-3.5" /> Open
+                        </button>
+                      </SettingRow>
+                      <SettingRow label="Packages" description={`${fmtBytes(syncStatus.diskUsageBytes)} total`}>
+                        <span className="text-[13px] font-medium tabular-nums">{syncStatus.packageCount}</span>
+                      </SettingRow>
+                      <SettingRow label="Last publish">
+                        <span className="text-[13px] text-muted-foreground">
+                          {syncStatus.lastPublishAt ? new Date(syncStatus.lastPublishAt).toLocaleString() : "—"}
+                        </span>
+                      </SettingRow>
+                      <SettingRow label="Last import" last>
+                        <span className="text-[13px] text-muted-foreground">
+                          {syncStatus.lastImportAt ? new Date(syncStatus.lastImportAt).toLocaleString() : "—"}
+                        </span>
+                      </SettingRow>
+                    </>
+                  ) : (
+                    <div className="py-6 text-center text-[12px] text-muted-foreground">
+                      No Sync Workspace folder is set yet.
+                    </div>
+                  )}
+                </div>
+                <div className="px-5 pb-5">
+                  <button
+                    onClick={handleChooseWorkspaceFolder}
+                    disabled={syncBusy}
+                    className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-border bg-secondary/30 hover:bg-secondary/60 transition-colors text-sm font-medium disabled:opacity-50 disabled:pointer-events-none"
+                  >
+                    <FolderSync className="h-4 w-4" />
+                    {syncStatus?.workspaceFolder ? "Change Workspace Folder…" : "Choose Workspace Folder…"}
+                  </button>
+                </div>
+              </SectionCard>
+
+              {syncStatus?.workspaceFolder && (
+                <>
+                  <SectionCard>
+                    <SectionHeader
+                      icon={Upload}
+                      title="Publish a service"
+                      description="Collects only the songs, scripture, media, and themes this service actually uses into a package other computers can import."
+                    />
+                    <div className="px-5 py-4 flex flex-col gap-3">
+                      <Select
+                        value={selectedPublishServiceId != null ? String(selectedPublishServiceId) : ""}
+                        onChange={(e) => handleSelectPublishService(e.target.value ? Number(e.target.value) : null)}
+                      >
+                        <option value="">Choose a service…</option>
+                        {syncServices.map(s => (
+                          <option key={s.id} value={s.id}>{s.date} — {s.label}</option>
+                        ))}
+                      </Select>
+
+                      {syncPreview && (
+                        <div className="rounded-lg border border-border bg-secondary/20 px-3 py-2.5 text-[12px] flex flex-col gap-1">
+                          <div className="flex justify-between"><span className="text-muted-foreground">Songs</span><span className="tabular-nums">{syncPreview.counts.songs}</span></div>
+                          <div className="flex justify-between"><span className="text-muted-foreground">Scriptures</span><span className="tabular-nums">{syncPreview.counts.scriptures}</span></div>
+                          <div className="flex justify-between"><span className="text-muted-foreground">Images</span><span className="tabular-nums">{syncPreview.counts.images}</span></div>
+                          <div className="flex justify-between"><span className="text-muted-foreground">Audio</span><span className="tabular-nums">{syncPreview.counts.audio}</span></div>
+                          <div className="flex justify-between"><span className="text-muted-foreground">Video</span><span className="tabular-nums">{syncPreview.counts.video}</span></div>
+                          <div className="flex justify-between font-medium pt-1 border-t border-border mt-1"><span>Package size</span><span className="tabular-nums">{fmtBytes(syncPreview.totalSizeBytes)}</span></div>
+                          {syncPreview.totalSizeBytes > 1024 * 1024 * 1024 && (
+                            <p className="text-amber-500 flex items-center gap-1 pt-1"><AlertTriangle className="h-3 w-3 shrink-0" /> This is a large package — it may take a while for your sync provider to upload.</p>
+                          )}
+                          {syncPreview.hasMusicPlayerItem && (
+                            <p className="text-amber-500 flex items-center gap-1 pt-1"><AlertTriangle className="h-3 w-3 shrink-0" /> This service has a music player folder — that folder itself won't be included; the receiving computer will need to set its own.</p>
+                          )}
+                        </div>
+                      )}
+
+                      <button
+                        onClick={handlePublish}
+                        disabled={syncBusy || selectedPublishServiceId == null}
+                        className="flex items-center justify-center gap-2 py-3 rounded-xl bg-primary text-primary-foreground hover:opacity-90 transition-opacity text-sm font-medium disabled:opacity-50 disabled:pointer-events-none"
+                      >
+                        {syncBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                        Publish Service{syncPreview ? ` (version ${syncPreview.nextVersion})` : ""}
+                      </button>
+
+                      {syncMessage && (
+                        <div className={`flex items-start gap-2 rounded-lg border px-3 py-2.5 text-xs ${
+                          syncMessage.type === "success"
+                            ? "border-green-500/30 bg-green-500/10 text-green-500"
+                            : "border-destructive/30 bg-destructive/10 text-destructive"
+                        }`}>
+                          {syncMessage.type === "success"
+                            ? <CheckCircle2 className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                            : <AlertCircle  className="h-3.5 w-3.5 shrink-0 mt-0.5" />}
+                          <span>{syncMessage.msg}</span>
+                        </div>
+                      )}
+                    </div>
+                  </SectionCard>
+
+                  <SectionCard>
+                    <SectionHeader
+                      icon={PackageCheck}
+                      title="Available packages"
+                      description="Services published from any computer using this same Sync Workspace folder."
+                    />
+                    <div className="px-5 py-4 flex flex-col gap-3">
+                      <button
+                        onClick={handleCheckWorkspace}
+                        disabled={syncBusy}
+                        className="self-start flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-secondary/30 hover:bg-secondary/60 transition-colors text-xs font-medium disabled:opacity-50"
+                      >
+                        <RefreshCw className={`h-3.5 w-3.5 ${syncBusy ? "animate-spin" : ""}`} /> Check Sync Workspace
+                      </button>
+
+                      {availablePackages.length === 0 ? (
+                        <p className="text-[12px] text-muted-foreground text-center py-4">No packages found yet.</p>
+                      ) : (
+                        <div className="flex flex-col gap-1.5 max-h-72 overflow-y-auto">
+                          {availablePackages.map(pkg => (
+                            <div key={pkg.filename} className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg border border-border text-xs">
+                              <div className="min-w-0">
+                                <p className="font-medium truncate">{pkg.manifest.title}</p>
+                                <p className="text-muted-foreground">
+                                  v{pkg.manifest.version} · {pkg.manifest.counts.songs} songs, {pkg.manifest.counts.scriptures} scripture, {pkg.manifest.counts.images + pkg.manifest.counts.audio + pkg.manifest.counts.video} media
+                                </p>
+                                <p className="text-muted-foreground">
+                                  Published by {pkg.manifest.publishedByDeviceName} · {new Date(pkg.manifest.publishedAt).toLocaleString()}
+                                </p>
+                                {pkg.localState === "update-available" && (
+                                  <p className="text-amber-500 mt-0.5">Newer version available (you have v{pkg.localVersion} → v{pkg.manifest.version})</p>
+                                )}
+                              </div>
+                              <div className="shrink-0 flex items-center gap-2">
+                                {pkg.localState === "already-imported" ? (
+                                  <span className="text-[11px] text-muted-foreground px-2">Imported</span>
+                                ) : (
+                                  <button
+                                    onClick={() => handleImportPackage(pkg.filename)}
+                                    disabled={syncBusy}
+                                    className="px-2.5 py-1 rounded-lg bg-primary text-primary-foreground hover:opacity-90 transition-opacity text-[11px] font-semibold disabled:opacity-50"
+                                  >
+                                    {pkg.localState === "update-available" ? "Import Update" : "Import"}
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => handleDeletePackage(pkg.filename)}
+                                  disabled={syncBusy}
+                                  className="p-1.5 rounded-lg border border-border hover:bg-destructive/10 hover:text-destructive transition-colors disabled:opacity-50"
+                                  title="Delete this package"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </SectionCard>
+
+                  {syncHistory.length > 0 && (
+                    <SectionCard>
+                      <SectionHeader icon={Clock} title="History" description="Recent publishes and imports across this Sync Workspace." />
+                      <div className="px-5 py-4 flex flex-col gap-1.5 max-h-56 overflow-y-auto">
+                        {syncHistory.map((h, i) => (
+                          <div key={i} className="flex items-center justify-between gap-3 text-[12px]">
+                            <span className="truncate">
+                              <span className={h.type === "publish" ? "text-primary" : "text-green-500"}>{h.type === "publish" ? "Published" : "Imported"}</span>
+                              {" "}{h.title} (v{h.version}) — {h.deviceName}
+                            </span>
+                            <span className="text-muted-foreground shrink-0">{new Date(h.at).toLocaleDateString()}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </SectionCard>
+                  )}
+                </>
+              )}
             </div>
           )}
 

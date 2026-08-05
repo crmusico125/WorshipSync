@@ -10,6 +10,16 @@ out/
 *.db-shm
 *.db-wal
 
+# Dev-mode data folder contents (managed storage — see src/main/features/storage/).
+# In dev, the active data folder defaults to the project root, so these
+# runtime-created dirs/files land here rather than under userData.
+/assets/
+/backups/
+/recovery/
+/metadata.json
+/.worshipsync-lock.json
+storage-config.json
+
 # User uploaded assets
 resources/user/
 
@@ -31,6 +41,9 @@ yarn-error.log*
 # Electron packager output
 packages/
 release/
+
+# Test fixtures (vitest — deliberately not under the OS temp dir, see test/fixtures.ts)
+.vitest-tmp/
 
 # Environment / secrets
 .env

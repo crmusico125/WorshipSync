@@ -6,7 +6,7 @@ import * as schema from './schema'
 
 const DB_FILENAME = 'worshipsync.db'
 
-function getDbPath(): string {
+export function getDbPath(): string {
   // In dev, store next to the project. In production, store in userData.
   if (process.env.NODE_ENV === 'development') {
     return join(process.cwd(), DB_FILENAME)

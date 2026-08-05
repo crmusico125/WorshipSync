@@ -46,6 +46,7 @@ import { registerAppStateHandlers, readAppState, writeAppState } from './feature
 import { registerDataHandlers } from './features/data/handlers'
 import { registerPwaHandlers } from './features/pwa/handlers'
 import { registerMusicHandlers } from './features/music/handlers'
+import { registerSyncHandlers } from './features/sync/handlers'
 
 // ── App lifecycle ──────────────────────────────────────────────────────────────
 
@@ -74,6 +75,7 @@ app.whenReady().then(() => {
   registerDataHandlers()
   registerPwaHandlers()
   registerMusicHandlers()
+  registerSyncHandlers()
 
   // Create the control window
   createControlWindow()

@@ -204,6 +204,22 @@ contextBridge.exposeInMainWorld('worshipsync', {
     deletePackage:          (filename: string)      => ipcRenderer.invoke('sync:deletePackage', filename),
     getHistory:             ()                     => ipcRenderer.invoke('sync:getHistory'),
   },
+  updater: {
+    checkForUpdates: () => ipcRenderer.invoke('updater:checkForUpdates'),
+    downloadUpdate:  () => ipcRenderer.invoke('updater:downloadUpdate'),
+    installUpdate:   () => ipcRenderer.invoke('updater:installUpdate'),
+    getState:        () => ipcRenderer.invoke('updater:getState'),
+    onEvent: (cb: (payload: unknown) => void) => {
+      const listener = (_e: unknown, payload: unknown) => cb(payload)
+      ipcRenderer.on('updater:event', listener)
+      return () => ipcRenderer.removeListener('updater:event', listener)
+    },
+    onSubtle: (cb: (payload: unknown) => void) => {
+      const listener = (_e: unknown, payload: unknown) => cb(payload)
+      ipcRenderer.on('updater:subtle', listener)
+      return () => ipcRenderer.removeListener('updater:subtle', listener)
+    },
+  },
   stageDisplay: {
     start:        (port?: number) => ipcRenderer.invoke('stageDisplay:start', port),
     stop:         ()              => ipcRenderer.invoke('stageDisplay:stop'),

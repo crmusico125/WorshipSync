@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from "react"
+import { Download, X } from "lucide-react"
 import type { AppScreen } from "../../../shared/types"
 import type { ServiceMode } from "./features/service/ServiceScreen"
 import Sidebar from "./components/layout/Sidebar"
@@ -13,8 +14,10 @@ import OverviewScreen from "./features/planner/OverviewScreen"
 import BibleScreen from "./features/bible/BibleScreen"
 import GoLiveModal from "./components/GoLiveModal"
 import type { GoLiveConfirmOpts } from "./components/GoLiveModal"
+import UpdateDialog from "./components/UpdateDialog"
 import { useServiceStore } from "./store/useServiceStore"
 import { useSyncStore } from "./store/useSyncStore"
+import { useUpdaterStore } from "./store/useUpdaterStore"
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<AppScreen>("overview")
@@ -26,6 +29,14 @@ export default function App() {
   const liveStartRef = useRef<number>(0)
   const liveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const refreshSync = useSyncStore(s => s.refresh)
+  const initUpdater = useUpdaterStore(s => s.init)
+  const subtleNotice = useUpdaterStore(s => s.subtleNotice)
+  const dismissSubtleNotice = useUpdaterStore(s => s.dismissSubtle)
+  const downloadUpdateInBackground = useUpdaterStore(s => s.downloadUpdate)
+
+  // Wire the update event stream once — UpdateDialog and the subtle toast
+  // below both just read the store this populates.
+  useEffect(() => { initUpdater() }, [initUpdater])
 
   // Reset projectionOpen when the user closes the projection window from the OS
   useEffect(() => {
@@ -235,6 +246,35 @@ export default function App() {
           onCancel={() => setPendingGoLiveId(null)}
           onConfirm={handleConfirmGoLive}
         />
+      )}
+      <UpdateDialog />
+      {subtleNotice && (
+        <div className="fixed bottom-4 right-4 z-50 w-80 rounded-xl border border-border bg-card shadow-xl p-3.5 flex items-start gap-2.5">
+          <div className="h-7 w-7 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+            <Download className="h-3.5 w-3.5 text-primary" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] font-medium">
+              {subtleNotice.type === "update-ready-background" ? "Update ready" : "Update available"}
+            </p>
+            <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">
+              {subtleNotice.type === "update-ready-background"
+                ? "You'll be prompted to restart once this presentation ends."
+                : `Version ${subtleNotice.version} is available — it'll download quietly in the background if you'd like.`}
+            </p>
+            {subtleNotice.type === "update-available-background" && (
+              <button
+                onClick={() => { downloadUpdateInBackground(); dismissSubtleNotice() }}
+                className="text-[11px] font-semibold text-primary hover:underline mt-1.5"
+              >
+                Download now
+              </button>
+            )}
+          </div>
+          <button onClick={dismissSubtleNotice} className="shrink-0 p-1 rounded hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground">
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
       )}
     </div>
   )

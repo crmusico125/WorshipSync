@@ -47,6 +47,8 @@ import { registerDataHandlers } from './features/data/handlers'
 import { registerPwaHandlers } from './features/pwa/handlers'
 import { registerMusicHandlers } from './features/music/handlers'
 import { registerSyncHandlers } from './features/sync/handlers'
+import { registerUpdaterHandlers } from './features/updater/handlers'
+import { initAutoUpdater, checkForUpdatesOnStartup } from './features/updater/service'
 
 // ── App lifecycle ──────────────────────────────────────────────────────────────
 
@@ -76,9 +78,16 @@ app.whenReady().then(() => {
   registerPwaHandlers()
   registerMusicHandlers()
   registerSyncHandlers()
+  registerUpdaterHandlers()
 
   // Create the control window
   createControlWindow()
+
+  // Auto-update: wire events immediately (cheap — just listener registration),
+  // but delay the actual startup check a few seconds so it never competes
+  // with the app's first window paint/render for CPU and network setup.
+  initAutoUpdater()
+  setTimeout(checkForUpdatesOnStartup, 5000).unref?.()
 
   // Auto-start stage display if previously enabled
   const savedState = readAppState()

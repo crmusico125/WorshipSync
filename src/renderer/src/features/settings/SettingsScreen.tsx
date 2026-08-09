@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select } from "@/components/ui/select"
 import { useSyncStore } from "../../store/useSyncStore"
+import { useUpdaterStore } from "../../store/useUpdaterStore"
 
 // ── Types & helpers ───────────────────────────────────────────────────────────
 
@@ -226,7 +227,7 @@ function SegmentedControl<T extends string | number>({
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
-type Tab = "general" | "schedule" | "display" | "network" | "data" | "sync"
+type Tab = "general" | "schedule" | "display" | "network" | "data" | "sync" | "updates"
 
 export default function SettingsScreen() {
   const [savedPulse, setSavedPulse] = useState(false)
@@ -263,6 +264,20 @@ export default function SettingsScreen() {
   const [outputDisplayId, setOutputDisplayId]           = useState<number | undefined>(undefined)
   const [confidenceDisplayId, setConfidenceDisplayId]   = useState<number | undefined>(undefined)
   const [confidenceEnabled, setConfidenceEnabled]       = useState(false)
+
+  // Updates
+  const [autoCheckForUpdates, setAutoCheckForUpdates]   = useState(true)
+  const [autoDownloadUpdates, setAutoDownloadUpdates]   = useState(false)
+  const [showReleaseNotes, setShowReleaseNotes]         = useState(false)
+  const {
+    status: updaterStatus,
+    currentVersion: updaterCurrentVersion,
+    latestVersion: updaterLatestVersion,
+    releaseNotes: updaterReleaseNotes,
+    errorMessage: updaterErrorMessage,
+    lastCheckedAt: updaterLastCheckedAt,
+    checkForUpdates: updaterCheckForUpdates,
+  } = useUpdaterStore()
 
   // Network / stage display
   const [stageRunning, setStageRunning]       = useState(false)
@@ -379,6 +394,8 @@ export default function SettingsScreen() {
         typeof state.confidenceDisplayId === 'number' ? state.confidenceDisplayId : fallback
       )
       if (typeof state.confidenceEnabled === 'boolean') setConfidenceEnabled(state.confidenceEnabled)
+      if (typeof state.autoCheckForUpdates === 'boolean') setAutoCheckForUpdates(state.autoCheckForUpdates)
+      if (typeof state.autoDownloadUpdates === 'boolean') setAutoDownloadUpdates(state.autoDownloadUpdates)
     })
     refreshStageStatus().catch(() => {})
     refreshSyncStatus().catch(() => {})
@@ -555,6 +572,7 @@ export default function SettingsScreen() {
     { value: "network",  icon: Wifi,         label: "Network"    },
     { value: "data",     icon: Database,     label: "Data"       },
     { value: "sync",     icon: FolderSync,   label: "Sync Workspace" },
+    { value: "updates",  icon: Download,     label: "Updates"    },
   ]
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -1601,6 +1619,108 @@ export default function SettingsScreen() {
                   )}
                 </>
               )}
+            </div>
+          )}
+
+          {activeTab === "updates" && (
+            <div className="flex flex-col gap-5 max-w-2xl">
+              <SectionCard>
+                <SectionHeader
+                  icon={Download}
+                  title="Updates"
+                  description="WorshipSync checks GitHub Releases for new versions. Updates never install automatically — you always choose when to restart."
+                />
+                <div className="px-5 py-4 flex flex-col gap-1">
+                  <SettingRow label="Current version">
+                    <span className="text-[13px] font-medium tabular-nums">{updaterCurrentVersion || "—"}</span>
+                  </SettingRow>
+                  <SettingRow label="Last update check">
+                    <span className="text-[13px] text-muted-foreground">
+                      {updaterLastCheckedAt ? new Date(updaterLastCheckedAt).toLocaleString() : "Never"}
+                    </span>
+                  </SettingRow>
+                  <SettingRow
+                    label="Automatically check for updates"
+                    description="Checks once when WorshipSync starts."
+                  >
+                    <button
+                      onClick={() => {
+                        const next = !autoCheckForUpdates
+                        setAutoCheckForUpdates(next)
+                        queueSave({ autoCheckForUpdates: next })
+                      }}
+                      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors focus:outline-none ${
+                        autoCheckForUpdates ? "bg-amber-500 border-amber-600" : "bg-muted border-border"
+                      }`}
+                      role="switch"
+                      aria-checked={autoCheckForUpdates}
+                    >
+                      <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${autoCheckForUpdates ? "translate-x-5" : "translate-x-1"}`} />
+                    </button>
+                  </SettingRow>
+                  <SettingRow
+                    label="Automatically download updates"
+                    description="Downloads in the background once an update is found — you still choose when to install. Never downloads or installs anything you haven't approved being downloaded."
+                    last
+                  >
+                    <button
+                      onClick={() => {
+                        const next = !autoDownloadUpdates
+                        setAutoDownloadUpdates(next)
+                        queueSave({ autoDownloadUpdates: next })
+                      }}
+                      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors focus:outline-none ${
+                        autoDownloadUpdates ? "bg-amber-500 border-amber-600" : "bg-muted border-border"
+                      }`}
+                      role="switch"
+                      aria-checked={autoDownloadUpdates}
+                    >
+                      <span className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${autoDownloadUpdates ? "translate-x-5" : "translate-x-1"}`} />
+                    </button>
+                  </SettingRow>
+                </div>
+
+                <div className="px-5 pb-5 flex flex-col gap-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      onClick={() => updaterCheckForUpdates()}
+                      disabled={updaterStatus === "checking"}
+                      className="flex items-center justify-center gap-2 py-3 rounded-xl border border-border bg-secondary/30 hover:bg-secondary/60 transition-colors text-sm font-medium disabled:opacity-50"
+                    >
+                      {updaterStatus === "checking" ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                      Check for Updates
+                    </button>
+                    <button
+                      onClick={() => setShowReleaseNotes(v => !v)}
+                      disabled={!updaterReleaseNotes}
+                      className="flex items-center justify-center gap-2 py-3 rounded-xl border border-border bg-secondary/30 hover:bg-secondary/60 transition-colors text-sm font-medium disabled:opacity-50"
+                    >
+                      View Release Notes
+                    </button>
+                  </div>
+
+                  {updaterStatus === "not-available" && (
+                    <div className="flex items-start gap-2 rounded-lg border border-green-500/30 bg-green-500/10 px-3 py-2.5 text-xs text-green-500">
+                      <CheckCircle2 className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                      <span>You're on the latest version.</span>
+                    </div>
+                  )}
+                  {updaterStatus === "error" && (
+                    <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-xs text-destructive">
+                      <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                      <span>{updaterErrorMessage ?? "Could not check for updates."}</span>
+                    </div>
+                  )}
+                  {showReleaseNotes && updaterReleaseNotes && (
+                    <div className="rounded-lg border border-border bg-secondary/20 px-3 py-2.5 max-h-56 overflow-y-auto">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">
+                        {updaterLatestVersion ? `Version ${updaterLatestVersion}` : "Release notes"}
+                      </p>
+                      <div className="text-xs text-foreground/90 whitespace-pre-wrap leading-relaxed">{updaterReleaseNotes}</div>
+                    </div>
+                  )}
+                </div>
+              </SectionCard>
             </div>
           )}
 

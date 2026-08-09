@@ -140,6 +140,41 @@ interface TodayServiceResult {
   daysAway: number
 }
 
+interface UpdateInfoSummary {
+  version: string
+  releaseNotes: string | null
+  releaseDate?: string
+}
+
+interface DownloadProgressInfo {
+  percent: number
+  bytesPerSecond: number
+  transferred: number
+  total: number
+}
+
+type UpdaterEventPayload =
+  | { type: 'checking-for-update'; lastCheckedAt: string }
+  | { type: 'update-available'; info: UpdateInfoSummary }
+  | { type: 'update-not-available'; currentVersion: string }
+  | { type: 'download-progress'; progress: DownloadProgressInfo }
+  | { type: 'update-downloaded'; info: UpdateInfoSummary }
+  | { type: 'error'; message: string }
+
+type UpdaterSubtlePayload =
+  | { type: 'update-available-background'; version: string }
+  | { type: 'update-ready-background'; version: string }
+
+interface UpdaterState {
+  status: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'not-available' | 'error'
+  currentVersion: string
+  latestVersion: string | null
+  releaseNotes: string | null
+  progress: DownloadProgressInfo | null
+  errorMessage: string | null
+  lastCheckedAt: string | null
+}
+
 declare global {
   interface Window {
     worshipsync: {
@@ -299,6 +334,14 @@ declare global {
         importPackage:           (filename: string) => Promise<SyncImportResult>
         deletePackage:           (filename: string) => Promise<{ ok: boolean; error?: string }>
         getHistory:              () => Promise<SyncHistoryEntry[]>
+      }
+      updater: {
+        checkForUpdates: () => Promise<boolean>
+        downloadUpdate:  () => Promise<boolean>
+        installUpdate:   () => Promise<boolean>
+        getState:        () => Promise<UpdaterState>
+        onEvent:  (cb: (payload: UpdaterEventPayload) => void) => () => void
+        onSubtle: (cb: (payload: UpdaterSubtlePayload) => void) => () => void
       }
       pwa: {
         syncLineup: (items: PwaLineupItem[], currentIdx: number, serviceDate: string | null, serviceTime: string | null) => void

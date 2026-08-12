@@ -38,6 +38,7 @@ export interface ServiceJsonSong {
   copyright: string | null
   backgroundPath: string | null // package-relative (assets/...) or 'color:#rrggbb' or null
   tags: string
+  styleOverrides: string | null // JSON ThemeStyle partial (e.g. maxLinesPerSlide) — no file paths, never rewritten
   sections: ServiceJsonSection[]
 }
 

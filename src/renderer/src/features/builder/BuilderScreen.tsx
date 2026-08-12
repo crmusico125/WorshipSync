@@ -882,6 +882,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
               </Button>
               <ImportUpdateButton
                 syncUuid={selectedService.syncUuid}
+                date={selectedService.date}
                 variant="button"
                 className="h-8 text-xs"
                 onImported={() => loadLineup(selectedService.id)}
@@ -2920,7 +2921,7 @@ function SortableLineupItem({
         )}
         <button
           onClick={onSelect}
-          className="flex items-center gap-2 py-2 text-left flex-1 min-w-0"
+          className="flex items-center gap-2 py-[var(--row-py-sm)] text-left flex-1 min-w-0"
           style={{ paddingLeft: isPast ? "10px" : undefined }}
         >
           <span className={`text-[10px] font-mono w-4 shrink-0 ${

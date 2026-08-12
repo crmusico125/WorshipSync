@@ -49,6 +49,8 @@ import { registerMusicHandlers } from './features/music/handlers'
 import { registerSyncHandlers } from './features/sync/handlers'
 import { registerUpdaterHandlers } from './features/updater/handlers'
 import { initAutoUpdater, checkForUpdatesOnStartup } from './features/updater/service'
+import { registerUiPrefsHandlers } from './features/ui-prefs/handlers'
+import { restoreUiPrefsOnStartup } from './features/ui-prefs/service'
 
 // ── App lifecycle ──────────────────────────────────────────────────────────────
 
@@ -79,9 +81,14 @@ app.whenReady().then(() => {
   registerMusicHandlers()
   registerSyncHandlers()
   registerUpdaterHandlers()
+  registerUiPrefsHandlers()
 
   // Create the control window
   createControlWindow()
+
+  // UI zoom/density: restores persisted prefs onto the Control window and
+  // builds the application menu — never touches Projection/Confidence.
+  restoreUiPrefsOnStartup()
 
   // Auto-update: wire events immediately (cheap — just listener registration),
   // but delay the actual startup check a few seconds so it never competes

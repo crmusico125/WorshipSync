@@ -5,12 +5,16 @@ import {
   Church, CalendarDays, Plus, Trash2, X, Monitor, Wifi, Copy, Check,
   Users, Lock, BookOpen, Eye, EyeOff, Signal,
   FolderSync, FolderOpen, RefreshCw, Loader2, PackageCheck, AlertTriangle,
+  ZoomIn, Rows3, Rows4,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select } from "@/components/ui/select"
 import { useSyncStore } from "../../store/useSyncStore"
 import { useUpdaterStore } from "../../store/useUpdaterStore"
+import { useUiPrefsStore } from "../../store/useUiPrefsStore"
+
+const UI_ZOOM_LEVELS = [75, 90, 100, 110, 125, 150] as const
 
 // ── Types & helpers ───────────────────────────────────────────────────────────
 
@@ -278,6 +282,14 @@ export default function SettingsScreen() {
     lastCheckedAt: updaterLastCheckedAt,
     checkForUpdates: updaterCheckForUpdates,
   } = useUpdaterStore()
+
+  // UI zoom / density
+  const {
+    zoomPercent: uiZoomPercent,
+    density: uiDensity,
+    setZoom: setUiZoom,
+    setDensity: setUiDensity,
+  } = useUiPrefsStore()
 
   // Network / stage display
   const [stageRunning, setStageRunning]       = useState(false)
@@ -948,6 +960,65 @@ export default function SettingsScreen() {
                         </option>
                       ))}
                     </select>
+                  </div>
+                </SettingRow>
+              </SectionCard>
+
+              {/* Interface: UI zoom + display density (Control window only — never affects projection/confidence) */}
+              <SectionCard>
+                <SectionHeader
+                  icon={ZoomIn}
+                  title="Interface"
+                  description="Scale the operator interface and adjust list spacing. Never affects the projected output or confidence monitor."
+                />
+                <SettingRow
+                  label="UI zoom"
+                  description="Also available via View > Zoom, or Cmd/Ctrl +/-/0."
+                >
+                  <div className="flex items-center gap-1 rounded-lg border border-border p-0.5">
+                    {UI_ZOOM_LEVELS.map((level) => (
+                      <button
+                        key={level}
+                        onClick={() => setUiZoom(level)}
+                        className={`px-2.5 py-1 rounded-md text-[11px] font-medium tabular-nums transition-colors ${
+                          uiZoomPercent === level
+                            ? "bg-primary text-primary-foreground"
+                            : "text-muted-foreground hover:text-foreground hover:bg-accent/40"
+                        }`}
+                      >
+                        {level}%
+                      </button>
+                    ))}
+                  </div>
+                </SettingRow>
+                <SettingRow
+                  label="Display density"
+                  description="Compact reduces spacing in song lists, lineups, and tables — text size is unchanged."
+                  last
+                >
+                  <div className="flex items-center gap-1 rounded-lg border border-border p-0.5">
+                    <button
+                      onClick={() => setUiDensity("comfortable")}
+                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
+                        uiDensity === "comfortable"
+                          ? "bg-primary text-primary-foreground"
+                          : "text-muted-foreground hover:text-foreground hover:bg-accent/40"
+                      }`}
+                    >
+                      <Rows4 className="h-3 w-3" />
+                      Comfortable
+                    </button>
+                    <button
+                      onClick={() => setUiDensity("compact")}
+                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
+                        uiDensity === "compact"
+                          ? "bg-primary text-primary-foreground"
+                          : "text-muted-foreground hover:text-foreground hover:bg-accent/40"
+                      }`}
+                    >
+                      <Rows3 className="h-3 w-3" />
+                      Compact
+                    </button>
                   </div>
                 </SettingRow>
               </SectionCard>

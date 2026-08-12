@@ -19,6 +19,8 @@ function fmtBytes(bytes: number): string {
 interface ImportUpdateButtonProps {
   /** The local service's own sync_uuid — null/undefined for a service that's never been published or imported. */
   syncUuid: string | null | undefined
+  /** The local service's date — used as a fallback match for a same-date package this device hasn't linked by sync_uuid yet. */
+  date?: string | null
   variant?: "icon" | "button"
   className?: string
   /** Called after a successful import — e.g. so a screen actively displaying this service's lineup can reload it. */
@@ -26,15 +28,16 @@ interface ImportUpdateButtonProps {
 }
 
 /**
- * The one place "import the newer version of this specific service" is
- * implemented. Renders nothing unless the shared Sync Workspace status
- * actually has a newer version of this exact service waiting — matched by
- * sync_uuid, not by name/date. Reuses the manifest already fetched for the
- * availability check, so opening the confirm dialog needs no extra IPC call.
+ * The one place "import a waiting package into this specific local service"
+ * is implemented. Renders nothing unless the shared Sync Workspace status
+ * has a matching package — by sync_uuid if this device already knows the
+ * link, otherwise by date (covers a service created independently on this
+ * computer, never synced before). Reuses the manifest already fetched for
+ * the availability check, so opening the confirm dialog needs no extra IPC call.
  */
-export default function ImportUpdateButton({ syncUuid, variant = "icon", className = "", onImported }: ImportUpdateButtonProps) {
+export default function ImportUpdateButton({ syncUuid, date, variant = "icon", className = "", onImported }: ImportUpdateButtonProps) {
   // Subscribed so the button appears/disappears reactively as the store refreshes.
-  const pkg = useSyncStore(() => findUpdateForService(syncUuid))
+  const pkg = useSyncStore(() => findUpdateForService(syncUuid, date))
   const refreshSync = useSyncStore(s => s.refresh)
 
   const [open, setOpen] = useState(false)
@@ -43,6 +46,8 @@ export default function ImportUpdateButton({ syncUuid, variant = "icon", classNa
   const [justImported, setJustImported] = useState(false)
 
   if (!pkg && !justImported) return null
+
+  const isNew = pkg?.localState === "new"
 
   const confirmImport = async () => {
     if (!pkg) return
@@ -70,7 +75,7 @@ export default function ImportUpdateButton({ syncUuid, variant = "icon", classNa
     <Button
       variant="ghost" size="icon"
       className={`h-7 w-7 ${justImported ? "text-green-500" : "text-amber-500 hover:text-amber-400"} ${className}`}
-      title={pkg ? `Update available — v${pkg.manifest.version}` : "Updated"}
+      title={pkg ? (isNew ? `Import from another computer — v${pkg.manifest.version}` : `Update available — v${pkg.manifest.version}`) : "Updated"}
       onClick={(e) => { e.stopPropagation(); setOpen(true) }}
       disabled={!pkg}
     >
@@ -84,7 +89,7 @@ export default function ImportUpdateButton({ syncUuid, variant = "icon", classNa
       disabled={!pkg}
     >
       {justImported ? <Check className="h-3.5 w-3.5" /> : <DownloadCloud className="h-3.5 w-3.5" />}
-      {justImported ? "Updated" : pkg ? `Update to v${pkg.manifest.version}` : "Updated"}
+      {justImported ? "Updated" : pkg ? (isNew ? `Import v${pkg.manifest.version}` : `Update to v${pkg.manifest.version}`) : "Updated"}
     </Button>
   )
 
@@ -93,13 +98,19 @@ export default function ImportUpdateButton({ syncUuid, variant = "icon", classNa
       {trigger}
       <Dialog open={open} onOpenChange={(next) => { if (!importing) setOpen(next) }}>
         <DialogContent className="w-[420px] p-6" onClick={(e) => e.stopPropagation()}>
-          <DialogTitle>Import Update</DialogTitle>
+          <DialogTitle>{isNew ? "Import from Another Computer" : "Import Update"}</DialogTitle>
           {pkg && (
             <div className="mt-3 flex flex-col gap-3">
               <p className="text-sm text-muted-foreground">
-                {pkg.manifest.title} — update to{" "}
-                <span className="font-semibold text-foreground">version {pkg.manifest.version}</span>, published by{" "}
-                {pkg.manifest.publishedByDeviceName} on {new Date(pkg.manifest.publishedAt).toLocaleString()}.
+                {pkg.manifest.title} —{" "}
+                {isNew ? (
+                  <>this service already exists here, but a version published from{" "}
+                  {pkg.manifest.publishedByDeviceName} on {new Date(pkg.manifest.publishedAt).toLocaleString()} hasn't been linked yet.</>
+                ) : (
+                  <>update to{" "}
+                  <span className="font-semibold text-foreground">version {pkg.manifest.version}</span>, published by{" "}
+                  {pkg.manifest.publishedByDeviceName} on {new Date(pkg.manifest.publishedAt).toLocaleString()}.</>
+                )}
               </p>
 
               <div className="rounded-lg border border-border bg-secondary/20 px-3 py-2.5 text-[12px] flex flex-col gap-1">
@@ -112,7 +123,9 @@ export default function ImportUpdateButton({ syncUuid, variant = "icon", classNa
               </div>
 
               <p className="text-[12px] text-muted-foreground">
-                This replaces this service's current lineup with the published version. Songs and media already in your library are reused, not duplicated.
+                {isNew
+                  ? "This replaces this service's current lineup — including anything planned only on this computer — with the published version. Songs and media already in your library are reused, not duplicated."
+                  : "This replaces this service's current lineup with the published version. Songs and media already in your library are reused, not duplicated."}
               </p>
 
               {error && (
@@ -128,7 +141,7 @@ export default function ImportUpdateButton({ syncUuid, variant = "icon", classNa
                 </Button>
                 <Button size="sm" disabled={importing} onClick={confirmImport} className="gap-1.5">
                   {importing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <DownloadCloud className="h-3.5 w-3.5" />}
-                  {importing ? "Importing…" : `Import v${pkg.manifest.version}`}
+                  {importing ? "Importing…" : isNew ? `Import & Override — v${pkg.manifest.version}` : `Import v${pkg.manifest.version}`}
                 </Button>
               </div>
             </div>

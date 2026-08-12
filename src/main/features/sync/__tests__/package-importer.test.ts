@@ -72,6 +72,19 @@ describe('importPackage', () => {
     expect(restoredSong?.backgroundPath).not.toBe(bgPath)
   })
 
+  it('carries a song\'s per-song style override (e.g. max lines per slide) through publish and import', async () => {
+    const { song, service } = seedService()
+    db.update(songs).set({ styleOverrides: JSON.stringify({ maxLinesPerSlide: 4 }) }).where(eq(songs.id, song.id)).run()
+
+    const built = await buildPackage(service.id, workspaceRoot)
+    wipeLocalServiceContent()
+    const result = await importPackage(join(workspaceRoot, 'packages', built.filename!), workspaceRoot)
+
+    const restoredItems = db.select().from(lineupItems).where(eq(lineupItems.serviceDateId, result.serviceDateId!)).all()
+    const restoredSong = db.select().from(songs).where(eq(songs.id, restoredItems[0].songId!)).get()
+    expect(JSON.parse(restoredSong!.styleOverrides!)).toEqual({ maxLinesPerSlide: 4 })
+  })
+
   it('reuses an identical asset by checksum instead of copying it twice', async () => {
     const bgDir = tempDataDir('dedup-assets')
     const bgPathA = join(bgDir, 'a.jpg')
@@ -135,6 +148,39 @@ describe('importPackage', () => {
     const finalItems = db.select().from(lineupItems).where(eq(lineupItems.serviceDateId, firstImport.serviceDateId!)).all()
     expect(finalItems).toHaveLength(2)
     expect(db.select().from(serviceDates).all()).toHaveLength(1)
+  })
+
+  it('adopts and overrides a local service that already occupies the package date, instead of blocking', async () => {
+    // Simulates the two-computer scenario: Computer A publishes a service for a date;
+    // Computer B already has its own locally-created service on that same date (never
+    // synced, no sync_uuid yet — e.g. both operators independently planned the same Sunday).
+    const { service } = seedService(undefined, '2026-08-16')
+    const built = await buildPackage(service.id, workspaceRoot)
+    const publishedSyncUuid = built.manifest!.packageId
+    wipeLocalServiceContent()
+
+    // Computer B's own pre-existing, unsynced local service for the same date.
+    const [localSong] = db.insert(songs).values({ title: 'Local Only Song', artist: '' }).returning().all()
+    const [localService] = db.insert(serviceDates).values({ date: '2026-08-16', label: 'Local Draft' }).returning().all()
+    db.insert(lineupItems).values({
+      serviceDateId: localService.id, songId: localSong.id, itemType: 'song', orderIndex: 0, selectedSections: '[]',
+    }).run()
+
+    const result = await importPackage(join(workspaceRoot, 'packages', built.filename!), workspaceRoot)
+
+    expect(result.ok).toBe(true)
+    expect(result.created).toBe(false)
+    expect(result.serviceDateId).toBe(localService.id) // adopted the existing row, not a new one
+    expect(db.select().from(serviceDates).all()).toHaveLength(1) // no duplicate/conflicting row left behind
+
+    const adopted = db.select().from(serviceDates).where(eq(serviceDates.id, localService.id)).get()
+    expect(adopted?.label).toBe('Sunday') // overwritten with the incoming package's content
+    expect(adopted?.syncUuid).toBe(publishedSyncUuid) // now linked, so future imports match directly
+
+    const finalItems = db.select().from(lineupItems).where(eq(lineupItems.serviceDateId, localService.id)).all()
+    expect(finalItems).toHaveLength(1)
+    const finalSong = db.select().from(songs).where(eq(songs.id, finalItems[0].songId!)).get()
+    expect(finalSong?.title).toBe('Amazing Grace') // the local draft's lineup was replaced, not merged
   })
 
   it('rejects a corrupted package before making any local database changes', async () => {

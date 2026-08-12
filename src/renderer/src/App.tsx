@@ -15,9 +15,11 @@ import BibleScreen from "./features/bible/BibleScreen"
 import GoLiveModal from "./components/GoLiveModal"
 import type { GoLiveConfirmOpts } from "./components/GoLiveModal"
 import UpdateDialog from "./components/UpdateDialog"
+import ZoomIndicator from "./components/ZoomIndicator"
 import { useServiceStore } from "./store/useServiceStore"
 import { useSyncStore } from "./store/useSyncStore"
 import { useUpdaterStore } from "./store/useUpdaterStore"
+import { useUiPrefsStore } from "./store/useUiPrefsStore"
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<AppScreen>("overview")
@@ -33,10 +35,23 @@ export default function App() {
   const subtleNotice = useUpdaterStore(s => s.subtleNotice)
   const dismissSubtleNotice = useUpdaterStore(s => s.dismissSubtle)
   const downloadUpdateInBackground = useUpdaterStore(s => s.downloadUpdate)
+  const initUiPrefs = useUiPrefsStore(s => s.init)
+  const density = useUiPrefsStore(s => s.density)
 
   // Wire the update event stream once — UpdateDialog and the subtle toast
   // below both just read the store this populates.
   useEffect(() => { initUpdater() }, [initUpdater])
+
+  // Wire zoom/density once — ZoomIndicator, Settings, and the density
+  // attribute effect below all just read the store this populates.
+  useEffect(() => { initUiPrefs() }, [initUiPrefs])
+
+  // Density only affects this window (Projection/Confidence mount separate
+  // React trees and never set this attribute, so the matching CSS rules in
+  // the shared globals.css simply never apply there).
+  useEffect(() => {
+    document.documentElement.dataset.density = density
+  }, [density])
 
   // Reset projectionOpen when the user closes the projection window from the OS
   useEffect(() => {
@@ -203,6 +218,9 @@ export default function App() {
             <span className="text-[11px] font-medium text-muted-foreground">
               {currentScreen === "service" ? "" : currentScreen.charAt(0).toUpperCase() + currentScreen.slice(1)}
             </span>
+            <div className="ml-auto">
+              <ZoomIndicator />
+            </div>
           </div>
         )}
         <div className="flex-1 overflow-hidden">

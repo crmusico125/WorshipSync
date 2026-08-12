@@ -220,6 +220,19 @@ contextBridge.exposeInMainWorld('worshipsync', {
       return () => ipcRenderer.removeListener('updater:subtle', listener)
     },
   },
+  uiPrefs: {
+    getState:   () => ipcRenderer.invoke('uiPrefs:getState'),
+    setZoom:    (percent: number) => ipcRenderer.invoke('uiPrefs:setZoom', percent),
+    zoomIn:     () => ipcRenderer.invoke('uiPrefs:zoomIn'),
+    zoomOut:    () => ipcRenderer.invoke('uiPrefs:zoomOut'),
+    resetZoom:  () => ipcRenderer.invoke('uiPrefs:resetZoom'),
+    setDensity: (density: 'comfortable' | 'compact') => ipcRenderer.invoke('uiPrefs:setDensity', density),
+    onEvent: (cb: (payload: unknown) => void) => {
+      const listener = (_e: unknown, payload: unknown) => cb(payload)
+      ipcRenderer.on('uiPrefs:event', listener)
+      return () => ipcRenderer.removeListener('uiPrefs:event', listener)
+    },
+  },
   stageDisplay: {
     start:        (port?: number) => ipcRenderer.invoke('stageDisplay:start', port),
     stop:         ()              => ipcRenderer.invoke('stageDisplay:stop'),

@@ -175,6 +175,18 @@ interface UpdaterState {
   lastCheckedAt: string | null
 }
 
+type ZoomLevel = 75 | 90 | 100 | 110 | 125 | 150
+type Density = 'comfortable' | 'compact'
+
+interface UiPrefsState {
+  zoomPercent: ZoomLevel
+  density: Density
+}
+
+type UiPrefsEvent =
+  | { type: 'zoom-changed'; zoomPercent: ZoomLevel }
+  | { type: 'density-changed'; density: Density }
+
 declare global {
   interface Window {
     worshipsync: {
@@ -342,6 +354,15 @@ declare global {
         getState:        () => Promise<UpdaterState>
         onEvent:  (cb: (payload: UpdaterEventPayload) => void) => () => void
         onSubtle: (cb: (payload: UpdaterSubtlePayload) => void) => () => void
+      }
+      uiPrefs: {
+        getState:   () => Promise<UiPrefsState>
+        setZoom:    (percent: number) => Promise<boolean>
+        zoomIn:     () => Promise<boolean>
+        zoomOut:    () => Promise<boolean>
+        resetZoom:  () => Promise<boolean>
+        setDensity: (density: Density) => Promise<boolean>
+        onEvent: (cb: (payload: UiPrefsEvent) => void) => () => void
       }
       pwa: {
         syncLineup: (items: PwaLineupItem[], currentIdx: number, serviceDate: string | null, serviceTime: string | null) => void

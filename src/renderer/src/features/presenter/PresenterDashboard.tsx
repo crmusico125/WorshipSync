@@ -1053,6 +1053,14 @@ export default function PresenterDashboard({
           if (parsed.maxLinesPerSlide) maxLines = parsed.maxLinesPerSlide;
         } catch {}
       }
+      // Per-song override (set in Builder's style panel) takes priority over the theme default —
+      // matches resolveTheme's merge order below, which is what the operator actually sees while editing.
+      if (item.song.styleOverrides) {
+        try {
+          const parsed = JSON.parse(item.song.styleOverrides);
+          if (parsed.maxLinesPerSlide) maxLines = parsed.maxLinesPerSlide;
+        } catch {}
+      }
 
       return {
         lineupItemId: item.id,

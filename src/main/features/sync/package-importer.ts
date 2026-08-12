@@ -68,11 +68,16 @@ export async function importPackage(zipPath: string, workspaceRoot: string): Pro
       return zipEntryToLocalPath.get(p) ?? null
     }
 
-    const existingService = db.select().from(serviceDates).where(eq(serviceDates.syncUuid, serviceJson.syncUuid)).get()
-    const conflictingDateRow = db.select().from(serviceDates).where(eq(serviceDates.date, serviceJson.date)).get()
-    if (conflictingDateRow && conflictingDateRow.syncUuid !== serviceJson.syncUuid) {
-      return { ok: false, error: `A different local service already exists for ${serviceJson.date}. Rename or remove it before importing this package.` }
-    }
+    // Same date = same service, for this tool's purposes (a solo operator's own computers via a
+    // synced folder, not a multi-user conflict system) — so a local service already sitting on
+    // this date is adopted and overridden rather than blocking the import. Prefer a syncUuid match
+    // (the authoritative identity once a service has synced before); fall back to a date match for
+    // services created independently on this computer or synced from before this device knew about
+    // this chain. `date` is UNIQUE in the schema, so this row is also the one an insert would have
+    // collided with — adopting it via UPDATE avoids that constraint entirely.
+    const existingService =
+      db.select().from(serviceDates).where(eq(serviceDates.syncUuid, serviceJson.syncUuid)).get()
+      ?? db.select().from(serviceDates).where(eq(serviceDates.date, serviceJson.date)).get()
 
     const device = getDeviceIdentity()
     const result = db.transaction((tx) => {
@@ -93,6 +98,7 @@ export async function importPackage(zipPath: string, workspaceRoot: string): Pro
           copyright: songJson.copyright,
           backgroundPath: rewritePath(songJson.backgroundPath),
           tags: songJson.tags,
+          styleOverrides: songJson.styleOverrides,
           syncUuid: songJson.syncUuid,
         }).returning().all()
         songUuidToLocalId.set(songJson.syncUuid, created.id)
@@ -140,8 +146,10 @@ export async function importPackage(zipPath: string, workspaceRoot: string): Pro
         serviceDateId = existingService.id
         created = false
         tx.update(serviceDates).set({
+          date: serviceJson.date,
           label: serviceJson.label,
           notes: serviceJson.notes,
+          syncUuid: serviceJson.syncUuid,
           updatedAt: new Date().toISOString(),
         }).where(eq(serviceDates.id, serviceDateId)).run()
         tx.delete(lineupItems).where(eq(lineupItems.serviceDateId, serviceDateId)).run()

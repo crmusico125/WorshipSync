@@ -315,7 +315,7 @@ function NextServiceHero({
         <div className={`h-1.5 w-1.5 rounded-full ${isToday ? "bg-green-500 animate-pulse" : isSoon ? "bg-amber-500" : "bg-primary"}`} />
         {isToday ? "TODAY'S SERVICE" : isSoon ? `IN ${daysAway} DAYS` : "NEXT UP"}
         <span className="ml-auto font-normal text-[11px] tracking-normal text-muted-foreground">{formatDate(service.date)}</span>
-        <ImportUpdateButton syncUuid={service.syncUuid} variant="icon" className="ml-2" onImported={onImported} />
+        <ImportUpdateButton syncUuid={service.syncUuid} date={service.date} variant="icon" className="ml-2" onImported={onImported} />
         <PublishButton serviceId={service.id} variant="icon" className="ml-2" />
         <button onClick={onEdit} className="ml-2 p-1 rounded hover:bg-muted/50 transition-colors text-muted-foreground hover:text-foreground">
           <Pencil className="h-3 w-3" />
@@ -435,7 +435,7 @@ function ServiceRow({
 
   return (
     <div
-      className="group flex items-center gap-3 px-4 py-3 rounded-xl border border-border hover:border-primary/30 hover:bg-accent/40 transition-all cursor-pointer"
+      className="group flex items-center gap-[var(--row-gap)] px-[var(--row-px)] py-[var(--row-py)] rounded-xl border border-border hover:border-primary/30 hover:bg-accent/40 transition-all cursor-pointer"
       onClick={onOpen}
     >
       {/* Date chip */}
@@ -463,7 +463,7 @@ function ServiceRow({
 
       {/* Actions */}
       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-        {!past && <ImportUpdateButton syncUuid={service.syncUuid} variant="icon" onImported={onImported} />}
+        {!past && <ImportUpdateButton syncUuid={service.syncUuid} date={service.date} variant="icon" onImported={onImported} />}
         {!past && <PublishButton serviceId={service.id} variant="icon" />}
         <Button
           variant="ghost" size="icon"

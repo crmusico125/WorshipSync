@@ -39,9 +39,26 @@ export const useSyncStore = create<SyncStoreState>((set) => ({
   },
 }))
 
-/** Looks up whether a newer version of this specific service (by its sync_uuid) is waiting in the workspace. */
-export function findUpdateForService(syncUuid: string | null | undefined): AvailablePackage | null {
-  if (!syncUuid) return null
+/**
+ * Looks up whether a package is waiting in the workspace for this specific
+ * local service — matched by sync_uuid first (a service this device already
+ * knows is linked to that package), falling back to matching on the service's
+ * date. The date fallback covers a service that exists locally but was never
+ * synced before (created independently on this computer, or synced from
+ * before this device knew about this chain) — without it, a same-date
+ * package from another computer only ever surfaced in Settings > Sync,
+ * never as an action on the service itself. Excludes 'already-imported'
+ * packages, since those mean this exact package is already fully applied
+ * somewhere on this device.
+ */
+export function findUpdateForService(syncUuid: string | null | undefined, date?: string | null): AvailablePackage | null {
   const { availablePackages } = useSyncStore.getState()
-  return availablePackages.find(p => p.manifest.packageId === syncUuid && p.localState === 'update-available') ?? null
+  if (syncUuid) {
+    const bySyncUuid = availablePackages.find(p => p.manifest.packageId === syncUuid && p.localState === 'update-available')
+    if (bySyncUuid) return bySyncUuid
+  }
+  if (date) {
+    return availablePackages.find(p => p.manifest.serviceDate === date && p.manifest.packageId !== syncUuid && p.localState !== 'already-imported') ?? null
+  }
+  return null
 }

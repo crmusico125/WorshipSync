@@ -424,7 +424,7 @@ function SongRow({
     <div className={`relative group border-b border-border ${selected ? "bg-primary/5 border-l-[3px] border-l-primary" : "border-l-[3px] border-l-transparent hover:bg-accent/30"}`}>
       <button
         onClick={onClick}
-        className="w-full text-left flex flex-col gap-1 px-4 py-3 pr-10 transition-colors cursor-pointer"
+        className="w-full text-left flex flex-col gap-1 px-[var(--row-px)] py-[var(--row-py)] pr-10 transition-colors cursor-pointer"
       >
         <div className="flex items-start justify-between gap-2">
           <span className={`text-sm truncate ${selected ? "font-semibold text-primary" : "font-medium text-foreground"}`}>

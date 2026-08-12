@@ -90,6 +90,7 @@ export function collectServiceContent(serviceDateId: number): CollectedContent {
           copyright: song.copyright,
           backgroundPath: song.backgroundPath,
           tags: song.tags,
+          styleOverrides: song.styleOverrides,
           sections: songSections.map(s => ({ type: s.type, label: s.label, lyrics: s.lyrics, orderIndex: s.orderIndex })),
         })
       }

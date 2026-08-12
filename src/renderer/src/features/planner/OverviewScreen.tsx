@@ -93,18 +93,18 @@ function ServiceTableRow({
 }) {
   return (
     <tr className="border-b border-border last:border-0 hover:bg-accent/30 transition-colors">
-      <td className="py-3 px-4 pl-5 font-semibold text-foreground">{s.label}</td>
-      <td className="py-3 px-4 text-muted-foreground">
+      <td className="py-[var(--row-py)] px-4 pl-5 font-semibold text-foreground">{s.label}</td>
+      <td className="py-[var(--row-py)] px-4 text-muted-foreground">
         {new Date(s.date + "T00:00:00").toLocaleDateString("en-US", {
           month: "short", day: "numeric", year: "numeric",
         })}
       </td>
-      <td className="py-3 px-4 text-muted-foreground">{time}</td>
-      <td className="py-3 px-4 text-muted-foreground">{s.itemCount} {s.itemCount === 1 ? "item" : "items"}</td>
-      <td className="py-3 px-4"><StatusPill status={s.status} /></td>
-      <td className="py-3 px-4 pr-5 text-right">
+      <td className="py-[var(--row-py)] px-4 text-muted-foreground">{time}</td>
+      <td className="py-[var(--row-py)] px-4 text-muted-foreground">{s.itemCount} {s.itemCount === 1 ? "item" : "items"}</td>
+      <td className="py-[var(--row-py)] px-4"><StatusPill status={s.status} /></td>
+      <td className="py-[var(--row-py)] px-4 pr-5 text-right">
         <div className="flex items-center justify-end gap-1.5">
-          {!past && <ImportUpdateButton syncUuid={s.syncUuid} variant="icon" onImported={onImported} />}
+          {!past && <ImportUpdateButton syncUuid={s.syncUuid} date={s.date} variant="icon" onImported={onImported} />}
           {!past && <PublishButton serviceId={s.id} variant="icon" />}
           <Button variant="outline" size="sm" className="h-7 text-xs" onClick={onOpen}>
             {past ? "View" : "Open"}
@@ -282,7 +282,7 @@ export default function OverviewScreen({ onGoLive, onOpenBuilder, onNavigate, pr
                       </Button>
                     </>
                   )}
-                  <ImportUpdateButton syncUuid={nextService.syncUuid} variant="button" onImported={refreshServices} />
+                  <ImportUpdateButton syncUuid={nextService.syncUuid} date={nextService.date} variant="button" onImported={refreshServices} />
                   <PublishButton serviceId={nextService.id} variant="button" />
                 </div>
               </div>

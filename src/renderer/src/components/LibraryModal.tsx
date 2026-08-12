@@ -617,9 +617,9 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddBibl
                                     {item.usageCount} {item.usageCount === 1 ? "song" : "songs"}
                                   </div>
                                 )}
-                                {/* Filename on hover */}
-                                <div className="absolute bottom-0 left-0 right-0 px-2 py-1 bg-gradient-to-t from-black/70 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <p className="text-[9px] text-white truncate">{item.filename}</p>
+                                {/* Filename — always visible so the operator can tell files apart without hovering/clicking each one first */}
+                                <div className="absolute bottom-0 left-0 right-0 px-2 py-1 bg-gradient-to-t from-black/85 via-black/40 to-transparent">
+                                  <p className="text-[10px] leading-tight text-white line-clamp-2" title={item.filename}>{item.filename}</p>
                                 </div>
                               </button>
                             )

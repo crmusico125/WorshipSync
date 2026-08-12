@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react"
-import { Search, Music2, Timer, Upload, Trash2, Check, Image as ImageIcon, Play, Volume2, Calendar, BookOpen, Megaphone, Loader2, ChevronUp, ChevronDown, X } from "lucide-react"
+import { Search, Music2, Timer, Upload, Trash2, Check, Image as ImageIcon, Play, Volume2, Video, Calendar, BookOpen, Megaphone, Loader2, ChevronUp, ChevronDown, X } from "lucide-react"
 import { FREE_TRANSLATIONS, type BibleTranslation, type BibleApiResult, fetchBiblePassage } from "../lib/bibleApi"
 import { toFileUrl } from "../lib/utils"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -202,6 +202,7 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddBibl
   const [mediaUploadProgress, setMediaUploadProgress] = useState<{ done: number; total: number } | null>(null)
   const [mediaUsingSongs,    setMediaUsingSongs]    = useState<{ id: number; title: string; artist: string }[]>([])
   const [mediaUsingServices, setMediaUsingServices] = useState<{ id: number; date: string; label: string }[]>([])
+  const [mediaTypeFilter, setMediaTypeFilter] = useState<"all" | "image" | "video" | "audio">("all")
 
   const loadMediaImages = useCallback(async () => {
     setMediaLoading(true)
@@ -235,11 +236,25 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddBibl
     }
   }, [singleMediaSelected])
 
+  const mediaCounts = useMemo(() => {
+    const counts = { all: mediaImages.length, image: 0, video: 0, audio: 0 }
+    for (const i of mediaImages) {
+      if (/\.(mp4|webm|mov)$/i.test(i.path)) counts.video++
+      else if (/\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(i.path)) counts.audio++
+      else counts.image++
+    }
+    return counts
+  }, [mediaImages])
+
   const filteredMedia = useMemo(() => {
-    if (!search.trim()) return mediaImages
+    let items = mediaImages
+    if (mediaTypeFilter === "video") items = items.filter((i) => /\.(mp4|webm|mov)$/i.test(i.path))
+    else if (mediaTypeFilter === "audio") items = items.filter((i) => /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(i.path))
+    else if (mediaTypeFilter === "image") items = items.filter((i) => !/\.(mp4|webm|mov|mp3|wav|ogg|m4a|aac|flac)$/i.test(i.path))
+    if (!search.trim()) return items
     const q = search.toLowerCase()
-    return mediaImages.filter((i) => i.filename.toLowerCase().includes(q))
-  }, [mediaImages, search])
+    return items.filter((i) => i.filename.toLowerCase().includes(q))
+  }, [mediaImages, search, mediaTypeFilter])
 
   const toggleMediaSelect = useCallback((path: string) => {
     setMediaSelectedPaths(prev => {
@@ -324,7 +339,7 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddBibl
                   tab === "scriptures"
                     ? "Type a reference… e.g. John 3:16, Psalm 23, Romans 8:28-39"
                     : tab === "media"
-                      ? "Search images by filename..."
+                      ? "Search files by filename..."
                       : "Search songs, scriptures, media..."
                 }
                 value={search}
@@ -534,11 +549,36 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddBibl
                 <div className="flex-1 flex min-h-0 overflow-hidden">
                   {/* Media grid */}
                   <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-                    <div className="px-4 py-2.5 border-b border-border flex items-center justify-between shrink-0">
-                      <span className="text-xs text-muted-foreground">
-                        {filteredMedia.length} {filteredMedia.length === 1 ? "file" : "files"}
-                      </span>
-                      <Button size="sm" variant="outline" className="gap-1.5 h-7 text-xs" onClick={handleMediaUpload} disabled={mediaUploading}>
+                    <div className="px-4 py-2.5 border-b border-border flex items-center justify-between shrink-0 gap-3">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className="text-xs text-muted-foreground shrink-0">
+                          {filteredMedia.length} {filteredMedia.length === 1 ? "file" : "files"}
+                        </span>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {([
+                            { key: "all" as const,   label: "All",    icon: null },
+                            { key: "image" as const, label: "Images", icon: ImageIcon },
+                            { key: "video" as const, label: "Video",  icon: Video },
+                            { key: "audio" as const, label: "Audio",  icon: Volume2 },
+                          ]).map(({ key, label, icon: Icon }) => (
+                            <button
+                              key={key}
+                              onClick={() => setMediaTypeFilter(key)}
+                              disabled={key !== "all" && mediaCounts[key] === 0}
+                              className={`flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
+                                mediaTypeFilter === key
+                                  ? "bg-primary/10 text-primary"
+                                  : "text-muted-foreground hover:text-foreground hover:bg-accent/40"
+                              }`}
+                            >
+                              {Icon && <Icon className="h-3 w-3" />}
+                              {label}
+                              <span className="tabular-nums opacity-60">{mediaCounts[key]}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <Button size="sm" variant="outline" className="gap-1.5 h-7 text-xs shrink-0" onClick={handleMediaUpload} disabled={mediaUploading}>
                         <Upload className="h-3 w-3" />
                         {mediaUploadProgress
                           ? `${mediaUploadProgress.done} / ${mediaUploadProgress.total}`
@@ -552,9 +592,11 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddBibl
                         <div className="flex flex-col items-center justify-center py-16 gap-3">
                           <ImageIcon className="h-10 w-10 text-muted-foreground/30" />
                           <p className="text-sm text-muted-foreground">
-                            {search ? "No files match your search" : "No media uploaded yet"}
+                            {search
+                              ? "No files match your search"
+                              : mediaTypeFilter !== "all" ? `No ${mediaTypeFilter} files` : "No media uploaded yet"}
                           </p>
-                          {!search && (
+                          {!search && mediaTypeFilter === "all" && (
                             <Button size="sm" className="gap-1.5" onClick={handleMediaUpload}>
                               <Upload className="h-3.5 w-3.5" /> Upload Image
                             </Button>

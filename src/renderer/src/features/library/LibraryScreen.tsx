@@ -903,10 +903,9 @@ function SongFormScreen({
 
 // ── Slide Thumbnail (shared) ────────────────────────────────────────────
 
-function SlideThumb({ lines, backgroundPath, small, style }: {
+function SlideThumb({ lines, backgroundPath, style }: {
   lines: string[]
   backgroundPath?: string | null
-  small?: boolean
   style?: Partial<ThemeSettings>
 }) {
   const bg = backgroundPath ?? style?.backgroundPath
@@ -919,6 +918,12 @@ function SlideThumb({ lines, backgroundPath, small, style }: {
   const overlayOpacity = style?.overlayOpacity ?? DEFAULT_SETTINGS.overlayOpacity
   const textShadowOpacity = style?.textShadowOpacity ?? DEFAULT_SETTINGS.textShadowOpacity
   const fontFamily = style?.fontFamily ?? DEFAULT_SETTINGS.fontFamily
+  // Scaled down from the song's actual configured slide font size (not a fixed tiny px value)
+  // so a larger/smaller configured font is still visibly larger/smaller in the preview, clamped
+  // to a comfortably readable range — this preview is for the operator to check content at a
+  // glance, not a precise scale mockup of the real projected slide.
+  const configuredFontSize = style?.fontSize ?? DEFAULT_SETTINGS.fontSize
+  const previewFontSize = Math.min(28, Math.max(14, configuredFontSize * 0.3))
 
   const positionClass = textPosition === "top" ? "items-start" : textPosition === "bottom" ? "items-end" : "items-center"
 
@@ -941,12 +946,13 @@ function SlideThumb({ lines, backgroundPath, small, style }: {
       )}
       <div className="absolute inset-0" style={{ background: `rgba(0,0,0,${overlayOpacity / 100})` }} />
       <div className={`absolute inset-0 flex ${positionClass} justify-center p-2`}>
-        <span className={`font-semibold leading-snug ${small ? "text-[8px]" : "text-[9px]"}`}
+        <span className="font-semibold leading-snug"
           style={{
             color: textColor,
             textAlign,
             textShadow: `0 1px 4px rgba(0,0,0,${textShadowOpacity / 100})`,
             fontFamily,
+            fontSize: previewFontSize,
             display: "block",
             width: "100%",
           }}

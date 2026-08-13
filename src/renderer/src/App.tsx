@@ -21,6 +21,8 @@ import { useSyncStore } from "./store/useSyncStore"
 import { useUpdaterStore } from "./store/useUpdaterStore"
 import { useUiPrefsStore } from "./store/useUiPrefsStore"
 
+const SYNC_REFRESH_THROTTLE_MS = 60_000
+
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<AppScreen>("overview")
   const [projectionOpen, setProjectionOpen] = useState(false)
@@ -63,11 +65,21 @@ export default function App() {
 
   // Refresh the shared Sync Workspace status on launch and whenever the
   // window regains focus (e.g. after a sync provider finishes downloading in
-  // the background) — never polled or watched continuously.
+  // the background) — never polled or watched continuously. Throttled so
+  // quickly alt-tabbing back and forth doesn't re-scan the (possibly
+  // cloud-synced, possibly slow-to-read) workspace folder on every single
+  // focus — only if it's actually been a while since the last check.
+  const lastSyncRefreshRef = useRef(0)
   useEffect(() => {
-    refreshSync()
-    window.addEventListener("focus", refreshSync)
-    return () => window.removeEventListener("focus", refreshSync)
+    const refreshSyncThrottled = () => {
+      const now = Date.now()
+      if (now - lastSyncRefreshRef.current < SYNC_REFRESH_THROTTLE_MS) return
+      lastSyncRefreshRef.current = now
+      refreshSync()
+    }
+    refreshSyncThrottled()
+    window.addEventListener("focus", refreshSyncThrottled)
+    return () => window.removeEventListener("focus", refreshSyncThrottled)
   }, [refreshSync])
 
   // Track live runtime globally so any screen can show the live bar

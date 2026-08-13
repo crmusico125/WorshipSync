@@ -563,10 +563,12 @@ export default function ConfidenceMonitor() {
         )}
       </div>
 
-      {/* Next lines — hidden for scripture (single continuous content) and whenever the next
-          item is a different song, since the enlarged center preview covers that case once
-          the blank slide is reached */}
-      {hasNext && !showCountdown && !isNextNewSong && slide?.itemType !== "scripture" && (
+      {/* Next lines — hidden for scripture (single continuous content), whenever the next
+          item is a different song (the enlarged center preview covers that case once the
+          blank slide is reached), and whenever the screen is blanked (a blank should hide
+          everything, not just the current slide — the enlarged "Next Song" preview above is
+          the only next-item content still shown while blank). */}
+      {hasNext && !showCountdown && !isNextNewSong && !isBlank && slide?.itemType !== "scripture" && (
         <div style={{
           flexShrink: 0, position: "relative", zIndex: 30,
           borderTop: "2px solid rgba(255,255,255,0.08)",

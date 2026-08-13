@@ -48,8 +48,9 @@ import { useServiceStore, type ServiceDate } from "../../store/useServiceStore";
 import LibraryModal from "../../components/LibraryModal";
 import BackgroundPickerPanel from "../../components/BackgroundPickerPanel";
 import EditLyricsModal from "../../components/EditLyricsModal";
+import TranslationPicker from "../../components/TranslationPicker";
 import type { AnnouncementCard } from "../../../../../shared/types";
-import { fetchBiblePassage, bibleResultToScriptureRef, FREE_TRANSLATIONS, fetchApiBibleTranslations, COMMON_TRANSLATION_LABELS, type BibleTranslation, type BibleApiResult, type BibleApiVerse } from "../../lib/bibleApi";
+import { fetchBiblePassage, bibleResultToScriptureRef, FREE_TRANSLATIONS, fetchApiBibleTranslations, translationDisplayName, type BibleTranslation, type BibleApiResult, type BibleApiVerse } from "../../lib/bibleApi";
 import { toFileUrl, basenameOf } from "../../lib/utils";
 import { parseMediaCollection, type MediaCollectionConfig } from "../../lib/mediaCollection";
 
@@ -113,25 +114,6 @@ function parseAnnouncementCards(raw: string | null | undefined): AnnouncementCar
     if (Array.isArray(p?.cards)) return p.cards
   } catch {}
   return raw.split('\n').filter(l => l.trim()).map((l, i) => ({ id: String(i), heading: l.trim() }))
-}
-
-function renderTranslationOptions(translations: BibleTranslation[], filterFn?: (t: BibleTranslation) => boolean) {
-  const list = filterFn ? translations.filter(filterFn) : translations;
-  const common = list.filter(t => COMMON_TRANSLATION_LABELS.includes(t.label));
-  const others = list.filter(t => !COMMON_TRANSLATION_LABELS.includes(t.label));
-  if (common.length === 0) return list.map(t => <option key={t.id} value={t.id}>{t.label}</option>);
-  return (
-    <>
-      <optgroup label="Popular">
-        {common.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
-      </optgroup>
-      {others.length > 0 && (
-        <optgroup label="Other">
-          {others.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
-        </optgroup>
-      )}
-    </>
-  );
 }
 
 const BIBLE_BOOKS = [
@@ -2949,10 +2931,12 @@ export default function PresenterDashboard({
                     </div>
                   )}
                 </div>
-                <select
+                <TranslationPicker
+                  translations={availableTranslations}
                   value={scriptureTranslation}
-                  onChange={e => {
-                    const newTid = e.target.value;
+                  className="shrink-0"
+                  align="right"
+                  onChange={newTid => {
                     setScriptureTranslation(newTid);
                     window.worshipsync.appState.set({ lastBibleTranslation: newTid }).catch(() => {});
                     if (!bibleBrowserResult) return;
@@ -2970,10 +2954,7 @@ export default function PresenterDashboard({
                       bibleBrowserSearch(bibleBrowserQuery, newTid, bibleBrowserCompareIds);
                     }
                   }}
-                  className="h-9 px-2.5 text-sm font-medium bg-input border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 shrink-0"
-                >
-                  {renderTranslationOptions(availableTranslations)}
-                </select>
+                />
                 <button
                   type="submit"
                   disabled={bibleBrowserLoading || !bibleBrowserQuery.trim()}
@@ -3065,10 +3046,12 @@ export default function PresenterDashboard({
                   );
                 })}
                 {bibleBrowserCompareIds.length < 3 && (
-                  <select
+                  <TranslationPicker
+                    translations={availableTranslations.filter(t => t.id !== scriptureTranslation && !bibleBrowserCompareIds.includes(t.id))}
                     value=""
-                    onChange={e => {
-                      const cid = e.target.value;
+                    placeholder="+ Add translation"
+                    align="left"
+                    onChange={cid => {
                       if (!cid || bibleBrowserCompareIds.includes(cid)) return;
                       const newIds = [...bibleBrowserCompareIds, cid];
                       setBibleBrowserCompareIds(newIds);
@@ -3094,11 +3077,7 @@ export default function PresenterDashboard({
                         verseListRef.current?.querySelector<HTMLElement>(`[data-verse-ref="${CSS.escape(bibleBrowserProjectedRef)}"]`)?.focus();
                       }, 0);
                     }}
-                    className="h-6 px-2 text-xs bg-input border border-border rounded-md text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
-                  >
-                    <option value="">+ Add translation</option>
-                    {renderTranslationOptions(availableTranslations, t => t.id !== scriptureTranslation && !bibleBrowserCompareIds.includes(t.id))}
-                  </select>
+                  />
                 )}
               </div>
             </div>
@@ -3106,10 +3085,10 @@ export default function PresenterDashboard({
             {/* ─ Passage header + Add to Lineup ─ */}
             {bibleBrowserResult && (
               <div className="shrink-0 px-4 py-2.5 border-b border-border flex items-center justify-between gap-4 bg-card">
-                <div className="min-w-0 flex items-baseline gap-2">
+                <div className="min-w-0 flex items-baseline gap-2 flex-wrap">
                   <span className="text-sm font-semibold text-foreground truncate">{bibleBrowserResult.reference}</span>
                   <span className="text-xs text-muted-foreground shrink-0">
-                    {availableTranslations.find(t => t.id === scriptureTranslation)?.label ?? scriptureTranslation.toUpperCase()}
+                    {translationDisplayName(availableTranslations.find(t => t.id === scriptureTranslation), scriptureTranslation)}
                     <span className="mx-1.5 opacity-40">·</span>
                     {bibleBrowserResult.verses.length}v
                   </span>
@@ -3232,17 +3211,23 @@ export default function PresenterDashboard({
                     {/* Compare column headers */}
                     {bibleBrowserCompareIds.length > 0 && (
                       <>
-                        <div className="sticky top-0 z-10 px-3 py-3 bg-card border-b border-border/40">
-                          <span className="text-sm font-semibold text-foreground/80">
-                            {availableTranslations.find(t => t.id === scriptureTranslation)?.label ?? scriptureTranslation.toUpperCase()}
+                        <div className="sticky top-0 z-10 px-3 py-3 bg-card border-b border-border/40 min-w-0">
+                          <span
+                            className="text-sm font-semibold text-foreground/80 block truncate"
+                            title={translationDisplayName(availableTranslations.find(t => t.id === scriptureTranslation), scriptureTranslation)}
+                          >
+                            {translationDisplayName(availableTranslations.find(t => t.id === scriptureTranslation), scriptureTranslation)}
                           </span>
                         </div>
                         {bibleBrowserCompareIds.map(cid => (
-                          <div key={cid} className="sticky top-0 z-10 px-3 py-3 bg-card border-b border-border/40">
-                            <span className="text-sm font-semibold text-foreground/80">
-                              {availableTranslations.find(t => t.id === cid)?.label ?? cid.toUpperCase()}
-                              {bibleBrowserCompareLoadingSet.has(cid) && <Loader2 className="h-3 w-3 animate-spin inline ml-1.5" />}
+                          <div key={cid} className="sticky top-0 z-10 px-3 py-3 bg-card border-b border-border/40 min-w-0 flex items-center">
+                            <span
+                              className="text-sm font-semibold text-foreground/80 truncate"
+                              title={translationDisplayName(availableTranslations.find(t => t.id === cid), cid)}
+                            >
+                              {translationDisplayName(availableTranslations.find(t => t.id === cid), cid)}
                             </span>
+                            {bibleBrowserCompareLoadingSet.has(cid) && <Loader2 className="h-3 w-3 animate-spin shrink-0 ml-1.5" />}
                           </div>
                         ))}
                       </>

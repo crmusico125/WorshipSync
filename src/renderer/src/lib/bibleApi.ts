@@ -17,6 +17,8 @@ export interface BibleApiResult {
 export interface BibleTranslation {
   id: string
   label: string
+  /** Full version name, e.g. "New International Version" — absent for translations where it isn't known. */
+  fullName?: string
   /** true = requires API.Bible key */
   keyed?: boolean
 }
@@ -24,24 +26,31 @@ export interface BibleTranslation {
 // ── Free translations (bible-api.com, no key) ─────────────────────────────────
 
 export const FREE_TRANSLATIONS: BibleTranslation[] = [
-  { id: 'web',   label: 'WEB' },
-  { id: 'kjv',   label: 'KJV' },
-  { id: 'asv',   label: 'ASV' },
-  { id: 'bbe',   label: 'BBE' },
-  { id: 'ylt',   label: 'YLT' },
-  { id: 'darby', label: 'DARBY' },
+  { id: 'web',   label: 'WEB',   fullName: 'World English Bible' },
+  { id: 'kjv',   label: 'KJV',   fullName: 'King James Version' },
+  { id: 'asv',   label: 'ASV',   fullName: 'American Standard Version' },
+  { id: 'bbe',   label: 'BBE',   fullName: 'Bible in Basic English' },
+  { id: 'ylt',   label: 'YLT',   fullName: "Young's Literal Translation" },
+  { id: 'darby', label: 'DARBY', fullName: 'Darby Translation' },
 ]
 
 // Legacy export used in existing code
 export const BIBLE_TRANSLATIONS = FREE_TRANSLATIONS
+
+/** "New International Version (NIV)" — falls back to just the abbreviation/id when no full name is known. */
+export function translationDisplayName(t: BibleTranslation | undefined, fallbackId: string): string {
+  if (!t) return fallbackId.toUpperCase()
+  return t.fullName ? `${t.fullName} (${t.label})` : t.label
+}
 
 // ── API.Bible config ──────────────────────────────────────────────────────────
 
 const API_BIBLE_BASE = 'https://api.scripture.api.bible/v1'
 
 // Priority order for the "quick access" row when API.Bible is available.
-// Include common variant abbreviations (NIV11, ESVSB, etc.) that API.Bible uses.
-export const COMMON_TRANSLATION_LABELS = ['NIV', 'NIV11', 'NLT', 'NKJV', 'ESV', 'ESVSB', 'CSB', 'NASB', 'NASB2020', 'KJV', 'WEB', 'MSG', 'AMP', 'NCV', 'CEV']
+// Include common variant abbreviations (ESVSB, NASB2020, etc.) that API.Bible uses —
+// NIV11 is deliberately absent since it's normalized to "NIV" above before labels ever reach here.
+export const COMMON_TRANSLATION_LABELS = ['NIV', 'NLT', 'NKJV', 'ESV', 'ESVSB', 'CSB', 'NASB', 'NASB2020', 'KJV', 'WEB', 'MSG', 'AMP', 'NCV', 'CEV']
 const PREFERRED_ABBREVS = COMMON_TRANSLATION_LABELS
 
 // Simple in-memory cache so we don't refetch on every component mount
@@ -64,10 +73,18 @@ export async function fetchApiBibleTranslations(apiKey: string): Promise<BibleTr
   const seen = new Set<string>()
   const deduped: BibleTranslation[] = []
   for (const item of items) {
-    const abbrev = (item.abbreviation ?? '').toUpperCase().replace(/\s/g, '')
+    const rawAbbrev = (item.abbreviation ?? '').toUpperCase().replace(/\s/g, '')
+    // API.Bible labels its edition-specific abbreviations with a trailing year (e.g. "NIV11"
+    // for the 2011 NIV) — simplify to the plain translation name everywhere it's displayed,
+    // including the projected verse reference, since operators don't care about the edition year.
+    const abbrev = rawAbbrev.replace(/^NIV\d+$/, 'NIV')
     if (!abbrev || seen.has(abbrev)) continue
     seen.add(abbrev)
-    deduped.push({ id: item.id, label: abbrev, keyed: true })
+    // API.Bible's `name` sometimes trails its own "(ABBR)"/trademark symbols (e.g. "New
+    // International Version (NIV)®") — strip those so it composes cleanly as "Full Name (ABBR)"
+    // wherever it's displayed, instead of risking a duplicated "(NIV) (NIV)".
+    const fullName = (item.name ?? '').replace(/[®©™]/g, '').replace(/\s*\([^)]*\)\s*$/, '').trim() || undefined
+    deduped.push({ id: item.id, label: abbrev, fullName, keyed: true })
     _labelCache.set(item.id, abbrev)
   }
 

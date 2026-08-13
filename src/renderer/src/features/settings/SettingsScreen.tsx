@@ -13,6 +13,7 @@ import { Select } from "@/components/ui/select"
 import { useSyncStore } from "../../store/useSyncStore"
 import { useUpdaterStore } from "../../store/useUpdaterStore"
 import { useUiPrefsStore } from "../../store/useUiPrefsStore"
+import MarkdownLite from "../../components/MarkdownLite"
 
 const UI_ZOOM_LEVELS = [75, 90, 100, 110, 125, 150] as const
 
@@ -1787,7 +1788,7 @@ export default function SettingsScreen() {
                       <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">
                         {updaterLatestVersion ? `Version ${updaterLatestVersion}` : "Release notes"}
                       </p>
-                      <div className="text-xs text-foreground/90 whitespace-pre-wrap leading-relaxed">{updaterReleaseNotes}</div>
+                      <MarkdownLite text={updaterReleaseNotes} className="text-xs text-foreground/90 leading-relaxed" />
                     </div>
                   )}
                 </div>

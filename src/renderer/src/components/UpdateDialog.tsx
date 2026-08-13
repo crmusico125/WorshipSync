@@ -2,6 +2,7 @@ import { Download, Loader2, RefreshCw, AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { useUpdaterStore } from "../store/useUpdaterStore"
+import MarkdownLite from "./MarkdownLite"
 
 function fmtBytes(bytesPerSecond: number): string {
   if (bytesPerSecond < 1024) return `${Math.round(bytesPerSecond)} B/s`
@@ -49,7 +50,7 @@ export default function UpdateDialog() {
               {releaseNotes && (
                 <div className="rounded-lg border border-border bg-secondary/20 px-3 py-2.5 max-h-48 overflow-y-auto">
                   <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-1.5">Release notes</p>
-                  <div className="text-xs text-foreground/90 whitespace-pre-wrap leading-relaxed">{releaseNotes}</div>
+                  <MarkdownLite text={releaseNotes} className="text-xs text-foreground/90 leading-relaxed" />
                 </div>
               )}
 

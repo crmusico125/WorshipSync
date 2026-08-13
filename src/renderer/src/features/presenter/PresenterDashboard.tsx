@@ -3115,7 +3115,13 @@ export default function PresenterDashboard({
                   </span>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  {bibleBrowserHighlightedVerseNums.size === 0 && (
+                  {/* bibleBrowserResult.reference isn't usable here — bible-api.com expands even a
+                      chapter-only query to its full verse range (e.g. "Ephesians 2:1-23"), so it
+                      always contains ":". The literal query the operator typed is the only reliable
+                      signal: no ":" (e.g. "Ephesians 2") means they already asked for the whole
+                      chapter, so offering to re-fetch it is redundant — and re-fetching it would
+                      also mark every verse "searched"/highlighted, which looks broken. */}
+                  {bibleBrowserHighlightedVerseNums.size === 0 && bibleBrowserQuery.includes(":") && (
                     <button
                       onClick={readFullChapter}
                       disabled={bibleBrowserLoading}
@@ -3135,8 +3141,11 @@ export default function PresenterDashboard({
               </div>
             )}
 
-            {/* ─ Jump to verse — docked to the list it navigates, only in chapter view ─ */}
-            {bibleBrowserHighlightedVerseNums.size > 0 && (
+            {/* ─ Jump to verse — docked to the list it navigates, only in chapter view.
+                "Chapter view" means either reached via Read Full Chapter (highlightedVerseNums
+                gets populated then) or searched directly as a whole chapter (no ":" in the typed
+                query) — same signal Read Full Chapter's own visibility uses, above. */}
+            {(bibleBrowserHighlightedVerseNums.size > 0 || (!!bibleBrowserResult && !bibleBrowserQuery.includes(":"))) && (
               <div className="shrink-0 px-4 py-2 border-b border-border/60 bg-muted/20 flex items-center gap-1.5">
                 <label htmlFor="bible-jump-verse-input" className="text-[11px] font-semibold text-muted-foreground/50 shrink-0">
                   Jump to verse

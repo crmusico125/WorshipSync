@@ -3240,8 +3240,23 @@ export default function PresenterDashboard({
                       const isAnyVerseProjected = bibleBrowserProjectedRef === ref;
                       const isSearched = bibleBrowserHighlightedVerseNums.has(verse.verse);
 
+                      // Section heading (e.g. "Made Alive in Christ") attached by the API to the
+                      // verse it precedes — rendered as its own full-width row ahead of that verse.
+                      // Only ever present for keyed (API.Bible) translations; free translations
+                      // never populate BibleApiVerse.heading.
+                      const headingRow = verse.heading ? (
+                        <div
+                          key={`${ref}-heading`}
+                          style={bibleBrowserCompareIds.length > 0 ? { gridColumn: '1 / -1' } : undefined}
+                          className="px-4 pt-4 pb-1 text-[11px] font-bold uppercase tracking-wider text-primary/70"
+                        >
+                          {verse.heading}
+                        </div>
+                      ) : null;
+
                       return bibleBrowserCompareIds.length > 0 ? (
                         <React.Fragment key={ref}>
+                          {headingRow}
                           {/* Primary verse cell */}
                           <div
                             data-verse-ref={ref}
@@ -3302,31 +3317,33 @@ export default function PresenterDashboard({
                           })}
                         </React.Fragment>
                       ) : (
-                        <div
-                          key={ref}
-                          data-verse-ref={ref}
-                          tabIndex={-1}
-                          style={isPrimaryLive ? { boxShadow: 'inset 3px 0 0 hsl(var(--primary))' } : isSearched ? { boxShadow: 'inset 3px 0 0 rgb(245 158 11 / 0.5)' } : undefined}
-                          className={`group flex items-start gap-3 px-4 py-4 border-b border-border/15 last:border-0 transition-all ${
-                            isPrimaryLive ? 'bg-primary/10' : isSearched ? 'bg-amber-500/8' : 'hover:bg-accent/15'
-                          }`}
-                        >
-                          <span className="text-xs font-medium text-muted-foreground/50 tabular-nums w-5 text-right shrink-0 mt-[2px] select-none">{verse.verse}</span>
-                          <p className="flex-1 text-sm leading-relaxed text-foreground">{verse.text.trim()}</p>
-                          {isPrimaryLive ? (
-                            <span className="shrink-0 self-start flex items-center gap-1 mt-0.5 px-2 py-1 rounded-full bg-red-500/10 border border-red-500/30 text-[10px] font-bold text-red-400 leading-none">
-                              <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse shrink-0" />
-                              LIVE
-                            </span>
-                          ) : (
-                            <button
-                              onClick={() => projectBibleVerse(verse, ref, scriptureTranslation)}
-                              className="shrink-0 self-start opacity-0 group-hover:opacity-100 h-7 px-3 mt-0.5 rounded-md text-xs font-semibold bg-primary text-primary-foreground transition-opacity focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                            >
-                              ▶ Project
-                            </button>
-                          )}
-                        </div>
+                        <React.Fragment key={ref}>
+                          {headingRow}
+                          <div
+                            data-verse-ref={ref}
+                            tabIndex={-1}
+                            style={isPrimaryLive ? { boxShadow: 'inset 3px 0 0 hsl(var(--primary))' } : isSearched ? { boxShadow: 'inset 3px 0 0 rgb(245 158 11 / 0.5)' } : undefined}
+                            className={`group flex items-start gap-3 px-4 py-4 border-b border-border/15 last:border-0 transition-all ${
+                              isPrimaryLive ? 'bg-primary/10' : isSearched ? 'bg-amber-500/8' : 'hover:bg-accent/15'
+                            }`}
+                          >
+                            <span className="text-xs font-medium text-muted-foreground/50 tabular-nums w-5 text-right shrink-0 mt-[2px] select-none">{verse.verse}</span>
+                            <p className="flex-1 text-sm leading-relaxed text-foreground">{verse.text.trim()}</p>
+                            {isPrimaryLive ? (
+                              <span className="shrink-0 self-start flex items-center gap-1 mt-0.5 px-2 py-1 rounded-full bg-red-500/10 border border-red-500/30 text-[10px] font-bold text-red-400 leading-none">
+                                <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse shrink-0" />
+                                LIVE
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => projectBibleVerse(verse, ref, scriptureTranslation)}
+                                className="shrink-0 self-start opacity-0 group-hover:opacity-100 h-7 px-3 mt-0.5 rounded-md text-xs font-semibold bg-primary text-primary-foreground transition-opacity focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                              >
+                                ▶ Project
+                              </button>
+                            )}
+                          </div>
+                        </React.Fragment>
                       );
                     })}
                   </div>

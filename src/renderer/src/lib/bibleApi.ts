@@ -5,6 +5,10 @@ export interface BibleApiVerse {
   chapter: number
   verse: number
   text: string
+  /** Section/pericope heading (e.g. "Made Alive in Christ") immediately preceding this verse, if any.
+   *  Only ever populated for keyed (API.Bible) translations — bible-api.com's free translations
+   *  don't carry this editorial content at all. */
+  heading?: string
 }
 
 export interface BibleApiResult {
@@ -229,6 +233,10 @@ interface ApiBibleItem {
 
 // Paragraph styles that are headings/metadata — text inside is NOT verse content
 const HEADING_STYLES = new Set(['ms', 'ms1', 'ms2', 's', 's1', 's2', 'r', 'mt', 'mt1', 'mt2', 'mte', 'd', 'sp', 'rem', 'cl'])
+// The subset of HEADING_STYLES that are actual section/pericope headings (e.g. "Made Alive in
+// Christ") worth surfacing to the operator — not book/major-section titles, speaker labels,
+// cross-references, or remarks, which would just be noise in a verse list.
+const SECTION_HEADING_STYLES = new Set(['s', 's1', 's2'])
 
 function extractVersesFromJson(content: ApiBibleItem[], bookName: string, chapter: number, startVerse = 1): BibleApiVerse[] {
   // API.Bible JSON uses several structures depending on translation and passage:
@@ -253,6 +261,10 @@ function extractVersesFromJson(content: ApiBibleItem[], bookName: string, chapte
   //      starting at startVerse so each unattributed text gets the next verse number.
 
   const verseMap = new Map<number, string[]>()
+  const headingMap = new Map<number, string>()
+  // Text collected from a SECTION_HEADING_STYLES paragraph, waiting to be attached to whichever
+  // verse comes next in document order (headings always precede the verse they title).
+  let pendingHeading: string | undefined
   let sidVerseNum: number | undefined
   let nextUnattributed = startVerse  // sequential counter for D-style prose passages
 
@@ -264,8 +276,14 @@ function extractVersesFromJson(content: ApiBibleItem[], bookName: string, chapte
     return isNaN(n) || n <= 0 ? undefined : n
   }
 
-  function processNode(item: ApiBibleItem, inheritedVerseId?: string, inheritedVid?: number, inVerseContent = true): void {
+  function processNode(item: ApiBibleItem, inheritedVerseId?: string, inheritedVid?: number, inVerseContent = true, inSectionHeading = false): void {
     if (item.type === 'text') {
+      if (inSectionHeading) {
+        const t = (item.text ?? '').trim()
+        if (t) pendingHeading = pendingHeading ? `${pendingHeading} ${t}` : t
+        return
+      }
+
       // Priority: A) own verseId → B) inherited verseId → C) sid tracker → D1) vid → D2) sequential
       const verseId = item.attrs?.verseId ?? inheritedVerseId
       let verseNum: number | undefined
@@ -289,6 +307,10 @@ function extractVersesFromJson(content: ApiBibleItem[], bookName: string, chapte
           if (!verseMap.has(verseNum)) verseMap.set(verseNum, [])
           verseMap.get(verseNum)!.push(t)
           if (usedSequential) nextUnattributed++
+          if (pendingHeading && !headingMap.has(verseNum)) {
+            headingMap.set(verseNum, pendingHeading)
+            pendingHeading = undefined
+          }
         }
       }
       return
@@ -309,10 +331,11 @@ function extractVersesFromJson(content: ApiBibleItem[], bookName: string, chapte
 
     const style = item.attrs?.style ?? ''
     const childInVerseContent = inVerseContent && !HEADING_STYLES.has(style)
+    const childInSectionHeading = inSectionHeading || SECTION_HEADING_STYLES.has(style)
     const childVerseId = item.attrs?.verseId ?? inheritedVerseId
 
     if (item.items) {
-      for (const child of item.items) processNode(child, childVerseId, childVid, childInVerseContent)
+      for (const child of item.items) processNode(child, childVerseId, childVid, childInVerseContent, childInSectionHeading)
     }
   }
 
@@ -325,6 +348,7 @@ function extractVersesFromJson(content: ApiBibleItem[], bookName: string, chapte
       chapter,
       verse: verseNum,
       text: texts.join(' ').replace(/\s+/g, ' ').trim(),
+      heading: headingMap.get(verseNum),
     }))
     .filter(v => v.text.length > 0)
 }
@@ -333,7 +357,10 @@ async function fetchApiBiblePassage(reference: string, bibleId: string, apiKey: 
   const parsed = parseReference(reference)
   if (!parsed) throw new Error(`Could not parse reference: "${reference}"`)
 
-  const url = `${API_BIBLE_BASE}/bibles/${encodeURIComponent(bibleId)}/passages/${encodeURIComponent(parsed.osisPassageId)}?content-type=json&include-verse-numbers=false&include-titles=false&include-chapter-numbers=false`
+  // include-titles=true so the content tree carries section headings (e.g. "Made Alive in
+  // Christ") — extractVersesFromJson below is what actually pulls them out and attaches them
+  // to the verse each one precedes; everything else under HEADING_STYLES is still discarded.
+  const url = `${API_BIBLE_BASE}/bibles/${encodeURIComponent(bibleId)}/passages/${encodeURIComponent(parsed.osisPassageId)}?content-type=json&include-verse-numbers=false&include-titles=true&include-chapter-numbers=false`
   const res = await fetch(url, { headers: { 'api-key': apiKey } })
 
   if (res.status === 404) throw new Error(`Passage not found: ${reference}`)

@@ -5,7 +5,7 @@ import {
   Church, CalendarDays, Plus, Trash2, X, Monitor, Wifi, Copy, Check,
   Users, Lock, BookOpen, Eye, EyeOff, Signal,
   FolderSync, FolderOpen, RefreshCw, Loader2, PackageCheck, AlertTriangle,
-  ZoomIn, Rows3, Rows4,
+  ZoomIn, Rows3, Rows4, ExternalLink,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -282,6 +282,7 @@ export default function SettingsScreen() {
     errorMessage: updaterErrorMessage,
     lastCheckedAt: updaterLastCheckedAt,
     checkForUpdates: updaterCheckForUpdates,
+    openReleasePage: updaterOpenReleasePage,
   } = useUpdaterStore()
 
   // UI zoom / density
@@ -1777,10 +1778,26 @@ export default function SettingsScreen() {
                       <span>You're on the latest version.</span>
                     </div>
                   )}
+                  {updaterStatus === "manual" && (
+                    <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs text-amber-500">
+                      <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <span>
+                          Version {updaterLatestVersion} is available, but this build isn't signed with an Apple Developer ID — it can't update itself automatically on macOS. Download it manually instead.
+                        </span>
+                        <button
+                          onClick={() => updaterOpenReleasePage()}
+                          className="flex items-center gap-1.5 mt-1.5 font-semibold hover:underline"
+                        >
+                          <ExternalLink className="h-3 w-3" /> Open Download Page
+                        </button>
+                      </div>
+                    </div>
+                  )}
                   {updaterStatus === "error" && (
-                    <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-xs text-destructive">
+                    <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-xs text-destructive max-h-48 overflow-y-auto">
                       <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                      <span>{updaterErrorMessage ?? "Could not check for updates."}</span>
+                      <span className="min-w-0 flex-1 select-text break-words whitespace-pre-wrap">{updaterErrorMessage ?? "Could not check for updates."}</span>
                     </div>
                   )}
                   {showReleaseNotes && updaterReleaseNotes && (

@@ -12,6 +12,7 @@ interface UpdaterStoreState extends UpdaterState {
   checkForUpdates: () => Promise<void>
   downloadUpdate: () => Promise<void>
   installUpdate: () => Promise<void>
+  openReleasePage: () => Promise<void>
   dismiss: () => void
   dismissSubtle: () => void
 }
@@ -25,6 +26,7 @@ export const useUpdaterStore = create<UpdaterStoreState>((set, get) => ({
   currentVersion: '',
   latestVersion: null,
   releaseNotes: null,
+  releaseUrl: null,
   progress: null,
   errorMessage: null,
   lastCheckedAt: null,
@@ -44,7 +46,10 @@ export const useUpdaterStore = create<UpdaterStoreState>((set, get) => ({
           set({ status: 'checking', errorMessage: null, lastCheckedAt: payload.lastCheckedAt })
           break
         case 'update-available':
-          set({ status: 'available', latestVersion: payload.info.version, releaseNotes: payload.info.releaseNotes, dismissed: false })
+          set({ status: 'available', latestVersion: payload.info.version, releaseNotes: payload.info.releaseNotes, releaseUrl: null, dismissed: false })
+          break
+        case 'update-available-manual':
+          set({ status: 'manual', latestVersion: payload.info.version, releaseNotes: payload.info.releaseNotes, releaseUrl: payload.info.releaseUrl ?? null, dismissed: false })
           break
         case 'update-not-available':
           set({ status: 'not-available', currentVersion: payload.currentVersion })
@@ -74,6 +79,9 @@ export const useUpdaterStore = create<UpdaterStoreState>((set, get) => ({
   },
   installUpdate: async () => {
     await window.worshipsync.updater.installUpdate()
+  },
+  openReleasePage: async () => {
+    await window.worshipsync.updater.openReleasePage()
   },
   dismiss: () => set({ dismissed: true }),
   dismissSubtle: () => set({ subtleNotice: null }),

@@ -1,4 +1,4 @@
-import { Download, Loader2, RefreshCw, AlertCircle } from "lucide-react"
+import { Download, Loader2, RefreshCw, AlertCircle, ExternalLink } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { useUpdaterStore } from "../store/useUpdaterStore"
@@ -19,9 +19,9 @@ function fmtBytes(bytesPerSecond: number): string {
  * mid-service without any live-detection logic living here.
  */
 export default function UpdateDialog() {
-  const { status, currentVersion, latestVersion, releaseNotes, progress, errorMessage, dismissed, dismiss, downloadUpdate, installUpdate, checkForUpdates } = useUpdaterStore()
+  const { status, currentVersion, latestVersion, releaseNotes, progress, errorMessage, dismissed, dismiss, downloadUpdate, installUpdate, openReleasePage, checkForUpdates } = useUpdaterStore()
 
-  const open = !dismissed && (status === "available" || status === "downloading" || status === "downloaded" || status === "error")
+  const open = !dismissed && (status === "available" || status === "manual" || status === "downloading" || status === "downloaded" || status === "error")
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) dismiss() }}>
@@ -32,9 +32,13 @@ export default function UpdateDialog() {
 
         <div className="mt-3 flex flex-col gap-3">
           {status === "error" ? (
-            <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-xs text-destructive">
+            <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-xs text-destructive max-h-48 overflow-y-auto">
               <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-              <span>{errorMessage ?? "Something went wrong while checking for updates."}</span>
+              {/* min-w-0 lets the flex item actually shrink to wrap; break-words handles long
+                  unbroken tokens (URLs, base64 hashes) that would otherwise overflow the dialog
+                  instead of wrapping. select-text overrides the app-wide user-select:none so the
+                  operator can copy the raw error to share it. */}
+              <span className="min-w-0 flex-1 select-text break-words whitespace-pre-wrap">{errorMessage ?? "Something went wrong while checking for updates."}</span>
             </div>
           ) : (
             <>
@@ -46,6 +50,12 @@ export default function UpdateDialog() {
                 <span className="text-muted-foreground">Latest version</span>
                 <span className="font-semibold tabular-nums text-primary">{latestVersion}</span>
               </div>
+
+              {status === "manual" && (
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  This build isn't signed with an Apple Developer ID, so it can't update itself automatically on macOS. Download the new version from GitHub and install it manually — your data and settings aren't affected.
+                </p>
+              )}
 
               {releaseNotes && (
                 <div className="rounded-lg border border-border bg-secondary/20 px-3 py-2.5 max-h-48 overflow-y-auto">
@@ -82,6 +92,14 @@ export default function UpdateDialog() {
                 <Button variant="outline" size="sm" onClick={dismiss}>Later</Button>
                 <Button size="sm" className="gap-1.5" onClick={downloadUpdate}>
                   <Download className="h-3.5 w-3.5" /> Download
+                </Button>
+              </>
+            )}
+            {status === "manual" && (
+              <>
+                <Button variant="outline" size="sm" onClick={dismiss}>Later</Button>
+                <Button size="sm" className="gap-1.5" onClick={() => { openReleasePage(); dismiss() }}>
+                  <ExternalLink className="h-3.5 w-3.5" /> Open Download Page
                 </Button>
               </>
             )}

@@ -144,6 +144,7 @@ interface UpdateInfoSummary {
   version: string
   releaseNotes: string | null
   releaseDate?: string
+  releaseUrl?: string
 }
 
 interface DownloadProgressInfo {
@@ -156,6 +157,7 @@ interface DownloadProgressInfo {
 type UpdaterEventPayload =
   | { type: 'checking-for-update'; lastCheckedAt: string }
   | { type: 'update-available'; info: UpdateInfoSummary }
+  | { type: 'update-available-manual'; info: UpdateInfoSummary }
   | { type: 'update-not-available'; currentVersion: string }
   | { type: 'download-progress'; progress: DownloadProgressInfo }
   | { type: 'update-downloaded'; info: UpdateInfoSummary }
@@ -163,13 +165,15 @@ type UpdaterEventPayload =
 
 type UpdaterSubtlePayload =
   | { type: 'update-available-background'; version: string }
+  | { type: 'update-available-manual-background'; version: string }
   | { type: 'update-ready-background'; version: string }
 
 interface UpdaterState {
-  status: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'not-available' | 'error'
+  status: 'idle' | 'checking' | 'available' | 'manual' | 'downloading' | 'downloaded' | 'not-available' | 'error'
   currentVersion: string
   latestVersion: string | null
   releaseNotes: string | null
+  releaseUrl: string | null
   progress: DownloadProgressInfo | null
   errorMessage: string | null
   lastCheckedAt: string | null
@@ -351,6 +355,7 @@ declare global {
         checkForUpdates: () => Promise<boolean>
         downloadUpdate:  () => Promise<boolean>
         installUpdate:   () => Promise<boolean>
+        openReleasePage: () => Promise<boolean>
         getState:        () => Promise<UpdaterState>
         onEvent:  (cb: (payload: UpdaterEventPayload) => void) => () => void
         onSubtle: (cb: (payload: UpdaterSubtlePayload) => void) => () => void

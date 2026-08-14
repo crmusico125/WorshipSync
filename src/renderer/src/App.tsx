@@ -37,6 +37,7 @@ export default function App() {
   const subtleNotice = useUpdaterStore(s => s.subtleNotice)
   const dismissSubtleNotice = useUpdaterStore(s => s.dismissSubtle)
   const downloadUpdateInBackground = useUpdaterStore(s => s.downloadUpdate)
+  const openReleasePage = useUpdaterStore(s => s.openReleasePage)
   const initUiPrefs = useUiPrefsStore(s => s.init)
   const density = useUiPrefsStore(s => s.density)
 
@@ -290,7 +291,9 @@ export default function App() {
             <p className="text-[11px] text-muted-foreground mt-0.5 leading-snug">
               {subtleNotice.type === "update-ready-background"
                 ? "You'll be prompted to restart once this presentation ends."
-                : `Version ${subtleNotice.version} is available — it'll download quietly in the background if you'd like.`}
+                : subtleNotice.type === "update-available-manual-background"
+                  ? `Version ${subtleNotice.version} is available — this build isn't auto-update signed on macOS, so it needs a manual download.`
+                  : `Version ${subtleNotice.version} is available — it'll download quietly in the background if you'd like.`}
             </p>
             {subtleNotice.type === "update-available-background" && (
               <button
@@ -298,6 +301,14 @@ export default function App() {
                 className="text-[11px] font-semibold text-primary hover:underline mt-1.5"
               >
                 Download now
+              </button>
+            )}
+            {subtleNotice.type === "update-available-manual-background" && (
+              <button
+                onClick={() => { openReleasePage(); dismissSubtleNotice() }}
+                className="text-[11px] font-semibold text-primary hover:underline mt-1.5"
+              >
+                Open download page
               </button>
             )}
           </div>

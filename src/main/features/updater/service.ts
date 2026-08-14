@@ -1,4 +1,4 @@
-import { app } from 'electron'
+import { app, shell } from 'electron'
 // electron-updater is CommonJS and doesn't reliably expose named exports
 // under Node's strict ESM loader (the bundled main process runs as real ESM)
 // — import the default and destructure, per electron-updater's own guidance.
@@ -12,11 +12,14 @@ import type { DownloadProgressInfo, UpdateInfoSummary, UpdaterEventPayload, Upda
 
 const { autoUpdater } = electronUpdaterPkg
 
+const GITHUB_RELEASES_URL = 'https://github.com/crmusico125/WorshipSync/releases'
+
 const state: UpdaterState = {
   status: 'idle',
   currentVersion: app.getVersion(),
   latestVersion: null,
   releaseNotes: null,
+  releaseUrl: null,
   progress: null,
   errorMessage: null,
   lastCheckedAt: null,
@@ -79,12 +82,30 @@ export function initAutoUpdater(): void {
   })
 
   autoUpdater.on('update-available', (info) => {
-    state.status = 'available'
     state.latestVersion = info.version
     state.releaseNotes = normalizeReleaseNotes(info.releaseNotes)
-    const summary: UpdateInfoSummary = { version: info.version, releaseNotes: state.releaseNotes, releaseDate: info.releaseDate }
-
     const route = decideAvailableRoute(isLivePresentationActive())
+
+    // macOS builds here are only ad-hoc signed (no paid Apple Developer ID),
+    // so Squirrel.Mac's own signature validation always fails partway through
+    // an in-app download — see the note on 'update-available-manual' in
+    // types.ts. Route to a manual-download flow instead of ever attempting
+    // autoUpdater.downloadUpdate() on darwin.
+    if (process.platform === 'darwin') {
+      state.status = 'manual'
+      state.releaseUrl = `${GITHUB_RELEASES_URL}/tag/v${info.version}`
+      const summary: UpdateInfoSummary = { version: info.version, releaseNotes: state.releaseNotes, releaseDate: info.releaseDate, releaseUrl: state.releaseUrl }
+      if (route === 'subtle') {
+        sendSubtle({ type: 'update-available-manual-background', version: info.version })
+      } else {
+        send({ type: 'update-available-manual', info: summary })
+      }
+      return
+    }
+
+    state.status = 'available'
+    state.releaseUrl = null
+    const summary: UpdateInfoSummary = { version: info.version, releaseNotes: state.releaseNotes, releaseDate: info.releaseDate }
     if (route === 'subtle') {
       sendSubtle({ type: 'update-available-background', version: info.version })
     } else {
@@ -167,6 +188,11 @@ export function downloadUpdate(): void {
 /** Only ever called from an explicit user action (the "Restart & Install" button) — never automatically. */
 export function installUpdate(): void {
   autoUpdater.quitAndInstall()
+}
+
+/** The macOS manual-download route's action — opens the GitHub release page (falls back to the releases index if no specific version is known). */
+export function openReleasePage(): void {
+  shell.openExternal(state.releaseUrl ?? GITHUB_RELEASES_URL)
 }
 
 export function getUpdaterState(): UpdaterState {

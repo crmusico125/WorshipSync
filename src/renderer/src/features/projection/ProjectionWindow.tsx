@@ -20,46 +20,31 @@ const DEFAULT_THEME = {
   scriptureRefPosition: undefined as 'top' | 'bottom-right' | 'bottom-center' | 'hidden' | undefined,
 };
 
-// ── Slide frame renderer ──────────────────────────────────────────────────────
-// Renders one complete frame (background + overlay + content) as an absolutely
-// positioned layer. Used twice for crossfade: once for the outgoing slide
-// (fades out) and once for the incoming slide (fades in).
+// ── Background layer ──────────────────────────────────────────────────────────
+// Background image/video/color + dark overlay, as one self-positioned,
+// independently animatable layer — separated from ContentLayer below so a
+// same-background slide change (see "sameBgTransition" in the main component)
+// can render the background once, statically, and crossfade only the text.
+// For a full crossfade between two different backgrounds, BackgroundLayer and
+// ContentLayer are simply rendered as a pair with matching zIndex/animation,
+// achieving the same "whole frame fades together" look as before without
+// needing one shared wrapper element.
 
-interface FrameProps {
+interface BackgroundLayerProps {
   slide: SlidePayload;
   zIndex: number;
   animationName?: string;
   transitionMs?: number;
-  // Only the active (incoming) frame gets the measurement refs
-  containerRef?: React.RefObject<HTMLDivElement>;
-  textRef?: React.RefObject<HTMLDivElement>;
   videoRef?: React.RefObject<HTMLVideoElement>;
-  scaledFontSize: number;
   onVideoProgress?: (force?: boolean, isEndedEvent?: boolean) => void;
-  showCounter?: boolean;
 }
 
-function SlideFrame({
-  slide,
-  zIndex,
-  animationName,
-  transitionMs = 0,
-  containerRef,
-  textRef,
-  videoRef,
-  scaledFontSize,
-  onVideoProgress,
-  showCounter,
-}: FrameProps) {
+function BackgroundLayer({ slide, zIndex, animationName, transitionMs = 0, videoRef, onVideoProgress }: BackgroundLayerProps) {
   const theme = slide.theme ?? DEFAULT_THEME;
   const overlayAlpha = (theme.overlayOpacity / 100).toFixed(2);
-  const shadowOpacity = (theme.textShadowOpacity / 100).toFixed(2);
   const scaleMode = theme.backgroundScaleMode ?? "cover";
   const imgBgSize = scaleMode === "stretch" ? "100% 100%" : scaleMode;
   const videoObjectFit = scaleMode === "stretch" ? "fill" : (scaleMode as "cover" | "contain");
-  const alignItems =
-    theme.textPosition === "top" ? "flex-start" :
-    theme.textPosition === "bottom" ? "flex-end" : "center";
 
   const bp = slide.backgroundPath;
   const isVideo = !!bp && /\.(mp4|webm|mov)$/i.test(bp);
@@ -121,7 +106,53 @@ function SlideFrame({
           }}
         />
       )}
+    </div>
+  );
+}
 
+// ── Content layer ──────────────────────────────────────────────────────────────
+// Text/scripture/announcement content only, no background — its own
+// self-positioned, independently animatable layer (see BackgroundLayer above).
+
+interface ContentLayerProps {
+  slide: SlidePayload;
+  zIndex: number;
+  animationName?: string;
+  transitionMs?: number;
+  // Only the active (incoming) frame gets the measurement refs
+  containerRef?: React.RefObject<HTMLDivElement>;
+  textRef?: React.RefObject<HTMLDivElement>;
+  scaledFontSize: number;
+  showCounter?: boolean;
+}
+
+function ContentLayer({
+  slide,
+  zIndex,
+  animationName,
+  transitionMs = 0,
+  containerRef,
+  textRef,
+  scaledFontSize,
+  showCounter,
+}: ContentLayerProps) {
+  const theme = slide.theme ?? DEFAULT_THEME;
+  const shadowOpacity = (theme.textShadowOpacity / 100).toFixed(2);
+  const alignItems =
+    theme.textPosition === "top" ? "flex-start" :
+    theme.textPosition === "bottom" ? "flex-end" : "center";
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        inset: 0,
+        zIndex,
+        animation: animationName && transitionMs > 0
+          ? `${animationName} ${transitionMs}ms ease forwards`
+          : "none",
+      }}
+    >
       {/* ── Content ── */}
       {slide.itemType === "scripture" ? (
         // Scripture: verse text centred + reference badge bottom-right
@@ -283,6 +314,12 @@ export default function ProjectionWindow() {
   // is cleared once the transition completes.
   const [currentFrame, setCurrentFrame] = useState<SlidePayload | null>(null);
   const [prevFrame,    setPrevFrame]    = useState<SlidePayload | null>(null);
+  // True when prevFrame and currentFrame share the exact same backgroundPath — the
+  // background is rendered once, statically, and only the text content crossfades,
+  // instead of the whole frame (background included) fading as one unit. Avoids a
+  // double-dark-overlay flicker that's otherwise visible even though the background
+  // never actually changes (e.g. moving between slides of the same song).
+  const [sameBgTransition, setSameBgTransition] = useState(false);
   const [displayState, setDisplayState] = useState<DisplayState>("blank");
   const [slideTransitionMs, setSlideTransitionMs] = useState(300);
   const [frameKey, setFrameKey] = useState(0);
@@ -344,12 +381,14 @@ export default function ProjectionWindow() {
 
       if (outgoing && ms > 0 && !outgoingIsVideo && !incomingIsVideo) {
         setPrevFrame(outgoing);
+        setSameBgTransition(outgoing.backgroundPath === payload.backgroundPath);
         if (prevClearTimer.current) clearTimeout(prevClearTimer.current);
         prevClearTimer.current = setTimeout(() => setPrevFrame(null), ms + 50);
       } else {
         // No crossfade — clear any lingering prevFrame immediately
         if (prevClearTimer.current) { clearTimeout(prevClearTimer.current); prevClearTimer.current = null; }
         setPrevFrame(null);
+        setSameBgTransition(false);
       }
 
       setCurrentFrame(payload);
@@ -542,42 +581,91 @@ export default function ProjectionWindow() {
     <div style={{ width: "100vw", height: "100vh", background: "#000", position: "relative", overflow: "hidden" }}>
 
       {/* ── Slide frames (double-buffer crossfade) ── */}
-      {displayState === "slide" && (
-        <>
-          {/* Outgoing frame — stays visible and fades out while incoming fades in */}
-          {prevFrame && (
-            <SlideFrame
-              key={`prev-${frameKey}`}
+      {displayState === "slide" && currentFrame && (
+        sameBgTransition && prevFrame ? (
+          <>
+            {/* Same background as the outgoing slide — render it once, statically (no
+                fade), and crossfade only the text. Never a video here: video always
+                skips crossfading entirely (see onShow above), so sameBgTransition is
+                only ever set for static image/color backgrounds. */}
+            <BackgroundLayer
+              key={currentFrame.backgroundPath ?? "none"}
+              slide={currentFrame}
+              zIndex={1}
+            />
+            <ContentLayer
+              key={`prev-content-${frameKey}`}
               slide={prevFrame}
-              zIndex={3}
+              zIndex={2}
               animationName="wsSlideOut"
               transitionMs={slideTransitionMs}
               scaledFontSize={scaledFontSize}
             />
-          )}
+            <ContentLayer
+              key={`curr-content-${frameKey}`}
+              slide={currentFrame}
+              zIndex={3}
+              animationName="wsSlideIn"
+              transitionMs={slideTransitionMs}
+              containerRef={lyricsContainerRef}
+              textRef={lyricsTextRef}
+              scaledFontSize={scaledFontSize}
+              showCounter
+            />
+          </>
+        ) : (
+          <>
+            {/* Outgoing frame — stays visible and fades out while incoming fades in.
+                Background + content fade together (same animation/timing) to reproduce
+                a whole-frame crossfade without a shared wrapper element. */}
+            {prevFrame && (
+              <>
+                <BackgroundLayer
+                  key={`prev-bg-${frameKey}`}
+                  slide={prevFrame}
+                  zIndex={1}
+                  animationName="wsSlideOut"
+                  transitionMs={slideTransitionMs}
+                />
+                <ContentLayer
+                  key={`prev-content-${frameKey}`}
+                  slide={prevFrame}
+                  zIndex={2}
+                  animationName="wsSlideOut"
+                  transitionMs={slideTransitionMs}
+                  scaledFontSize={scaledFontSize}
+                />
+              </>
+            )}
 
-          {/* Incoming frame — fades in over the outgoing frame.
-               For video backgrounds, key on the file path instead of frameKey so the
-               <video> element is not remounted on every lyric slide change — that was
-               restarting the video from the beginning each time. */}
-          {currentFrame && (
-            <SlideFrame
+            {/* Incoming frame — fades in over the outgoing frame.
+                 For video backgrounds, key on the file path instead of frameKey so the
+                 <video> element is not remounted on every lyric slide change — that was
+                 restarting the video from the beginning each time. */}
+            <BackgroundLayer
               key={currentFrame.backgroundPath && /\.(mp4|webm|mov)$/i.test(currentFrame.backgroundPath)
                 ? `curr-video-${currentFrame.backgroundPath}`
-                : `curr-${frameKey}`}
+                : `curr-bg-${frameKey}`}
+              slide={currentFrame}
+              zIndex={3}
+              animationName={prevFrame ? "wsSlideIn" : undefined}
+              transitionMs={slideTransitionMs}
+              videoRef={videoRef}
+              onVideoProgress={reportVideoProgress}
+            />
+            <ContentLayer
+              key={`curr-content-${frameKey}`}
               slide={currentFrame}
               zIndex={4}
               animationName={prevFrame ? "wsSlideIn" : undefined}
               transitionMs={slideTransitionMs}
               containerRef={lyricsContainerRef}
               textRef={lyricsTextRef}
-              videoRef={videoRef}
               scaledFontSize={scaledFontSize}
-              onVideoProgress={reportVideoProgress}
               showCounter
             />
-          )}
-        </>
+          </>
+        )
       )}
 
       {/* ── Blank screen ── */}

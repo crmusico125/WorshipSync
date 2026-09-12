@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Play } from "lucide-react";
 import { toFileUrl } from "../lib/utils";
 
 const PRESET_COLORS = [
@@ -29,6 +30,8 @@ interface Props {
   onSelect: (background: string | null) => void;
 }
 
+const isVideoPath = (p: string) => /\.(mp4|webm|mov)$/i.test(p);
+
 export default function BackgroundPickerPanel({
   currentBackground,
   previewLabel = "",
@@ -44,7 +47,9 @@ export default function BackgroundPickerPanel({
 
   const loadLibrary = async () => {
     const all = await window.worshipsync.backgrounds.listImages();
-    setLibraryImages(all.filter((p) => /\.(jpe?g|png|webp|gif|bmp|tiff?)$/i.test(p)));
+    // Motion backgrounds: video files are valid backgrounds too, not just images —
+    // they autoplay/loop silently behind lyrics (see ProjectionWindow's BackgroundLayer).
+    setLibraryImages(all.filter((p) => /\.(jpe?g|png|webp|gif|bmp|tiff?|mp4|webm|mov)$/i.test(p)));
   };
 
   const handleUpload = async () => {
@@ -62,7 +67,8 @@ export default function BackgroundPickerPanel({
   };
 
   const isColor = currentBackground?.startsWith("color:");
-  const isImage = currentBackground && !isColor;
+  const isVideoBg = !!currentBackground && !isColor && isVideoPath(currentBackground);
+  const isImage = currentBackground && !isColor && !isVideoBg;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -86,6 +92,23 @@ export default function BackgroundPickerPanel({
               backgroundImage: `url("${toFileUrl(currentBackground!)}")`,
               backgroundSize: "cover",
               backgroundPosition: "center",
+            }}
+          />
+        )}
+        {isVideoBg && (
+          <video
+            key={currentBackground}
+            src={toFileUrl(currentBackground!)}
+            autoPlay
+            loop
+            muted
+            playsInline
+            style={{
+              position: "absolute",
+              inset: 0,
+              width: "100%",
+              height: "100%",
+              objectFit: "cover",
             }}
           />
         )}
@@ -162,7 +185,7 @@ export default function BackgroundPickerPanel({
               fontWeight: tab === t ? 600 : 400,
             }}
           >
-            {t === "colors" ? `Colors` : `Images (${libraryImages.length})`}
+            {t === "colors" ? `Colors` : `Media (${libraryImages.length})`}
           </button>
         ))}
       </div>
@@ -236,7 +259,7 @@ export default function BackgroundPickerPanel({
         </div>
       )}
 
-      {/* Images tab */}
+      {/* Media tab (images + motion/video backgrounds) */}
       {tab === "images" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
@@ -246,9 +269,9 @@ export default function BackgroundPickerPanel({
               onClick={handleUpload}
               disabled={uploading}
             >
-              {uploading ? "Uploading..." : "+ Upload new image"}
+              {uploading ? "Uploading..." : "+ Upload image or video"}
             </button>
-            {currentBackground && isImage && (
+            {currentBackground && (isImage || isVideoBg) && (
               <button
                 className="btn"
                 style={{ fontSize: 11, color: "var(--accent-red)" }}
@@ -268,9 +291,9 @@ export default function BackgroundPickerPanel({
                 fontSize: 11,
               }}
             >
-              No images uploaded yet.
+              No media uploaded yet.
               <br />
-              Click "Upload new image" to add one.
+              Click "Upload image or video" to add one.
             </div>
           ) : (
             <div
@@ -285,6 +308,7 @@ export default function BackgroundPickerPanel({
               {libraryImages.map((imgPath) => {
                 const isSelected = currentBackground === imgPath;
                 const filename = imgPath.split("/").pop() ?? imgPath;
+                const isVideo = isVideoPath(imgPath);
 
                 const handleDelete = async (e: React.MouseEvent) => {
                   e.stopPropagation();
@@ -292,8 +316,8 @@ export default function BackgroundPickerPanel({
                     await window.worshipsync.backgrounds.getUsageCount(imgPath);
                   const message =
                     count > 0
-                      ? `This image is used by ${count} song${count > 1 ? "s" : ""}. Deleting it will remove it from those songs too. Continue?`
-                      : "Delete this image from the library?";
+                      ? `This background is used by ${count} song${count > 1 ? "s" : ""}. Deleting it will remove it from those songs too. Continue?`
+                      : "Delete this background from the library?";
                   if (!confirm(message)) return;
                   await window.worshipsync.backgrounds.deleteImage(imgPath);
                   await loadLibrary();
@@ -319,15 +343,48 @@ export default function BackgroundPickerPanel({
                       transition: "border-color 0.1s, box-shadow 0.1s",
                     }}
                   >
-                    <div
-                      style={{
-                        position: "absolute",
-                        inset: 0,
-                        backgroundImage: `url("${toFileUrl(imgPath)}")`,
-                        backgroundSize: "cover",
-                        backgroundPosition: "center",
-                      }}
-                    />
+                    {isVideo ? (
+                      <video
+                        src={toFileUrl(imgPath)}
+                        muted
+                        preload="metadata"
+                        style={{
+                          position: "absolute",
+                          inset: 0,
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "cover",
+                        }}
+                      />
+                    ) : (
+                      <div
+                        style={{
+                          position: "absolute",
+                          inset: 0,
+                          backgroundImage: `url("${toFileUrl(imgPath)}")`,
+                          backgroundSize: "cover",
+                          backgroundPosition: "center",
+                        }}
+                      />
+                    )}
+
+                    {/* Motion background indicator */}
+                    {isVideo && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: 4, right: 4,
+                          width: 16, height: 16,
+                          borderRadius: "50%",
+                          background: "rgba(0,0,0,0.6)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <Play size={8} color="#fff" fill="#fff" />
+                      </div>
+                    )}
 
                     {/* Selected checkmark */}
                     {isSelected && (
@@ -417,8 +474,9 @@ export default function BackgroundPickerPanel({
               lineHeight: 1.5,
             }}
           >
-            Images are shared across all songs and themes. Supported: JPG, PNG,
-            WebP.
+            Images and videos are shared across all songs and themes. Supported:
+            JPG, PNG, WebP · MP4, WebM, MOV. Video backgrounds play silently on
+            loop behind the lyrics.
           </div>
         </div>
       )}

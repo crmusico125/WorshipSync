@@ -48,6 +48,13 @@ function BackgroundLayer({ slide, zIndex, animationName, transitionMs = 0, video
 
   const bp = slide.backgroundPath;
   const isVideo = !!bp && /\.(mp4|webm|mov)$/i.test(bp);
+  // "media"/"media_collection" items are operator-controlled video content —
+  // played/paused/seeked explicitly, has its own audio, reports progress to the
+  // confidence monitor/PWA. Any other slide (song lyrics, scripture, announcement)
+  // with a video background is a decorative motion background instead: always
+  // autoplaying, looping, and silent, with none of the playback control wiring.
+  const isControlledContent = slide.itemType === "media" || slide.itemType === "media_collection";
+  const isMotionBackground = isVideo && !isControlledContent;
 
   return (
     <div
@@ -66,10 +73,13 @@ function BackgroundLayer({ slide, zIndex, animationName, transitionMs = 0, video
           <div style={{ position: "absolute", inset: 0, zIndex: 1, background: bp.replace("color:", "") }} />
         ) : isVideo ? (
           <video
-            ref={videoRef}
+            ref={isControlledContent ? videoRef : undefined}
             key={bp}
             playsInline
             preload="auto"
+            autoPlay={isMotionBackground}
+            loop={isMotionBackground}
+            muted={isMotionBackground}
             style={{
               position: "absolute", inset: 0, zIndex: 1,
               width: "100%", height: "100%",
@@ -77,11 +87,11 @@ function BackgroundLayer({ slide, zIndex, animationName, transitionMs = 0, video
               background: "#000",
             }}
             src={`${toFileUrl(bp)}`}
-            onTimeUpdate={() => onVideoProgress?.()}
-            onPlay={() => onVideoProgress?.(true)}
-            onPause={() => onVideoProgress?.(true)}
-            onSeeked={() => onVideoProgress?.(true)}
-            onEnded={() => onVideoProgress?.(true, true)}
+            onTimeUpdate={isControlledContent ? () => onVideoProgress?.() : undefined}
+            onPlay={isControlledContent ? () => onVideoProgress?.(true) : undefined}
+            onPause={isControlledContent ? () => onVideoProgress?.(true) : undefined}
+            onSeeked={isControlledContent ? () => onVideoProgress?.(true) : undefined}
+            onEnded={isControlledContent ? () => onVideoProgress?.(true, true) : undefined}
           />
         ) : (
           <div
@@ -97,8 +107,11 @@ function BackgroundLayer({ slide, zIndex, animationName, transitionMs = 0, video
         )
       )}
 
-      {/* ── Dark overlay (images only — video has its own blend) ── */}
-      {!isVideo && (
+      {/* ── Dark overlay — skipped only for controlled video content (which is always
+           sent with overlayOpacity 0 anyway, being the main content rather than a
+           backdrop). Images, color backgrounds, and motion-background video all get
+           it, so lyrics stay readable over a busy moving background. ── */}
+      {!isControlledContent && (
         <div
           style={{
             position: "absolute", inset: 0, zIndex: 2,

@@ -4402,7 +4402,15 @@ export default function PresenterDashboard({
                   effectiveBg.startsWith("color:") ? (
                     <div className="absolute inset-0" style={{ background: effectiveBg.replace("color:", "") }} />
                   ) : /\.(mp4|webm|mov)$/i.test(effectiveBg) ? (
-                    <video src={`${toFileUrl(effectiveBg)}`} className="absolute inset-0 w-full h-full object-cover" muted preload="none" />
+                    // This pane only ever shows Song/Scripture slides (Media/Media Collection
+                    // items render their own layout above) — a video background here is always
+                    // a motion background, never operator-controlled content, so it always
+                    // autoplays/loops/mutes and always gets the readability overlay, matching
+                    // ProjectionWindow's BackgroundLayer.
+                    <>
+                      <video key={effectiveBg} src={`${toFileUrl(effectiveBg)}`} className="absolute inset-0 w-full h-full object-cover" autoPlay loop muted playsInline />
+                      <div className="absolute inset-0" style={{ background: `rgba(0,0,0,${effectiveTheme.overlayOpacity / 100})` }} />
+                    </>
                   ) : (
                     <>
                       <img src={`${toFileUrl(effectiveBg)}`} className="absolute inset-0 w-full h-full object-cover" alt="" />
@@ -4545,7 +4553,16 @@ export default function PresenterDashboard({
                             bg.startsWith("color:") ? (
                               <div className="absolute inset-0" style={{ background: bg.replace("color:", "") }} />
                             ) : /\.(mp4|webm|mov)$/i.test(bg) ? (
-                              <video src={`${toFileUrl(bg)}`} className="absolute inset-0 w-full h-full object-cover" muted preload="none" />
+                              // Every slide in this grid shares the same song-level background,
+                              // so autoplaying it per-tile would mean N simultaneous decoded
+                              // copies of the same video (a song can have 15-20+ slides) — instead,
+                              // preload="metadata" shows a real representative frame per tile
+                              // (fixing the previous blank/black thumbnail) without that cost.
+                              // Still gets the same readability overlay images get.
+                              <>
+                                <video key={bg} src={`${toFileUrl(bg)}`} className="absolute inset-0 w-full h-full object-cover" muted preload="metadata" />
+                                <div className="absolute inset-0" style={{ background: `rgba(0,0,0,${effectiveTheme.overlayOpacity / 100})` }} />
+                              </>
                             ) : (
                               <>
                                 <img src={`${toFileUrl(bg)}`} className="absolute inset-0 w-full h-full object-cover" alt="" />

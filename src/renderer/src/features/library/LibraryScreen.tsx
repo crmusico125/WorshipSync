@@ -728,6 +728,19 @@ function SongFormScreen({
 
   const handleSave = async () => {
     if (!title.trim()) return
+
+    const dup = useSongStore.getState().songs.find((s) =>
+      (!isEdit || s.id !== song!.id) &&
+      s.title.trim().toLowerCase() === title.trim().toLowerCase() &&
+      (s.artist ?? "").trim().toLowerCase() === artist.trim().toLowerCase()
+    )
+    if (dup) {
+      const message = isEdit
+        ? `Another song titled "${dup.title}"${dup.artist ? ` by ${dup.artist}` : ""} already exists in your library. Save changes anyway?`
+        : `A song titled "${dup.title}"${dup.artist ? ` by ${dup.artist}` : ""} already exists in your library. Save another copy anyway?`
+      if (!confirm(message)) return
+    }
+
     setSaving(true)
 
     const parsed = textToSections(lyricsText)

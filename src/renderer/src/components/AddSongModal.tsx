@@ -111,6 +111,18 @@ export default function AddSongModal({ onClose, onCreated }: Props) {
     if (!title.trim()) return
     setSaving(true)
     try {
+      const existing = await window.worshipsync.songs.getAll()
+      const dup = existing.find((s) =>
+        s.title.trim().toLowerCase() === title.trim().toLowerCase() &&
+        (s.artist ?? "").trim().toLowerCase() === artist.trim().toLowerCase()
+      )
+      if (dup && !confirm(
+        `A song titled "${dup.title}"${dup.artist ? ` by ${dup.artist}` : ""} already exists in your library. Add another copy anyway?`
+      )) {
+        setSaving(false)
+        return
+      }
+
       const sectionData = parseSections(lyrics)
       const song = await window.worshipsync.songs.create({
         title: title.trim(),

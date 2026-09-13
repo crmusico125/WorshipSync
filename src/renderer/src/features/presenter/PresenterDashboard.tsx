@@ -1887,11 +1887,11 @@ export default function PresenterDashboard({
         slideIndex: 0,
         totalSlides: 1,
         backgroundPath: bg,
-        theme: { ...theme, fontSize: 96, maxLinesPerSlide: 1 },
+        theme: { ...theme, fontSize: scriptureFontSize, maxLinesPerSlide: 1, textAlign: scriptureTextAlign, scriptureRefPosition },
       })
     })
     return () => cleanup?.()
-  }, [defaultTheme, defaultThemeBg])
+  }, [defaultTheme, defaultThemeBg, scriptureFontSize, scriptureTextAlign, scriptureRefPosition])
 
   // Broadcast current time every second while playing so PWA progress bar stays in sync
   useEffect(() => {

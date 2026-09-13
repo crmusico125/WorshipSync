@@ -14,7 +14,7 @@ export const FREE_TRANSLATIONS = [
   { id: 'darby', label: 'DARBY' },
 ]
 
-export const COMMON_ABBREVS = ['NIV', 'NIV11', 'NLT', 'NKJV', 'ESV', 'ESVSB', 'CSB', 'NASB', 'NASB2020', 'KJV', 'WEB', 'MSG', 'AMP', 'NCV', 'CEV']
+export const COMMON_ABBREVS = ['NIV', 'NLT', 'NKJV', 'ESV', 'ESVSB', 'CSB', 'NASB', 'NASB2020', 'KJV', 'WEB', 'MSG', 'AMP', 'NCV', 'CEV']
 
 export interface ProxyTranslation { id: string; label: string; keyed: boolean }
 export interface ProxyVerse { book_name: string; chapter: number; verse: number; text: string }
@@ -43,7 +43,11 @@ export async function fetchBibleTranslations(apiKey: string | null): Promise<Pro
   const seen = new Set<string>()
   const keyed: ProxyTranslation[] = []
   for (const item of items) {
-    const abbrev = (item.abbreviation ?? '').toUpperCase().replace(/\s/g, '')
+    // API.Bible labels edition-specific abbreviations with a trailing year (e.g. "NIV11"
+    // for the 2011 NIV) — simplify to the plain translation name everywhere it's displayed,
+    // matching the renderer's bibleApi.ts normalization.
+    const rawAbbrev = (item.abbreviation ?? '').toUpperCase().replace(/\s/g, '')
+    const abbrev = rawAbbrev.replace(/^NIV\d+$/, 'NIV')
     if (!abbrev || seen.has(abbrev)) continue
     seen.add(abbrev)
     keyed.push({ id: item.id, label: abbrev, keyed: true })

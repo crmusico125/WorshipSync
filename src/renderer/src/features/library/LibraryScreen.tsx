@@ -77,9 +77,24 @@ function sectionsToText(sections: Section[]): string {
     .join("\n\n")
 }
 
+function inferSectionType(label: string): string {
+  const lower = label.toLowerCase()
+  if (lower.startsWith("chorus")) return "chorus"
+  if (lower.startsWith("bridge")) return "bridge"
+  if (lower.startsWith("pre-chorus") || lower.startsWith("pre chorus")) return "pre-chorus"
+  if (lower.startsWith("intro")) return "intro"
+  if (lower.startsWith("outro") || lower.startsWith("ending")) return "outro"
+  if (lower.startsWith("tag")) return "tag"
+  if (lower.startsWith("interlude")) return "interlude"
+  return "verse"
+}
+
 function textToSections(text: string): { type: string; label: string; lyrics: string; orderIndex: number }[] {
   const result: { type: string; label: string; lyrics: string; orderIndex: number }[] = []
   const tagPattern = /^\[(.+?)\]$/
+  // "[Repeat <label>]" re-inserts a previously-defined section's lyrics in place —
+  // lets a lyric sheet reference e.g. "[Repeat Chorus 1]" instead of retyping it.
+  const repeatPattern = /^repeat\s+(.+)$/i
   const lines = text.split("\n")
   let current: { type: string; label: string; lyrics: string[] } | null = null
 
@@ -95,16 +110,16 @@ function textToSections(text: string): { type: string; label: string; lyrics: st
         })
       }
       const label = match[1]
-      const lower = label.toLowerCase()
-      let type = "verse"
-      if (lower.startsWith("chorus")) type = "chorus"
-      else if (lower.startsWith("bridge")) type = "bridge"
-      else if (lower.startsWith("pre-chorus") || lower.startsWith("pre chorus")) type = "pre-chorus"
-      else if (lower.startsWith("intro")) type = "intro"
-      else if (lower.startsWith("outro") || lower.startsWith("ending")) type = "outro"
-      else if (lower.startsWith("tag")) type = "tag"
-      else if (lower.startsWith("interlude")) type = "interlude"
-      current = { type, label, lyrics: [] }
+      const repeatMatch = label.match(repeatPattern)
+      if (repeatMatch) {
+        const refLabel = repeatMatch[1].trim()
+        const source = [...result].reverse().find((s) => s.label.trim().toLowerCase() === refLabel.toLowerCase())
+        current = source
+          ? { type: source.type, label: source.label, lyrics: source.lyrics.split("\n") }
+          : { type: inferSectionType(refLabel), label, lyrics: [`⚠ No section found to repeat: "${refLabel}"`] }
+      } else {
+        current = { type: inferSectionType(label), label, lyrics: [] }
+      }
     } else if (current) {
       current.lyrics.push(line)
     }

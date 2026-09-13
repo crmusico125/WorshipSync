@@ -800,6 +800,10 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
         await addAnnouncementToLineup({ title: item.title ?? 'Announcement', content: item.scriptureRef ?? '' }).catch(() => {})
       } else if (item.itemType === 'media' && item.mediaPath) {
         await addMediaToLineup({ title: item.title ?? 'Media', mediaPath: item.mediaPath }).catch(() => {})
+      } else if (item.itemType === 'bible') {
+        await addBibleBrowserToLineup().catch(() => {})
+      } else if (item.itemType === 'music_player') {
+        await addMusicPlayerToLineup().catch(() => {})
       }
     }
     setApplyingTemplate(false)

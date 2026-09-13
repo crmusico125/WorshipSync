@@ -48,7 +48,7 @@ export const serviceDates = sqliteTable('service_dates', {
 export const lineupItems = sqliteTable('lineup_items', {
   id:                     integer('id').primaryKey({ autoIncrement: true }),
   serviceDateId:          integer('service_date_id').notNull().references(() => serviceDates.id, { onDelete: 'cascade' }),
-  songId:                 integer('song_id').references(() => songs.id),
+  songId:                 integer('song_id').references(() => songs.id, { onDelete: 'cascade' }),
   itemType:               text('item_type', { enum: ['song', 'scripture', 'media', 'media_collection', 'countdown', 'announcement', 'note', 'section', 'bible', 'music_player'] }).notNull().default('song'),
   orderIndex:             integer('order_index').notNull().default(0),
   selectedSections:       text('selected_sections').notNull().default('[]'),
@@ -82,7 +82,7 @@ export const themes = sqliteTable('themes', {
 // ── Song usage log ────────────────────────────────────────────────────────────
 export const songUsage = sqliteTable('song_usage', {
   id:            integer('id').primaryKey({ autoIncrement: true }),
-  songId:        integer('song_id').notNull().references(() => songs.id),
+  songId:        integer('song_id').notNull().references(() => songs.id, { onDelete: 'cascade' }),
   serviceDateId: integer('service_date_id').notNull().references(() => serviceDates.id),
   usedAt:        text('used_at').notNull().default("(datetime('now'))")
 })

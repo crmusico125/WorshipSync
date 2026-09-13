@@ -383,10 +383,18 @@ export default function LibraryScreen() {
             usage={usageMap[selectedSong.id]}
             onEdit={() => setEditingSong(selectedSong)}
             onDelete={async () => {
-              if (!confirm(`Delete "${selectedSong.title}"? This cannot be undone.`)) return
-              await window.worshipsync.songs.delete(selectedSong.id)
-              useSongStore.getState().clearSelection()
-              loadSongs()
+              const count = usageMap[selectedSong.id]?.usageCount ?? 0
+              const message = count > 0
+                ? `"${selectedSong.title}" has been used in ${count} service${count > 1 ? "s" : ""}. Deleting it will remove it from those lineups too. This cannot be undone. Continue?`
+                : `Delete "${selectedSong.title}"? This cannot be undone.`
+              if (!confirm(message)) return
+              try {
+                await window.worshipsync.songs.delete(selectedSong.id)
+                useSongStore.getState().clearSelection()
+                loadSongs()
+              } catch (e) {
+                alert(`Failed to delete "${selectedSong.title}": ${e instanceof Error ? e.message : String(e)}`)
+              }
             }}
           />
         ) : (

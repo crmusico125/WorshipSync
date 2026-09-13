@@ -307,5 +307,78 @@ export function runMigrations(): void {
     console.error('[db] migration error (sync workspace tables):', e)
   }
 
+  // ── Migration: cascade-delete lineup_items/song_usage rows when their song is deleted ──
+  // song_id originally had no ON DELETE action, so with `PRAGMA foreign_keys = ON`
+  // (set in db/index.ts) deleting any song that had ever been added to a lineup or
+  // logged as used threw a FOREIGN KEY constraint error — songs:delete silently failed.
+  try {
+    const lineupFks = sqlite.prepare("PRAGMA foreign_key_list(lineup_items)").all() as { table: string; from: string; on_delete: string }[]
+    const lineupSongFk = lineupFks.find(fk => fk.table === 'songs' && fk.from === 'song_id')
+    if (lineupSongFk && lineupSongFk.on_delete !== 'CASCADE') {
+      sqlite.exec(`
+        CREATE TABLE lineup_items_cascade (
+          id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+          service_date_id          INTEGER NOT NULL REFERENCES service_dates(id) ON DELETE CASCADE,
+          song_id                  INTEGER REFERENCES songs(id) ON DELETE CASCADE,
+          item_type                TEXT NOT NULL DEFAULT 'song',
+          order_index              INTEGER NOT NULL DEFAULT 0,
+          selected_sections        TEXT NOT NULL DEFAULT '[]',
+          override_theme_id        INTEGER,
+          override_background_path TEXT,
+          notes                    TEXT,
+          title                    TEXT,
+          scripture_ref            TEXT,
+          media_path               TEXT,
+          section_order            TEXT,
+          item_style               TEXT,
+          image_scale_mode         TEXT DEFAULT 'contain',
+          media_collection         TEXT,
+          music_player_dir         TEXT
+        );
+        INSERT INTO lineup_items_cascade (
+          id, service_date_id, song_id, item_type, order_index, selected_sections,
+          override_theme_id, override_background_path, notes, title, scripture_ref,
+          media_path, section_order, item_style, image_scale_mode, media_collection, music_player_dir
+        )
+        SELECT
+          id, service_date_id, song_id, item_type, order_index, selected_sections,
+          override_theme_id, override_background_path, notes, title, scripture_ref,
+          media_path, section_order, item_style, image_scale_mode, media_collection, music_player_dir
+        FROM lineup_items;
+        DROP TABLE lineup_items;
+        ALTER TABLE lineup_items_cascade RENAME TO lineup_items;
+        CREATE INDEX IF NOT EXISTS idx_lineup_service_date ON lineup_items(service_date_id);
+        CREATE INDEX IF NOT EXISTS idx_lineup_song ON lineup_items(song_id);
+      `)
+      console.log('[db] migration: added ON DELETE CASCADE to lineup_items.song_id')
+    }
+  } catch (e) {
+    console.error('[db] migration error (lineup_items song cascade):', e)
+  }
+
+  try {
+    const usageFks = sqlite.prepare("PRAGMA foreign_key_list(song_usage)").all() as { table: string; from: string; on_delete: string }[]
+    const usageSongFk = usageFks.find(fk => fk.table === 'songs' && fk.from === 'song_id')
+    if (usageSongFk && usageSongFk.on_delete !== 'CASCADE') {
+      sqlite.exec(`
+        CREATE TABLE song_usage_cascade (
+          id              INTEGER PRIMARY KEY AUTOINCREMENT,
+          song_id         INTEGER NOT NULL REFERENCES songs(id) ON DELETE CASCADE,
+          service_date_id INTEGER NOT NULL REFERENCES service_dates(id),
+          used_at         TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO song_usage_cascade (id, song_id, service_date_id, used_at)
+          SELECT id, song_id, service_date_id, used_at FROM song_usage;
+        DROP TABLE song_usage;
+        ALTER TABLE song_usage_cascade RENAME TO song_usage;
+        CREATE INDEX IF NOT EXISTS idx_usage_song ON song_usage(song_id);
+        CREATE INDEX IF NOT EXISTS idx_usage_date ON song_usage(service_date_id);
+      `)
+      console.log('[db] migration: added ON DELETE CASCADE to song_usage.song_id')
+    }
+  } catch (e) {
+    console.error('[db] migration error (song_usage song cascade):', e)
+  }
+
   console.log('[db] migrations complete')
 }

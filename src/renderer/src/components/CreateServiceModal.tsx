@@ -57,6 +57,13 @@ const ITEM_META: Record<string, { icon: React.ElementType; color: string; bg: st
   announcement: { icon: Megaphone,color: "text-green-400",  bg: "bg-green-500/15"  },
   media:        { icon: Film,     color: "text-sky-400",    bg: "bg-sky-500/15"    },
   section:      { icon: Layers,   color: "text-orange-400", bg: "bg-orange-500/15" },
+  bible:        { icon: BookOpen, color: "text-amber-400",  bg: "bg-amber-500/15"  },
+  music_player: { icon: Music2,   color: "text-violet-400", bg: "bg-violet-500/15" },
+}
+
+const ITEM_TYPE_LABELS: Record<string, string> = {
+  bible: "Bible Browser",
+  music_player: "Music Player",
 }
 
 function fmtMin(min: number): string {
@@ -145,7 +152,7 @@ export default function CreateServiceModal({ onClose, onCreated }: Props) {
     if (!user) return []
     return user.items.map(i => ({
       itemType: i.itemType,
-      title: i.songTitle ?? i.title ?? i.itemType,
+      title: i.songTitle ?? i.title ?? ITEM_TYPE_LABELS[i.itemType] ?? i.itemType,
       estimatedMin: i.itemType === "countdown" ? 10
         : i.itemType === "song" ? 4
         : i.itemType === "scripture" ? 2
@@ -181,6 +188,10 @@ export default function CreateServiceModal({ onClose, onCreated }: Props) {
         await window.worshipsync.lineup.addScripture(serviceId, { title: item.title ?? "Scripture", scriptureRef: item.scriptureRef ?? "{}" })
       } else if (item.itemType === "media" && item.mediaPath) {
         await window.worshipsync.lineup.addMedia(serviceId, { title: item.title ?? "Media", mediaPath: item.mediaPath })
+      } else if (item.itemType === "bible") {
+        await window.worshipsync.lineup.addBible(serviceId)
+      } else if (item.itemType === "music_player") {
+        await window.worshipsync.lineup.addMusicPlayer(serviceId)
       }
     }
   }

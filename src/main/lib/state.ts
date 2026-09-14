@@ -82,7 +82,10 @@ export const stage: {
   currentLineupIdx: number
   serviceDate: string | null
   serviceTime: string | null
-  audioState: { isPlaying: boolean; currentTime: number; duration: number; lineupItemId: number } | null
+  // trackName is only populated for music_player items — the lineup item's own
+  // title is a fixed "Music Player" label, not the file currently playing from
+  // its scanned folder.
+  audioState: { isPlaying: boolean; currentTime: number; duration: number; lineupItemId: number; trackName?: string } | null
   videoState: { isPlaying: boolean; currentTime: number; duration: number; lineupItemId: number } | null
 } = {
   slide: null,

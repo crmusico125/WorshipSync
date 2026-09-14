@@ -215,7 +215,7 @@ declare global {
         onVideoLoop: (cb: (loop: boolean) => void) => () => void
         reportVideoProgress: (data: { currentTime: number; duration: number; isPlaying: boolean; ended?: boolean; lineupItemId?: number }) => void
         onVideoProgress: (cb: (data: { currentTime: number; duration: number; isPlaying: boolean; ended?: boolean; lineupItemId?: number }) => void) => () => void
-        onAudioState: (cb: (state: { isPlaying: boolean; currentTime: number; duration: number; lineupItemId: number } | null) => void) => () => void
+        onAudioState: (cb: (state: { isPlaying: boolean; currentTime: number; duration: number; lineupItemId: number; trackName?: string } | null) => void) => () => void
         onVideoState: (cb: (state: { isPlaying: boolean; currentTime: number; duration: number; lineupItemId: number } | null) => void) => () => void
       }
       window: {
@@ -373,7 +373,7 @@ declare global {
         syncLineup: (items: PwaLineupItem[], currentIdx: number, serviceDate: string | null, serviceTime: string | null) => void
         onStateUpdate: (cb: (update: PwaStateUpdate) => void) => () => void
         onAudioCmd: (cb: (data: { action: string; lineupItemId: number }) => void) => () => void
-        broadcastAudioState: (state: { isPlaying: boolean; currentTime: number; duration: number; lineupItemId: number } | null) => void
+        broadcastAudioState: (state: { isPlaying: boolean; currentTime: number; duration: number; lineupItemId: number; trackName?: string } | null) => void
         onVideoCmd: (cb: (data: { action: string; lineupItemId: number }) => void) => () => void
         broadcastVideoState: (state: { isPlaying: boolean; currentTime: number; duration: number; lineupItemId: number } | null) => void
         onCountdownCmd: (cb: (action: string) => void) => () => void

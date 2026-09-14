@@ -275,7 +275,7 @@ const S = {
   activeSlideIdx: -1,
   countdownInterval: null,
   countdownMs: 0,
-  audioState: null,   // { isPlaying, currentTime, duration, lineupItemId }
+  audioState: null,   // { isPlaying, currentTime, duration, lineupItemId, trackName? } — trackName only set for music_player items
   videoState: null,   // { isPlaying, currentTime, duration, lineupItemId }
   serviceDate: null,  // 'YYYY-MM-DD'
   serviceTime: null,  // 'HH:MM'
@@ -402,7 +402,7 @@ function handleEvent(ev) {
       renderAll()
       break
     case 'audioState':
-      S.audioState = { isPlaying: ev.isPlaying, currentTime: ev.currentTime, duration: ev.duration, lineupItemId: ev.lineupItemId }
+      S.audioState = { isPlaying: ev.isPlaying, currentTime: ev.currentTime, duration: ev.duration, lineupItemId: ev.lineupItemId, trackName: ev.trackName }
       renderSlides()
       break
     case 'videoState':
@@ -630,6 +630,11 @@ function renderSlides() {
     return
   }
 
+  if (item.itemType === 'music_player') {
+    renderMusicPlayerPanel(container, item)
+    return
+  }
+
   // Song / Scripture — slide grid
   if (!item.slides.length) {
     container.innerHTML = '<div id="empty-state"><h2>' + esc(item.title) + '</h2><p>No slides available for this item.</p></div>'
@@ -760,6 +765,30 @@ function renderVideoPanel(container, item) {
     + '</div>'
 }
 
+function renderMusicPlayerPanel(container, item) {
+  const as = (S.audioState?.lineupItemId === item.id) ? S.audioState : null
+  const isPlaying = as?.isPlaying ?? false
+  const cur = as?.currentTime ?? 0
+  const dur = as?.duration ?? 0
+  const pct = dur > 0 ? (cur / dur) * 100 : 0
+  const fmt = (s) => pad(Math.floor(s/60)) + ':' + pad(Math.floor(s%60))
+  // trackName is only set once something has actually played from this folder
+  const name = as?.trackName || 'Nothing playing yet'
+
+  container.innerHTML =
+    '<div id="media-panel">'
+    + '<div class="media-thumb"><span class="media-icon" style="font-size:52px">♫</span></div>'
+    + '<div class="media-info"><h2>' + esc(name) + '</h2>'
+    + (as?.trackName ? '<p style="font-size:11px;color:var(--muted)">' + fmt(cur) + ' / ' + fmt(dur) + '</p>' : '<p style="font-size:11px;color:var(--muted)">' + esc(item.title) + '</p>')
+    + '</div>'
+    + '<div style="width:100%;max-width:340px;height:4px;background:var(--border);border-radius:2px;overflow:hidden">'
+    + '<div style="height:100%;width:' + pct + '%;background:var(--primary);border-radius:2px;transition:width .1s linear"></div>'
+    + '</div>'
+    + '<button class="btn-show" onclick="toggleAudio(' + S.activeLineupIdx + ')">'
+    + (isPlaying ? '⏸ Pause' : '▶ Play') + '</button>'
+    + '</div>'
+}
+
 function toggleVideo(lineupIdx) {
   const item = S.lineup[lineupIdx]
   if (!item) return
@@ -865,10 +894,10 @@ function esc(s) {
 }
 function pad(n) { return String(n).padStart(2,'0') }
 function typeIcon(t) {
-  return {song:'♪',scripture:'✝',media:'🎬',countdown:'⏱',announcement:'📢',section:'—'}[t] ?? '•'
+  return {song:'♪',scripture:'✝',media:'🎬',countdown:'⏱',announcement:'📢',section:'—',music_player:'♫',bible:'✝'}[t] ?? '•'
 }
 function typeLabel(t) {
-  return {song:'Song',scripture:'Scripture',media:'Media',countdown:'Countdown',announcement:'Announcement',section:'Section'}[t] ?? t
+  return {song:'Song',scripture:'Scripture',media:'Media',countdown:'Countdown',announcement:'Announcement',section:'Section',music_player:'Music Player',bible:'Bible Browser'}[t] ?? t
 }
 
 // ── Bible search ───────────────────────────────────────────────────────────

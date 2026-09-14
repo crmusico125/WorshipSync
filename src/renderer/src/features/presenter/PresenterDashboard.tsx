@@ -1905,10 +1905,16 @@ export default function PresenterDashboard({
         currentTime: audioRef.current.currentTime,
         duration: audioRef.current.duration || 0,
         lineupItemId: song.lineupItemId,
+        // Without this, this ticker's own broadcast (missing trackName) wins the
+        // race against playSong's one-off broadcast within ~1s and the PWA's
+        // Music Player panel reverts to "Nothing playing yet".
+        trackName: song.itemType === "music_player" && musicPlayerCurrentPath
+          ? basenameOf(musicPlayerCurrentPath)
+          : undefined,
       })
     }, 1000)
     return () => clearInterval(interval)
-  }, [audioPlaying, liveSongs])
+  }, [audioPlaying, liveSongs, musicPlayerCurrentPath])
 
   // Resync the preview and progress UI from the projection window's actual playback
   // position. The preview and projection are separate <video> elements that can drift
@@ -4202,7 +4208,7 @@ export default function PresenterDashboard({
               setAudioPlaying(false);
               if (audioTimerRef.current) { clearInterval(audioTimerRef.current); audioTimerRef.current = null; }
               stopViz();
-              window.worshipsync.pwa?.broadcastAudioState?.({ isPlaying: false, currentTime: audioRef.current?.currentTime ?? 0, duration: audioRef.current?.duration || audioDuration, lineupItemId: currentSong.lineupItemId });
+              window.worshipsync.pwa?.broadcastAudioState?.({ isPlaying: false, currentTime: audioRef.current?.currentTime ?? 0, duration: audioRef.current?.duration || audioDuration, lineupItemId: currentSong.lineupItemId, trackName: musicPlayerCurrentPath ? basenameOf(musicPlayerCurrentPath) : undefined });
             };
 
             const playSong = (path: string) => {
@@ -4228,7 +4234,7 @@ export default function PresenterDashboard({
                   setAudioPlaying(false); setAudioCurrentTime(0);
                   if (audioTimerRef.current) { clearInterval(audioTimerRef.current); audioTimerRef.current = null; }
                   stopViz();
-                  window.worshipsync.pwa?.broadcastAudioState?.({ isPlaying: false, currentTime: 0, duration: audio.duration ?? 0, lineupItemId: currentSong.lineupItemId });
+                  window.worshipsync.pwa?.broadcastAudioState?.({ isPlaying: false, currentTime: 0, duration: audio.duration ?? 0, lineupItemId: currentSong.lineupItemId, trackName: basenameOf(path) });
                   // Auto-advance — look the finished track up fresh (not the stale
                   // closure array) so a shuffle mid-playback is respected.
                   const list = scannedSongsRef.current;
@@ -4257,7 +4263,7 @@ export default function PresenterDashboard({
               const startPlayback = () => {
                 audioRef.current?.play().catch(() => {});
                 startViz();
-                window.worshipsync.pwa?.broadcastAudioState?.({ isPlaying: true, currentTime: audioRef.current?.currentTime ?? 0, duration: audioRef.current?.duration || audioDuration, lineupItemId: currentSong.lineupItemId });
+                window.worshipsync.pwa?.broadcastAudioState?.({ isPlaying: true, currentTime: audioRef.current?.currentTime ?? 0, duration: audioRef.current?.duration || audioDuration, lineupItemId: currentSong.lineupItemId, trackName: basenameOf(path) });
               };
               if (ctx && ctx.state !== "running") { ctx.resume().then(startPlayback).catch(startPlayback); }
               else startPlayback();
@@ -4268,7 +4274,12 @@ export default function PresenterDashboard({
               else playSong(path);
             };
 
-            triggerAudioPlayRef.current = () => { if (musicPlayerCurrentPath) playSong(musicPlayerCurrentPath); };
+            triggerAudioPlayRef.current = () => {
+              // Nothing loaded yet (e.g. PWA operator hits Play before anything
+              // was picked on desktop) — start from the top of the scanned folder.
+              const path = musicPlayerCurrentPath ?? scannedSongsRef.current[0]?.path;
+              if (path) playSong(path);
+            };
             triggerAudioPauseRef.current = stopCurrent;
 
             const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -4277,7 +4288,7 @@ export default function PresenterDashboard({
               const seekTo = Math.max(0, Math.min(audioDuration, ((e.clientX - rect.left) / rect.width) * audioDuration));
               audioRef.current.currentTime = seekTo;
               setAudioCurrentTime(seekTo);
-              window.worshipsync.pwa?.broadcastAudioState?.({ isPlaying: audioPlaying, currentTime: seekTo, duration: audioRef.current.duration || audioDuration, lineupItemId: currentSong.lineupItemId });
+              window.worshipsync.pwa?.broadcastAudioState?.({ isPlaying: audioPlaying, currentTime: seekTo, duration: audioRef.current.duration || audioDuration, lineupItemId: currentSong.lineupItemId, trackName: musicPlayerCurrentPath ? basenameOf(musicPlayerCurrentPath) : undefined });
             };
 
             const shufflePlaylist = () => {

@@ -278,6 +278,12 @@ export default function PresenterDashboard({
   const scannedSongsRef = useRef<{ path: string; filename: string }[]>([]);
   useEffect(() => { scannedSongsRef.current = scannedSongs; }, [scannedSongs]);
   const [scanningDir, setScanningDir] = useState(false);
+  // Every music_player item's scanned folder, keyed by lineupItemId — independent of
+  // which one (if any) is currently open on this screen, so the PWA controller can
+  // show a track list for any of them, not just the one the desktop happens to have open.
+  const [musicPlayerTrackCache, setMusicPlayerTrackCache] = useState<Record<number, { path: string; filename: string }[]>>({});
+  const musicPlayerTrackCacheRef = useRef<Record<number, { path: string; filename: string }[]>>({});
+  useEffect(() => { musicPlayerTrackCacheRef.current = musicPlayerTrackCache; }, [musicPlayerTrackCache]);
   const [musicPlayerCurrentPath, setMusicPlayerCurrentPath] = useState<string | null>(null);
   const [insertAfterSectionId, setInsertAfterSectionId] = useState<number | null>(null);
   const [showBgPicker, setShowBgPicker] = useState(false);
@@ -313,7 +319,9 @@ export default function PresenterDashboard({
   const liveImgScaleModeRef = useRef<'cover' | 'contain' | 'stretch'>('contain');
   const triggerAudioPlayRef  = useRef<(() => void) | null>(null);
   const triggerAudioPauseRef = useRef<(() => void) | null>(null);
+  const triggerAudioSelectRef = useRef<((path: string) => void) | null>(null);
   const pendingAudioPlayRef  = useRef<number | null>(null);
+  const pendingAudioSelectRef = useRef<{ lineupItemId: number; path: string } | null>(null);
   const triggerVideoPlayRef   = useRef<(() => void) | null>(null);
   const triggerVideoResumeRef = useRef<(() => void) | null>(null);
   const triggerVideoPauseRef  = useRef<(() => void) | null>(null);
@@ -1118,6 +1126,9 @@ export default function PresenterDashboard({
           : /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(s.mediaPath ?? '') ? 'audio' as const
           : 'image' as const)
         : null,
+      musicPlayerTracks: s.itemType === 'music_player'
+        ? (musicPlayerTrackCache[s.lineupItemId] ?? []).map(t => t.filename)
+        : undefined,
       slides: s.slides.map((sl, idx) => ({
         idx,
         sectionLabel: sl.sectionLabel,
@@ -1127,7 +1138,7 @@ export default function PresenterDashboard({
       })),
     }))
     window.worshipsync.pwa?.syncLineup?.(items, selectedSongIdx, selectedService?.date ?? null, serviceTime)
-  }, [liveSongs, selectedSongIdx, resolveTheme, resolveBg, selectedService, serviceTime, projectionFontSize])
+  }, [liveSongs, selectedSongIdx, resolveTheme, resolveBg, selectedService, serviceTime, projectionFontSize, musicPlayerTrackCache])
 
   // ── Media collection projection ──────────────────────────────────────────
   // Self-contained (looks up liveSongs fresh) so it can be called from the
@@ -1794,7 +1805,7 @@ export default function PresenterDashboard({
   // Handle audio play/pause commands from PWA controller
   useEffect(() => {
     const cleanup = window.worshipsync.pwa?.onAudioCmd?.((data) => {
-      const { action, lineupItemId } = data as { action: string; lineupItemId: number }
+      const { action, lineupItemId, trackName } = data as { action: string; lineupItemId: number; trackName?: string }
       const idx = liveSongs.findIndex(s => s.lineupItemId === lineupItemId)
       if (action === 'audio-play') {
         if (triggerAudioPlayRef.current && idx === selectedSongIdxRef.current) {
@@ -1810,6 +1821,21 @@ export default function PresenterDashboard({
       } else if (action === 'audio-stop') {
         triggerAudioPauseRef.current?.()
         if (audioRef.current) { audioRef.current.currentTime = 0; setAudioCurrentTime(0); }
+      } else if (action === 'audio-select' && trackName) {
+        // Resolve against the all-items track cache (not scannedSongs, which only
+        // reflects whichever item is currently open here) so this works even for
+        // a music_player item the operator hasn't opened on this screen yet.
+        const cached = musicPlayerTrackCacheRef.current[lineupItemId] ?? []
+        const track = cached.find(t => t.filename === trackName)
+        if (!track) return
+        if (triggerAudioSelectRef.current && idx === selectedSongIdxRef.current) {
+          // Panel already rendered — call directly
+          triggerAudioSelectRef.current(track.path)
+        } else {
+          // Navigate to item first, then play the chosen track once it renders
+          if (idx !== -1) setSelectedSongIdx(idx)
+          pendingAudioSelectRef.current = { lineupItemId, path: track.path }
+        }
       }
     })
     return () => cleanup?.()
@@ -1822,6 +1848,16 @@ export default function PresenterDashboard({
     if (!song || song.lineupItemId !== pendingAudioPlayRef.current) return
     pendingAudioPlayRef.current = null
     requestAnimationFrame(() => triggerAudioPlayRef.current?.())
+  }, [selectedSongIdx, liveSongs])
+
+  // Execute a pending PWA track selection once its music_player item is selected and rendered
+  useEffect(() => {
+    if (!pendingAudioSelectRef.current) return
+    const song = liveSongs[selectedSongIdx]
+    if (!song || song.lineupItemId !== pendingAudioSelectRef.current.lineupItemId) return
+    const { path } = pendingAudioSelectRef.current
+    pendingAudioSelectRef.current = null
+    requestAnimationFrame(() => triggerAudioSelectRef.current?.(path))
   }, [selectedSongIdx, liveSongs])
 
   // Handle countdown start/stop from PWA controller
@@ -2209,6 +2245,31 @@ export default function PresenterDashboard({
       .catch(() => setScannedSongs([]))
       .finally(() => setScanningDir(false));
   }, [currentSong?.lineupItemId, currentSong?.itemType, currentSong?.musicPlayerDir]);
+
+  // Scan every music_player item's folder (not just whichever one is open above)
+  // so the PWA controller can show a track list for any of them at any time.
+  const musicPlayerDirsSignature = liveSongs
+    .filter(s => s.itemType === "music_player" && s.musicPlayerDir)
+    .map(s => `${s.lineupItemId}:${s.musicPlayerDir}`)
+    .join("|");
+  useEffect(() => {
+    const players = liveSongs.filter(s => s.itemType === "music_player" && s.musicPlayerDir);
+    players.forEach(s => {
+      window.worshipsync.music.scanDirectory(s.musicPlayerDir!)
+        .then(list => setMusicPlayerTrackCache(prev => ({ ...prev, [s.lineupItemId]: list })))
+        .catch(() => {});
+    });
+    const validIds = new Set(players.map(s => s.lineupItemId));
+    setMusicPlayerTrackCache(prev => {
+      const next: typeof prev = {};
+      for (const key of Object.keys(prev)) {
+        const id = Number(key);
+        if (validIds.has(id)) next[id] = prev[id];
+      }
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [musicPlayerDirsSignature]);
 
   // Auto-advance: images advance on a timer; videos advance via their own "ended"
   // event (wired in the render branch below) so they're never cut off early.
@@ -4281,6 +4342,7 @@ export default function PresenterDashboard({
               if (path) playSong(path);
             };
             triggerAudioPauseRef.current = stopCurrent;
+            triggerAudioSelectRef.current = playSong;
 
             const handleSeek = (e: React.MouseEvent<HTMLDivElement>) => {
               if (!audioDuration || !audioRef.current) return;

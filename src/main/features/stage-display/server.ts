@@ -306,6 +306,7 @@ function handleControllerCommand(req: IncomingMessage, res: ServerResponse): voi
       case 'audio-play':
       case 'audio-pause':
       case 'audio-stop':
+      case 'audio-select':
       case 'video-play':
       case 'video-pause':
       case 'video-stop': {
@@ -314,6 +315,9 @@ function handleControllerCommand(req: IncomingMessage, res: ServerResponse): voi
           windows.control.webContents.send(channel, {
             action: cmd.action,
             lineupItemId: cmd.lineupItemId as number,
+            // Only set for 'audio-select' — picks a specific track by filename
+            // out of the music_player's scanned folder.
+            trackName: cmd.trackName as string | undefined,
           })
         }
         break

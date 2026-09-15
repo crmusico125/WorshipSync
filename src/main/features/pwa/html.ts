@@ -774,19 +774,59 @@ function renderMusicPlayerPanel(container, item) {
   const fmt = (s) => pad(Math.floor(s/60)) + ':' + pad(Math.floor(s%60))
   // trackName is only set once something has actually played from this folder
   const name = as?.trackName || 'Nothing playing yet'
+  const tracks = item.musicPlayerTracks || []
 
-  container.innerHTML =
-    '<div id="media-panel">'
-    + '<div class="media-thumb"><span class="media-icon" style="font-size:52px">♫</span></div>'
-    + '<div class="media-info"><h2>' + esc(name) + '</h2>'
-    + (as?.trackName ? '<p style="font-size:11px;color:var(--muted)">' + fmt(cur) + ' / ' + fmt(dur) + '</p>' : '<p style="font-size:11px;color:var(--muted)">' + esc(item.title) + '</p>')
+  let html = '<div style="display:flex;flex-direction:column;gap:14px;padding:12px 12px max(12px,var(--safe-bot))">'
+
+  // Now-playing card
+  html +=
+    '<div style="display:flex;flex-direction:column;align-items:center;gap:10px;padding:20px 16px;background:var(--surface);border:1px solid var(--border);border-radius:14px">'
+    + '<div style="width:56px;height:56px;border-radius:12px;background:#000;display:flex;align-items:center;justify-content:center;flex-shrink:0">'
+    + '<span style="font-size:24px">' + (isPlaying ? '♫' : '♪') + '</span></div>'
+    + '<div style="text-align:center;min-width:0;max-width:100%">'
+    + '<h2 style="font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(name) + '</h2>'
+    + (as?.trackName
+        ? '<p style="font-size:11px;color:var(--muted);margin-top:4px">' + fmt(cur) + ' / ' + fmt(dur) + '</p>'
+        : '<p style="font-size:11px;color:var(--muted);margin-top:4px">' + esc(item.title) + '</p>')
     + '</div>'
-    + '<div style="width:100%;max-width:340px;height:4px;background:var(--border);border-radius:2px;overflow:hidden">'
+    + '<div style="width:100%;max-width:280px;height:4px;background:var(--border);border-radius:2px;overflow:hidden">'
     + '<div style="height:100%;width:' + pct + '%;background:var(--primary);border-radius:2px;transition:width .1s linear"></div>'
     + '</div>'
-    + '<button class="btn-show" onclick="toggleAudio(' + S.activeLineupIdx + ')">'
+    + '<button class="btn-show" style="max-width:200px" onclick="toggleAudio(' + S.activeLineupIdx + ')">'
     + (isPlaying ? '⏸ Pause' : '▶ Play') + '</button>'
     + '</div>'
+
+  // Track list — tap any track to play it directly
+  if (tracks.length) {
+    html +=
+      '<div>'
+      + '<div id="slides-title">Tracks (' + tracks.length + ')</div>'
+      + '<div style="border:1px solid var(--border);border-radius:12px;overflow:hidden">'
+      + tracks.map((t, i) => {
+          const active = as?.trackName === t
+          return '<div class="lineup-item' + (active ? ' active' : '') + '"'
+            + (i === tracks.length - 1 ? ' style="border-bottom:none"' : '')
+            + ' onclick="selectTrack(' + S.activeLineupIdx + ',' + i + ')">'
+            + '<div class="icon">' + (active && isPlaying ? '♫' : '♪') + '</div>'
+            + '<div class="info"><div class="name">' + esc(t) + '</div></div>'
+            + '</div>'
+        }).join('')
+      + '</div>'
+      + '</div>'
+  } else {
+    html += '<p style="font-size:12px;color:var(--muted);text-align:center;padding:8px 0">No tracks found — pick a folder on the main screen.</p>'
+  }
+
+  html += '</div>'
+  container.innerHTML = html
+}
+
+function selectTrack(lineupIdx, trackIdx) {
+  const item = S.lineup[lineupIdx]
+  if (!item) return
+  const track = (item.musicPlayerTracks || [])[trackIdx]
+  if (!track) return
+  cmd('audio-select', { lineupItemId: item.id, trackName: track })
 }
 
 function toggleVideo(lineupIdx) {

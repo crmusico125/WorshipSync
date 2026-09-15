@@ -372,7 +372,7 @@ declare global {
       pwa: {
         syncLineup: (items: PwaLineupItem[], currentIdx: number, serviceDate: string | null, serviceTime: string | null) => void
         onStateUpdate: (cb: (update: PwaStateUpdate) => void) => () => void
-        onAudioCmd: (cb: (data: { action: string; lineupItemId: number }) => void) => () => void
+        onAudioCmd: (cb: (data: { action: string; lineupItemId: number; trackName?: string }) => void) => () => void
         broadcastAudioState: (state: { isPlaying: boolean; currentTime: number; duration: number; lineupItemId: number; trackName?: string } | null) => void
         onVideoCmd: (cb: (data: { action: string; lineupItemId: number }) => void) => () => void
         broadcastVideoState: (state: { isPlaying: boolean; currentTime: number; duration: number; lineupItemId: number } | null) => void
@@ -391,6 +391,9 @@ interface PwaLineupItem {
   mediaPath?: string | null
   backgroundPath?: string | null
   theme?: Record<string, unknown> | null
+  imageScaleMode?: string | null
+  mediaSubtype?: 'image' | 'audio' | 'video' | null
+  musicPlayerTracks?: string[]
 }
 
 type PwaStateUpdate =

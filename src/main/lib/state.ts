@@ -68,6 +68,10 @@ export interface PwaLineupItem {
   theme?: PwaItemTheme | null
   imageScaleMode?: string | null
   mediaSubtype?: 'image' | 'audio' | 'video' | null
+  // Filenames scanned from a music_player item's folder — only populated for
+  // whichever music_player item is currently open on the desktop, since that's
+  // the only one with live scan data.
+  musicPlayerTracks?: string[]
 }
 
 export const stage: {

@@ -151,6 +151,34 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 #bible-status{text-align:center;color:var(--muted);font-size:13px;padding:24px 0;line-height:1.5}
 #bible-status.error{color:#f87171}
 #btn-bible{display:flex;align-items:center;gap:4px;background:none;border:1px solid var(--border);border-radius:8px;color:var(--muted);padding:5px 9px;font-size:11px;cursor:pointer;flex-shrink:0}
+
+/* ── Bible Browser lineup widget (shared/synced with desktop) ── */
+.bw-form{display:flex;gap:8px}
+.bw-ref{flex:1;background:var(--surface2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:14px;padding:9px 12px;outline:none;min-width:0;-webkit-appearance:none}
+.bw-ref:focus{border-color:var(--primary)}
+.bw-trans{background:var(--surface2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;padding:9px 8px;outline:none;flex-shrink:0;cursor:pointer;min-width:72px}
+.bw-go{background:var(--primary);color:#fff;border:none;border-radius:10px;padding:9px 14px;font-size:13px;font-weight:700;cursor:pointer;flex-shrink:0}
+.bw-go:disabled{opacity:.45}
+.bw-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.bw-chapter-btn{background:var(--surface2);border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:6px 10px;font-size:12px;font-weight:600;cursor:pointer}
+.bw-chapter-btn:disabled{opacity:.45}
+.bw-jump{display:flex;align-items:center;gap:6px}
+.bw-jump input{width:56px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;padding:6px 8px;outline:none;-webkit-appearance:none}
+.bw-jump button{background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 10px;font-size:12px;font-weight:600;cursor:pointer}
+.bw-compare-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:11px}
+.bw-compare-label{color:var(--muted);font-weight:600;flex-shrink:0}
+.bw-chip{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 8px;border-radius:12px;background:rgba(124,58,237,.14);color:var(--primary);font-size:12px;font-weight:700}
+.bw-chip button{background:none;border:none;color:inherit;opacity:.6;font-size:14px;line-height:1;cursor:pointer;padding:0}
+.bw-add-compare{background:var(--surface2);border:1px solid var(--border);color:var(--muted);border-radius:12px;padding:4px 10px;font-size:12px;cursor:pointer}
+.bv-compare{margin-top:6px;padding-top:6px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:4px}
+.bv-compare .bv-ref{font-size:9px}
+.bv-compare .bv-text{font-size:13px}
+.bw-navbar{display:flex;align-items:stretch;gap:4px;border-top:1px solid var(--border);padding-top:8px;flex-shrink:0}
+.bw-nav-btn{flex:1;display:flex;flex-direction:column;gap:2px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:8px 10px;cursor:pointer;text-align:left;min-width:0}
+.bw-nav-btn:disabled{opacity:.3;pointer-events:none}
+.bw-nav-btn.next{text-align:right}
+.bw-nav-btn .lbl{font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.bw-nav-btn .ref{font-size:13px;font-weight:700;color:var(--text)}
 #btn-bible:hover{color:var(--text)}
 
 /* ── Disconnected overlay ── */
@@ -277,6 +305,7 @@ const S = {
   countdownMs: 0,
   audioState: null,   // { isPlaying, currentTime, duration, lineupItemId, trackName? } — trackName only set for music_player items
   videoState: null,   // { isPlaying, currentTime, duration, lineupItemId }
+  bibleBrowserState: null, // { lineupItemId, query, translationId, translationLabel, verses, projectedRef, loading, error }
   serviceDate: null,  // 'YYYY-MM-DD'
   serviceTime: null,  // 'HH:MM'
   pin: '',            // controller PIN (empty = no PIN required or not yet entered)
@@ -345,7 +374,10 @@ function connect() {
   }
 
   es.onmessage = (e) => {
-    try { handleEvent(JSON.parse(e.data)) } catch {}
+    // A swallowed exception here used to leave the page stuck on the static
+    // "No Service Loaded" placeholder with zero trace of why — log it so a
+    // future occurrence is actually diagnosable from the browser console.
+    try { handleEvent(JSON.parse(e.data)) } catch (err) { console.error('[pwa] handleEvent failed:', err, e.data) }
   }
 
   es.onerror = () => {
@@ -374,12 +406,18 @@ async function fetchState() {
     S.logo = s.logo ?? false
     S.slide = s.slide ?? null
     S.countdown = s.countdown ?? null
+    // Only jump the actively-viewed item to match live if we were already
+    // following live — otherwise a reconnect (e.g. phone screen lock/unlock)
+    // would snap someone browsing independently (the Bible Browser widget,
+    // an upcoming song, ...) back onto whatever's currently live.
+    var wasFollowingLive = S.activeLineupIdx === S.currentLineupIdx
     S.lineup = s.lineup ?? []
     S.currentLineupIdx = s.currentLineupIdx ?? -1
-    S.activeLineupIdx = S.currentLineupIdx
+    var stillValid = S.activeLineupIdx >= 0 && S.activeLineupIdx < S.lineup.length
+    if (wasFollowingLive || !stillValid) S.activeLineupIdx = S.currentLineupIdx
     S.activeSlideIdx = s.currentSlideIdx ?? -1
     renderAll()
-  } catch {}
+  } catch (err) { console.error('[pwa] fetchState failed:', err) }
 }
 
 // ── Event Handler ──────────────────────────────────────────────────────────
@@ -392,6 +430,7 @@ function handleEvent(ev) {
       S.countdown = ev.countdown ?? null
       S.audioState = ev.audioState ?? null
       S.videoState = ev.videoState ?? null
+      S.bibleBrowserState = ev.bibleBrowserState ?? null
       S.serviceDate = ev.serviceDate ?? null
       S.serviceTime = ev.serviceTime ?? null
       if (ev.lineup?.length) {
@@ -409,12 +448,24 @@ function handleEvent(ev) {
       S.videoState = { isPlaying: ev.isPlaying, currentTime: ev.currentTime, duration: ev.duration, lineupItemId: ev.lineupItemId }
       renderSlides()
       break
+    case 'bibleBrowserState':
+      S.bibleBrowserState = ev.state ?? null
+      renderSlides()
+      break
     case 'slide':
       S.slide = ev.payload
       S.blank = false
       S.logo = false
-      S.currentLineupIdx = ev.lineupIdx ?? S.currentLineupIdx
-      S.activeLineupIdx = S.currentLineupIdx
+      // lineupIdx is omitted entirely (not just falsy) for ad-hoc content like a
+      // Bible Browser verse projection — the server already strips it for exactly
+      // this reason. Previously this line re-synced activeLineupIdx to whatever
+      // currentLineupIdx already was even when lineupIdx was absent, which is
+      // what kept snapping the view back to the live lineup item (the first one,
+      // if that's what was live) every time an ad-hoc verse got projected.
+      if (ev.lineupIdx !== undefined) {
+        S.currentLineupIdx = ev.lineupIdx
+        S.activeLineupIdx = ev.lineupIdx
+      }
       S.activeSlideIdx = ev.slideIdx ?? -1
       renderSlides()
       renderLineupList()
@@ -448,16 +499,24 @@ function handleEvent(ev) {
       startCountdownTick()
       renderSlides()
       break
-    case 'lineup':
+    case 'lineup': {
+      // Same reasoning as fetchState() — only follow live if we already were.
+      // pwa.syncLineup on the desktop resends this on lots of unrelated state
+      // changes, not just real navigation, so an unconditional overwrite here
+      // was yanking anyone browsing independently (e.g. Bible Browser) back to
+      // whatever's live nearly every time something else changed.
+      var wasFollowingLive = S.activeLineupIdx === S.currentLineupIdx
       S.lineup = ev.items ?? []
       S.currentLineupIdx = ev.currentIdx ?? -1
-      S.activeLineupIdx = S.currentLineupIdx
+      var stillValid = S.activeLineupIdx >= 0 && S.activeLineupIdx < S.lineup.length
+      if (wasFollowingLive || !stillValid) S.activeLineupIdx = S.currentLineupIdx
       if (ev.serviceDate) S.serviceDate = ev.serviceDate
       if (ev.serviceTime) S.serviceTime = ev.serviceTime
       renderLineupList()
       renderSlides()
       renderStatus()
       break
+    }
     case 'shutdown':
       setConnected(false)
       break
@@ -632,6 +691,11 @@ function renderSlides() {
 
   if (item.itemType === 'music_player') {
     renderMusicPlayerPanel(container, item)
+    return
+  }
+
+  if (item.itemType === 'bible') {
+    renderBibleBrowserWidgetPanel(container, item)
     return
   }
 
@@ -941,25 +1005,44 @@ function typeLabel(t) {
 }
 
 // ── Bible search ───────────────────────────────────────────────────────────
-let B = { verses: [], translationLabel: '', projectedIdx: -1, translationsLoaded: false }
+let B = { verses: [], translationLabel: '', projectedIdx: -1 }
 
 function openBible() {
   document.getElementById('bible-sheet').classList.add('open')
-  if (!B.translationsLoaded) loadBibleTranslations()
+  populateTranslationSelect('bible-trans')
   setTimeout(() => { const el = document.getElementById('bible-ref'); if (el) el.focus() }, 100)
 }
 
-async function loadBibleTranslations() {
+// Shared translations list — fetched once and cached, then used to populate
+// any <select> (the standalone Bible sheet, and the lineup Bible Browser widget).
+let _bibleTranslationsCache = null
+
+async function fetchBibleTranslationsData() {
+  if (_bibleTranslationsCache) return _bibleTranslationsCache
+  const r = await fetch('/controller/bible-translations')
+  const data = await r.json()
+  _bibleTranslationsCache = { translations: data.translations || [], commonAbbrevs: data.commonAbbrevs || [] }
+  return _bibleTranslationsCache
+}
+
+async function populateTranslationSelect(selectId, preferredId, excludeIds, placeholder) {
+  const sel = document.getElementById(selectId)
+  if (!sel) return
   try {
-    const r = await fetch('/controller/bible-translations')
-    const data = await r.json()
-    const translations = data.translations || []
-    const commonSet = new Set(data.commonAbbrevs || [])
-    const sel = document.getElementById('bible-trans')
-    const prevVal = sel.value
+    const data = await fetchBibleTranslationsData()
+    const commonSet = new Set(data.commonAbbrevs)
+    const excludeSet = new Set(excludeIds || [])
+    const prevVal = preferredId || (placeholder ? '' : sel.value)
     sel.innerHTML = ''
-    const common = translations.filter(function(t) { return commonSet.has(t.label) })
-    const others = translations.filter(function(t) { return !commonSet.has(t.label) })
+    if (placeholder) {
+      const opt = document.createElement('option')
+      opt.value = ''
+      opt.textContent = placeholder
+      sel.appendChild(opt)
+    }
+    const pool = excludeSet.size ? data.translations.filter(function(t) { return !excludeSet.has(t.id) }) : data.translations
+    const common = pool.filter(function(t) { return commonSet.has(t.label) })
+    const others = pool.filter(function(t) { return !commonSet.has(t.label) })
     if (common.length) {
       const grp = document.createElement('optgroup')
       grp.label = 'Common'
@@ -982,12 +1065,13 @@ async function loadBibleTranslations() {
       })
       sel.appendChild(grp)
     }
-    // Restore previous selection or pick first common (NIV/NIV11)
+    // Restore previous/preferred selection or pick first common (NIV/NIV11) —
+    // unless there's a placeholder, which should stay selected until the
+    // operator actually picks something (e.g. "+ Add translation").
     const allOpts = Array.from(sel.options)
     const match = allOpts.find(function(o) { return o.value === prevVal })
     if (match) { sel.value = prevVal }
-    else if (common.length) { sel.value = common[0].id }
-    B.translationsLoaded = true
+    else if (!placeholder && common.length) { sel.value = common[0].id }
   } catch {}
 }
 function closeBible() {
@@ -1051,6 +1135,226 @@ function projectVerse(idx) {
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
   })
   cmd('project-scripture', { text: v.text, reference: reference, translationLabel: B.translationLabel })
+}
+
+// ── Bible Browser lineup widget ──────────────────────────────────────────────
+// Unlike the standalone Bible sheet above (a one-off search-and-blast tool),
+// this widget is the shared/synced session tied to a "Bible Browser" lineup
+// item — search and projected-verse state round-trip through the desktop
+// (see bibleBrowserState) so either device always sees what the other is doing.
+// W holds the not-yet-submitted search box text/translation locally, so an
+// unrelated re-render (someone else's audio state ticking, etc.) never wipes
+// out what's mid-typed here — same reasoning as the B object above.
+let W = { query: '', translationId: '' }
+// Tracks the last projectedRef this panel auto-scrolled to, so a re-render
+// triggered by something unrelated (another device's audioState tick, etc. —
+// renderSlides() runs on every one of those) doesn't keep yanking scroll
+// position back to the live verse; only an actual change in what's live does.
+let _lastScrolledBibleRef = null
+
+function renderBibleBrowserWidgetPanel(container, item) {
+  const st = (S.bibleBrowserState && S.bibleBrowserState.lineupItemId === item.id) ? S.bibleBrowserState : null
+  const verses = st ? st.verses : []
+  const syncedQuery = st ? st.query : ''
+  const query = W.query || syncedQuery || ''
+  const loading = !!(st && st.loading)
+  const error = st ? st.error : null
+  const translationId = st ? st.translationId : (W.translationId || 'web')
+  const translationLabel = st ? st.translationLabel : ''
+  const projectedRef = st ? st.projectedRef : null
+  const projectedTid = st ? st.projectedTranslationId : null
+  const highlighted = st ? st.highlightedVerseNums : []
+  const isChapterMode = highlighted.length > 0
+  const compareIds = st ? st.compareIds : []
+  const compareResults = st ? st.compareResults : {}
+  const compareLoading = st ? st.compareLoading : []
+
+  let html = '<div style="display:flex;flex-direction:column;gap:10px;height:100%">'
+    + '<form class="bw-form" onsubmit="event.preventDefault();searchBibleWidget(' + S.activeLineupIdx + ')">'
+    + '<input class="bw-ref" id="bw-ref" type="text" placeholder="e.g. John 3:16 or Psalm 23" autocomplete="off" value="' + esc(query) + '" oninput="W.query=this.value">'
+    + '<select class="bw-trans" id="bw-trans" onchange="W.translationId=this.value"><option value="web">WEB</option></select>'
+    + '<button class="bw-go" type="submit"' + (loading ? ' disabled' : '') + '>' + (loading ? '…' : 'Search') + '</button>'
+    + '</form>'
+
+  // Read Full Chapter / Jump to Verse — mirrors the desktop's own visibility rules
+  const showReadChapter = !isChapterMode && syncedQuery.includes(':') && verses.length > 0
+  if (showReadChapter || isChapterMode) {
+    html += '<div class="bw-toolbar">'
+    if (showReadChapter) {
+      html += '<button class="bw-chapter-btn"' + (loading ? ' disabled' : '') + ' onclick="readChapterWidget(' + S.activeLineupIdx + ')">📖 Read Full Chapter</button>'
+    }
+    if (isChapterMode) {
+      html += '<div class="bw-jump">'
+        + '<input type="number" inputmode="numeric" id="bw-jump-input" placeholder="v#" onkeydown="if(event.keyCode===13)jumpToVerseWidget()">'
+        + '<button type="button" onclick="jumpToVerseWidget()">Jump</button>'
+        + '</div>'
+    }
+    html += '</div>'
+  }
+
+  // Compare translations — buttons pass an INDEX into compareIds, never the raw
+  // translation id string, so nothing here ever needs to embed a quote character
+  // inside an onclick="..." attribute (a prior version did, and it was fragile).
+  html += '<div class="bw-compare-row"><span class="bw-compare-label">Compare</span>'
+    + compareIds.map(function(cid, ci) {
+        const isLoading = compareLoading.indexOf(cid) !== -1
+        // While the fetch for this translation is still in flight, compareResults
+        // has no entry for it yet — show "Loading…" instead of falling back to the
+        // raw id (e.g. "78A9F612"), which reads as broken rather than as loading.
+        const label = (compareResults[cid] && compareResults[cid].translationLabel) || (isLoading ? 'Loading…' : cid.toUpperCase())
+        return '<span class="bw-chip">' + esc(label) + (isLoading ? ' ⋯' : '')
+          + '<button onclick="removeCompareWidget(' + S.activeLineupIdx + ',' + ci + ')">×</button></span>'
+      }).join('')
+  if (compareIds.length < 3) {
+    html += '<select id="bw-compare-add" class="bw-add-compare" onchange="addCompareWidget(' + S.activeLineupIdx + ',this)"></select>'
+  }
+  html += '</div>'
+
+  // Verse list
+  html += '<div style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:10px">'
+  if (error) {
+    html += '<div id="bible-status" class="error">' + esc(error) + '</div>'
+  } else if (!verses.length) {
+    html += '<div id="bible-status">' + (loading ? 'Searching…' : 'Search for a passage — results are shared with the desktop.') + '</div>'
+  } else {
+    html += verses.map(function(v, i) {
+      const ref = v.book_name + ' ' + v.chapter + ':' + v.verse
+      const isLive = ref === projectedRef && (!projectedTid || projectedTid === translationId)
+      const isSearched = isChapterMode && highlighted.indexOf(v.verse) !== -1
+      const compareBlocks = compareIds.map(function(cid, ci) {
+        const cr = compareResults[cid]
+        const cv = cr && cr.verses[i]
+        if (!cv) return ''
+        const cLabel = (cr && cr.translationLabel) || cid.toUpperCase()
+        const cIsLive = ref === projectedRef && projectedTid === cid
+        return '<div class="bv-compare">'
+          + '<div class="bv-ref">' + esc(cLabel) + (cIsLive ? ' • LIVE' : '') + '</div>'
+          + '<div class="bv-text">' + esc(cv.text) + '</div>'
+          + '<button class="bv-btn" onclick="projectBibleWidgetVerse(' + S.activeLineupIdx + ',' + v.verse + ',' + ci + ')">' + (cIsLive ? '⬤ Live' : 'Project') + '</button>'
+          + '</div>'
+      }).join('')
+      return '<div class="bv' + (isLive ? ' bv-live' : '') + '" id="bwv-' + v.verse + '">'
+        + '<div class="bv-ref">' + esc(ref) + ' • ' + esc(translationLabel) + (isSearched ? ' ★' : '') + '</div>'
+        + '<div class="bv-text">' + esc(v.text) + '</div>'
+        + '<button class="bv-btn" onclick="projectBibleWidgetVerse(' + S.activeLineupIdx + ',' + v.verse + ')">' + (isLive ? '⬤ Live' : 'Project') + '</button>'
+        + compareBlocks
+        + '</div>'
+    }).join('')
+  }
+  html += '</div>'
+
+  // Prev/Next verse — shown whenever something's projected and traversable
+  if (projectedRef && verses.length) {
+    const liveIdx = verses.findIndex(function(v) { return (v.book_name + ' ' + v.chapter + ':' + v.verse) === projectedRef })
+    if (liveIdx !== -1) {
+      const prevV = liveIdx > 0 ? verses[liveIdx - 1] : null
+      const nextV = liveIdx < verses.length - 1 ? verses[liveIdx + 1] : null
+      html += '<div class="bw-navbar">'
+        + '<button class="bw-nav-btn" onclick="navigateVerseWidget(' + S.activeLineupIdx + ',-1)"' + (prevV ? '' : ' disabled') + '>'
+        + '<span class="lbl">‹ Prev Verse</span><span class="ref">' + (prevV ? esc(prevV.book_name + ' ' + prevV.chapter + ':' + prevV.verse) : '—') + '</span>'
+        + '</button>'
+        + '<button class="bw-nav-btn next" onclick="navigateVerseWidget(' + S.activeLineupIdx + ',1)"' + (nextV ? '' : ' disabled') + '>'
+        + '<span class="lbl">Next Verse ›</span><span class="ref">' + (nextV ? esc(nextV.book_name + ' ' + nextV.chapter + ':' + nextV.verse) : '—') + '</span>'
+        + '</button>'
+        + '</div>'
+    }
+  }
+
+  html += '</div>'
+  container.innerHTML = html
+  populateTranslationSelect('bw-trans', W.translationId || translationId || undefined)
+  if (compareIds.length < 3) {
+    populateTranslationSelect('bw-compare-add', '', compareIds.concat([translationId]), '+ Add translation')
+  }
+
+  // Auto-scroll to the live verse whenever it actually changes — matches the
+  // desktop's own Bible Browser, and covers projections made from either device.
+  if (projectedRef !== _lastScrolledBibleRef) {
+    _lastScrolledBibleRef = projectedRef
+    const liveVerse = projectedRef ? verses.find(function(v) { return (v.book_name + ' ' + v.chapter + ':' + v.verse) === projectedRef }) : null
+    if (liveVerse) {
+      requestAnimationFrame(function() {
+        const el = document.getElementById('bwv-' + liveVerse.verse)
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      })
+    }
+  }
+}
+
+function searchBibleWidget(lineupIdx) {
+  const item = S.lineup[lineupIdx]
+  if (!item) return
+  const refEl = document.getElementById('bw-ref')
+  const query = (refEl && refEl.value || '').trim()
+  if (!query) { refEl && refEl.focus(); return }
+  const transEl = document.getElementById('bw-trans')
+  const translationId = (transEl && transEl.value) || W.translationId || 'web'
+  W.query = query
+  W.translationId = translationId
+  cmd('bible-browser-search', { lineupItemId: item.id, query: query, translationId: translationId })
+}
+
+function readChapterWidget(lineupIdx) {
+  const item = S.lineup[lineupIdx]
+  if (!item) return
+  cmd('bible-browser-read-chapter', { lineupItemId: item.id })
+}
+
+function jumpToVerseWidget() {
+  const input = document.getElementById('bw-jump-input')
+  const n = parseInt(input && input.value, 10)
+  if (isNaN(n)) return
+  const el = document.getElementById('bwv-' + n)
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  if (input) input.value = ''
+}
+
+function navigateVerseWidget(lineupIdx, delta) {
+  const item = S.lineup[lineupIdx]
+  const st = S.bibleBrowserState
+  if (!item || !st || !st.projectedRef) return
+  const verses = st.verses
+  const liveIdx = verses.findIndex(function(v) { return (v.book_name + ' ' + v.chapter + ':' + v.verse) === st.projectedRef })
+  if (liveIdx === -1) return
+  const target = verses[liveIdx + delta]
+  if (!target) return
+  // No translationId — desktop continues whatever translation is currently live.
+  cmd('bible-browser-project', { lineupItemId: item.id, verse: target.verse })
+}
+
+function addCompareWidget(lineupIdx, selectEl) {
+  const translationId = selectEl && selectEl.value
+  // This dropdown's own list (from /controller/bible-translations) already
+  // resolved the correct abbreviation for this id — send it along so the
+  // desktop doesn't have to re-derive it from its own separately-fetched list,
+  // which can end up keeping a different id for the same translation.
+  const opt = selectEl && selectEl.options[selectEl.selectedIndex]
+  const label = opt ? opt.textContent : undefined
+  if (selectEl) selectEl.value = ''
+  if (!translationId) return
+  const item = S.lineup[lineupIdx]
+  if (!item) return
+  cmd('bible-browser-compare', { lineupItemId: item.id, translationId: translationId, compareAction: 'add', label: label })
+}
+
+function removeCompareWidget(lineupIdx, compareIdx) {
+  const item = S.lineup[lineupIdx]
+  const st = S.bibleBrowserState
+  if (!item || !st) return
+  const translationId = st.compareIds[compareIdx]
+  if (!translationId) return
+  cmd('bible-browser-compare', { lineupItemId: item.id, translationId: translationId, compareAction: 'remove' })
+}
+
+// compareIdx omitted = project the primary translation's verse. Otherwise it's
+// an index into bibleBrowserState.compareIds — never a raw translation id
+// string, so this never needs to embed a quote inside an onclick="..." attribute.
+function projectBibleWidgetVerse(lineupIdx, verseNum, compareIdx) {
+  const item = S.lineup[lineupIdx]
+  if (!item) return
+  const st = S.bibleBrowserState
+  const translationId = (compareIdx !== undefined && st) ? st.compareIds[compareIdx] : undefined
+  cmd('bible-browser-project', { lineupItemId: item.id, verse: verseNum, translationId: translationId })
 }
 
 // ── Boot ───────────────────────────────────────────────────────────────────

@@ -68,10 +68,16 @@ export interface PwaLineupItem {
   theme?: PwaItemTheme | null
   imageScaleMode?: string | null
   mediaSubtype?: 'image' | 'audio' | 'video' | null
-  // Filenames scanned from a music_player item's folder — only populated for
-  // whichever music_player item is currently open on the desktop, since that's
-  // the only one with live scan data.
+  // Filenames scanned from a music_player item's folder, kept per-item so any
+  // of them can be browsed from the PWA, not just whichever is open on desktop.
   musicPlayerTracks?: string[]
+}
+
+export interface BibleBrowserVerse {
+  book_name: string
+  chapter: number
+  verse: number
+  text: string
 }
 
 export const stage: {
@@ -91,6 +97,28 @@ export const stage: {
   // its scanned folder.
   audioState: { isPlaying: boolean; currentTime: number; duration: number; lineupItemId: number; trackName?: string } | null
   videoState: { isPlaying: boolean; currentTime: number; duration: number; lineupItemId: number } | null
+  // The Bible Browser is a single shared search/project tool (not per-lineup-item
+  // state) — lineupItemId here just tells the PWA which lineup entry to attach
+  // this panel to, since there's realistically only ever one Bible Browser item.
+  bibleBrowserState: {
+    lineupItemId: number | null
+    query: string
+    translationId: string
+    translationLabel: string
+    verses: BibleBrowserVerse[]
+    projectedRef: string | null
+    // Which translation the currently-projected verse actually came from (the
+    // primary one, or a compare translation) — null when nothing's projected.
+    projectedTranslationId: string | null
+    // Non-empty = "chapter mode" (Read Full Chapter was used) — these verse
+    // numbers are the ones originally searched, kept highlighted in the list.
+    highlightedVerseNums: number[]
+    compareIds: string[]
+    compareResults: Record<string, { translationLabel: string; verses: BibleBrowserVerse[] } | null>
+    compareLoading: string[]
+    loading: boolean
+    error: string | null
+  } | null
 } = {
   slide: null,
   blank: false,
@@ -105,6 +133,7 @@ export const stage: {
   serviceTime: null,
   audioState: null,
   videoState: null,
+  bibleBrowserState: null,
 }
 
 // ── SSE clients ───────────────────────────────────────────────────────────────

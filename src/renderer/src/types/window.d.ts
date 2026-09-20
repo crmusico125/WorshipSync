@@ -378,6 +378,27 @@ declare global {
         broadcastVideoState: (state: { isPlaying: boolean; currentTime: number; duration: number; lineupItemId: number } | null) => void
         onCountdownCmd: (cb: (action: string) => void) => () => void
         onProjectScripture: (cb: (data: { text: string; reference: string; translationLabel: string }) => void) => () => void
+        onBibleBrowserCmd: (cb: (data:
+          | { action: 'search'; query: string; translationId: string }
+          | { action: 'project'; verse: number; translationId?: string }
+          | { action: 'read-chapter' }
+          | { action: 'compare'; translationId: string; compareAction: 'add' | 'remove'; label?: string }
+        ) => void) => () => void
+        broadcastBibleBrowserState: (state: {
+          lineupItemId: number | null
+          query: string
+          translationId: string
+          translationLabel: string
+          verses: { book_name: string; chapter: number; verse: number; text: string }[]
+          projectedRef: string | null
+          projectedTranslationId: string | null
+          highlightedVerseNums: number[]
+          compareIds: string[]
+          compareResults: Record<string, { translationLabel: string; verses: { book_name: string; chapter: number; verse: number; text: string }[] } | null>
+          compareLoading: string[]
+          loading: boolean
+          error: string | null
+        } | null) => void
       }
     }
   }

@@ -50,7 +50,7 @@ import BackgroundPickerPanel from "../../components/BackgroundPickerPanel";
 import EditLyricsModal from "../../components/EditLyricsModal";
 import TranslationPicker from "../../components/TranslationPicker";
 import type { AnnouncementCard } from "../../../../../shared/types";
-import { fetchBiblePassage, bibleResultToScriptureRef, FREE_TRANSLATIONS, fetchApiBibleTranslations, translationDisplayName, type BibleTranslation, type BibleApiResult, type BibleApiVerse } from "../../lib/bibleApi";
+import { fetchBiblePassage, bibleResultToScriptureRef, FREE_TRANSLATIONS, fetchApiBibleTranslations, translationDisplayName, seedTranslationLabel, type BibleTranslation, type BibleApiResult, type BibleApiVerse } from "../../lib/bibleApi";
 import { toFileUrl, basenameOf } from "../../lib/utils";
 import { parseMediaCollection, type MediaCollectionConfig } from "../../lib/mediaCollection";
 
@@ -624,6 +624,49 @@ export default function PresenterDashboard({
     setIsBlank(false);
     setIsLogo(false);
   }, [defaultThemeBg, defaultTheme, availableTranslations, scriptureFontSize, scriptureTextAlign, scriptureRefPosition, setRecentScriptures]);
+
+  // Extracted so both the desktop's own "+ Add translation" picker and PWA-driven
+  // compare commands can trigger the same fetch-and-align-to-current-reference logic.
+  const addCompareTranslation = useCallback((cid: string, label?: string) => {
+    // A PWA-picked id may never have passed through this renderer's own
+    // translation-list fetch (see seedTranslationLabel) — seed the label it
+    // already correctly displayed there so the fetch below resolves a real
+    // abbreviation instead of falling back to a raw id fragment.
+    if (label) seedTranslationLabel(cid, label);
+    setBibleBrowserCompareIds(prev => {
+      if (!cid || prev.includes(cid)) return prev;
+      const newIds = [...prev, cid];
+      if (bibleBrowserResult) {
+        // In chapter view (after Read Full Chapter), fetch the whole chapter for
+        // the new comparison too — the original narrow query would return a
+        // shorter, misaligned verse list.
+        const first = bibleBrowserResult.verses[0];
+        const ref = bibleBrowserHighlightedVerseNums.size > 0 && first
+          ? `${first.book_name} ${first.chapter}`
+          : bibleBrowserQuery;
+        setBibleBrowserCompareLoadingSet(p => new Set([...p, cid]));
+        fetchBiblePassage(ref, cid, bibleApiKey)
+          .then(r => setBibleBrowserCompareResults(p => ({ ...p, [cid]: r })))
+          .catch(() => setBibleBrowserCompareResults(p => ({ ...p, [cid]: null })))
+          .finally(() => setBibleBrowserCompareLoadingSet(p => { const s = new Set(p); s.delete(cid); return s; }));
+      }
+      setTimeout(() => {
+        if (!bibleBrowserProjectedRef) return;
+        verseListRef.current?.querySelector<HTMLElement>(`[data-verse-ref="${CSS.escape(bibleBrowserProjectedRef)}"]`)?.focus();
+      }, 0);
+      return newIds;
+    });
+  }, [bibleBrowserResult, bibleBrowserHighlightedVerseNums, bibleBrowserQuery, bibleApiKey, bibleBrowserProjectedRef]);
+
+  const removeCompareTranslation = useCallback((cid: string) => {
+    setBibleBrowserCompareIds(prev => prev.filter(x => x !== cid));
+    setBibleBrowserCompareResults(prev => { const n = { ...prev }; delete n[cid]; return n; });
+    setBibleBrowserCompareLoadingSet(prev => { const s = new Set(prev); s.delete(cid); return s; });
+    setTimeout(() => {
+      if (!bibleBrowserProjectedRef) return;
+      verseListRef.current?.querySelector<HTMLElement>(`[data-verse-ref="${CSS.escape(bibleBrowserProjectedRef)}"]`)?.focus();
+    }, 0);
+  }, [bibleBrowserProjectedRef]);
 
   const handleSplitterMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -1929,6 +1972,86 @@ export default function PresenterDashboard({
     return () => cleanup?.()
   }, [defaultTheme, defaultThemeBg, scriptureFontSize, scriptureTextAlign, scriptureRefPosition])
 
+  // Handle Bible Browser search/project commands from PWA controller. Unlike
+  // audio/video, Bible Browser projection is already ad-hoc (lineupItemId -1,
+  // bypasses lineup navigation entirely) — so these just drive the same shared
+  // search state and project function the desktop's own UI uses, without ever
+  // needing to switch the desktop's selection away from whatever it's showing.
+  useEffect(() => {
+    const cleanup = window.worshipsync.pwa?.onBibleBrowserCmd?.((data) => {
+      if (data.action === 'search') {
+        setScriptureTranslation(data.translationId)
+        bibleBrowserSearch(data.query, data.translationId, bibleBrowserCompareIds)
+      } else if (data.action === 'project') {
+        if (!bibleBrowserResult) return
+        // Omitted translationId (prev/next navigation) continues whatever's
+        // currently live — same default projectBibleVerse's own nav bar uses.
+        const tid = data.translationId ?? bibleBrowserProjectedTranslation ?? scriptureTranslation
+        const idx = bibleBrowserResult.verses.findIndex(verse => verse.verse === data.verse)
+        if (idx === -1) return
+        const primary = bibleBrowserResult.verses[idx]
+        const compareVerse = tid !== scriptureTranslation ? bibleBrowserCompareResults[tid]?.verses[idx] : undefined
+        const v = compareVerse ?? primary
+        projectBibleVerse(v, `${primary.book_name} ${primary.chapter}:${primary.verse}`, tid)
+      } else if (data.action === 'read-chapter') {
+        readFullChapter()
+      } else if (data.action === 'compare') {
+        if (data.compareAction === 'add') addCompareTranslation(data.translationId, data.label)
+        else removeCompareTranslation(data.translationId)
+      }
+    })
+    return () => cleanup?.()
+  }, [
+    bibleBrowserSearch, bibleBrowserResult, scriptureTranslation, projectBibleVerse,
+    bibleBrowserCompareIds, bibleBrowserCompareResults, bibleBrowserProjectedTranslation,
+    readFullChapter, addCompareTranslation, removeCompareTranslation,
+  ])
+
+  // Broadcast current Bible Browser state to PWA controller whenever it changes,
+  // so a search or projection made from either device shows up on the other.
+  useEffect(() => {
+    const bibleItem = liveSongs.find(s => s.itemType === 'bible')
+    if (!bibleItem) {
+      window.worshipsync.pwa?.broadcastBibleBrowserState?.(null)
+      return
+    }
+    window.worshipsync.pwa?.broadcastBibleBrowserState?.({
+      lineupItemId: bibleItem.lineupItemId,
+      query: bibleBrowserQuery,
+      translationId: scriptureTranslation,
+      translationLabel: availableTranslations.find(t => t.id === scriptureTranslation)?.label ?? scriptureTranslation.toUpperCase(),
+      verses: bibleBrowserResult?.verses.map(v => ({ book_name: v.book_name, chapter: v.chapter, verse: v.verse, text: v.text })) ?? [],
+      projectedRef: bibleBrowserProjectedRef,
+      projectedTranslationId: bibleBrowserProjectedTranslation,
+      highlightedVerseNums: [...bibleBrowserHighlightedVerseNums],
+      compareIds: bibleBrowserCompareIds,
+      compareResults: Object.fromEntries(
+        Object.entries(bibleBrowserCompareResults).map(([cid, r]) => [
+          cid,
+          r ? {
+            // Prefer the fetch's own resolved abbreviation (now correctly seeded
+            // even for a PWA-picked id — see seedTranslationLabel) over
+            // availableTranslations, whose ids can diverge from the PWA's own
+            // independently-deduped list. Same <=10-char guard bibleResultToScriptureRef
+            // uses, in case a free translation's translation_name is a full name instead.
+            translationLabel: (r.translation_name && r.translation_name.length <= 10)
+              ? r.translation_name.toUpperCase()
+              : (availableTranslations.find(t => t.id === cid)?.label ?? cid.toUpperCase()),
+            verses: r.verses.map(v => ({ book_name: v.book_name, chapter: v.chapter, verse: v.verse, text: v.text })),
+          } : null,
+        ])
+      ),
+      compareLoading: [...bibleBrowserCompareLoadingSet],
+      loading: bibleBrowserLoading,
+      error: bibleBrowserError,
+    })
+  }, [
+    liveSongs, bibleBrowserQuery, bibleBrowserResult, scriptureTranslation, availableTranslations,
+    bibleBrowserProjectedRef, bibleBrowserProjectedTranslation, bibleBrowserHighlightedVerseNums,
+    bibleBrowserCompareIds, bibleBrowserCompareResults, bibleBrowserCompareLoadingSet,
+    bibleBrowserLoading, bibleBrowserError,
+  ])
+
   // Broadcast current time every second while playing so PWA progress bar stays in sync
   useEffect(() => {
     if (!audioPlaying) return
@@ -3094,19 +3217,7 @@ export default function PresenterDashboard({
                       {label}
                       {isLoading && <Loader2 className="h-3 w-3 animate-spin" />}
                       <button
-                        onClick={() => {
-                          setBibleBrowserCompareIds(prev => prev.filter(x => x !== cid));
-                          setBibleBrowserCompareResults(prev => { const n = { ...prev }; delete n[cid]; return n; });
-                          setBibleBrowserCompareLoadingSet(prev => { const s = new Set(prev); s.delete(cid); return s; });
-                          // Dropping the last comparison collapses the verse rows from
-                          // a multi-column layout back to a single column, which
-                          // remounts the DOM nodes and drops keyboard focus. Restore it
-                          // to whatever's live so arrow-key navigation keeps working.
-                          setTimeout(() => {
-                            if (!bibleBrowserProjectedRef) return;
-                            verseListRef.current?.querySelector<HTMLElement>(`[data-verse-ref="${CSS.escape(bibleBrowserProjectedRef)}"]`)?.focus();
-                          }, 0);
-                        }}
+                        onClick={() => removeCompareTranslation(cid)}
                         className="ml-0.5 leading-none opacity-50 hover:opacity-100 text-sm"
                       >×</button>
                     </span>
@@ -3118,32 +3229,7 @@ export default function PresenterDashboard({
                     value=""
                     placeholder="+ Add translation"
                     align="left"
-                    onChange={cid => {
-                      if (!cid || bibleBrowserCompareIds.includes(cid)) return;
-                      const newIds = [...bibleBrowserCompareIds, cid];
-                      setBibleBrowserCompareIds(newIds);
-                      if (bibleBrowserResult) {
-                        // In chapter view (after Read Full Chapter), fetch the whole
-                        // chapter for the new comparison too — the original narrow
-                        // query would return a shorter, misaligned verse list.
-                        const first = bibleBrowserResult.verses[0];
-                        const ref = bibleBrowserHighlightedVerseNums.size > 0 && first
-                          ? `${first.book_name} ${first.chapter}`
-                          : bibleBrowserQuery;
-                        setBibleBrowserCompareLoadingSet(prev => new Set([...prev, cid]));
-                        fetchBiblePassage(ref, cid, bibleApiKey)
-                          .then(r => setBibleBrowserCompareResults(prev => ({ ...prev, [cid]: r })))
-                          .catch(() => setBibleBrowserCompareResults(prev => ({ ...prev, [cid]: null })))
-                          .finally(() => setBibleBrowserCompareLoadingSet(prev => { const s = new Set(prev); s.delete(cid); return s; }));
-                      }
-                      // Adding the first comparison switches the verse rows from a
-                      // single column to a multi-column layout, remounting the DOM
-                      // nodes — restore focus to whatever's live afterward.
-                      setTimeout(() => {
-                        if (!bibleBrowserProjectedRef) return;
-                        verseListRef.current?.querySelector<HTMLElement>(`[data-verse-ref="${CSS.escape(bibleBrowserProjectedRef)}"]`)?.focus();
-                      }, 0);
-                    }}
+                    onChange={addCompareTranslation}
                   />
                 )}
               </div>

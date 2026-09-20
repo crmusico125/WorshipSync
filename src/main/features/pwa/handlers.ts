@@ -26,4 +26,9 @@ export function registerPwaHandlers(): void {
       windows.confidence.webContents.send('slide:videoState', state)
     }
   })
+
+  ipcMain.on('pwa:broadcastBibleBrowserState', (_event, state: typeof stage.bibleBrowserState) => {
+    stage.bibleBrowserState = state
+    broadcastPwa({ type: 'bibleBrowserState', state })
+  })
 }

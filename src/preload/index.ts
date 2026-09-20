@@ -284,6 +284,12 @@ contextBridge.exposeInMainWorld('worshipsync', {
       ipcRenderer.on('pwa:projectScripture', (_e, data) => cb(data))
       return () => ipcRenderer.removeAllListeners('pwa:projectScripture')
     },
+    onBibleBrowserCmd: (cb: (data: unknown) => void) => {
+      ipcRenderer.on('pwa:bibleBrowserCmd', (_e, data) => cb(data))
+      return () => ipcRenderer.removeAllListeners('pwa:bibleBrowserCmd')
+    },
+    broadcastBibleBrowserState: (state: unknown) =>
+      ipcRenderer.send('pwa:broadcastBibleBrowserState', state),
   },
 })
 

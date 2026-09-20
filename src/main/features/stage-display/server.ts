@@ -38,13 +38,23 @@ export function getMdnsHostname(): string {
   return hostname() + '.local'
 }
 
+// Loopback, VPN tunnels (utun/tun/tap/wg/tailscale/zerotier), and VM/container
+// bridges (docker/veth/vmnet/vboxnet/bridge) report IPv4 addresses that resolve
+// fine for this machine but aren't reachable from another device on the same
+// Wi-Fi — so a real LAN adapter (en0/Wi-Fi/eth0/wlan0/...) must be preferred
+// over whatever interface os.networkInterfaces() happens to list first.
+const VIRTUAL_IFACE_PATTERN = /^(lo|utun|tun\d|tap\d|docker|veth|br-|bridge|vmnet|vboxnet|zt|tailscale|wg)/i
+
 export function getLocalIP(): string {
-  for (const ifaces of Object.values(networkInterfaces())) {
+  const preferred: string[] = []
+  const fallback: string[] = []
+  for (const [name, ifaces] of Object.entries(networkInterfaces())) {
     for (const iface of ifaces ?? []) {
-      if (iface.family === 'IPv4' && !iface.internal) return iface.address
+      if (iface.family !== 'IPv4' || iface.internal) continue
+      ;(VIRTUAL_IFACE_PATTERN.test(name) ? fallback : preferred).push(iface.address)
     }
   }
-  return 'localhost'
+  return preferred[0] ?? fallback[0] ?? 'localhost'
 }
 
 let _controllerPin: string | null = null
@@ -85,7 +95,7 @@ export function startStageServer(port = 4040, pin?: string | null): Promise<bool
         if (isPwa) {
           setPwaClients([...getPwaClients(), client])
           // Full snapshot for PWA: includes lineup, audio/video state, service date/time
-          client.send({ type: 'init', slide: stage.slide, blank: stage.blank, logo: stage.logo, countdown: stage.countdown, nextLines: stage.nextLines, nextSectionLabel: stage.nextLabel, lineup: stage.lineup, currentLineupIdx: stage.currentLineupIdx, serviceDate: stage.serviceDate, serviceTime: stage.serviceTime, audioState: stage.audioState, videoState: stage.videoState })
+          client.send({ type: 'init', slide: stage.slide, blank: stage.blank, logo: stage.logo, countdown: stage.countdown, nextLines: stage.nextLines, nextSectionLabel: stage.nextLabel, lineup: stage.lineup, currentLineupIdx: stage.currentLineupIdx, serviceDate: stage.serviceDate, serviceTime: stage.serviceTime, audioState: stage.audioState, videoState: stage.videoState, bibleBrowserState: stage.bibleBrowserState })
           req.on('close', () => { setPwaClients(getPwaClients().filter(c => c !== client)) })
           sock.on('error', () => { setPwaClients(getPwaClients().filter(c => c !== client)) })
         } else {
@@ -112,6 +122,7 @@ export function startStageServer(port = 4040, pin?: string | null): Promise<bool
           currentSlideIdx: (stage.slide as any)?.slideIndex ?? -1,
           audioState: stage.audioState,
           videoState: stage.videoState,
+          bibleBrowserState: stage.bibleBrowserState,
           serviceDate: stage.serviceDate,
           serviceTime: stage.serviceTime,
           pinRequired: !!_controllerPin,
@@ -326,6 +337,39 @@ function handleControllerCommand(req: IncomingMessage, res: ServerResponse): voi
         const { text, reference, translationLabel } = cmd as { text: string; reference: string; translationLabel: string }
         if (windows.control && !windows.control.isDestroyed()) {
           windows.control.webContents.send('pwa:projectScripture', { text, reference, translationLabel })
+        }
+        break
+      }
+      case 'bible-browser-search': {
+        const { query, translationId } = cmd as { query: string; translationId: string }
+        if (windows.control && !windows.control.isDestroyed()) {
+          windows.control.webContents.send('pwa:bibleBrowserCmd', { action: 'search', query, translationId })
+        }
+        break
+      }
+      case 'bible-browser-project': {
+        // translationId is optional — omitted for prev/next navigation, which
+        // should continue whatever translation is currently live on desktop.
+        const { verse, translationId } = cmd as { verse: number; translationId?: string }
+        if (windows.control && !windows.control.isDestroyed()) {
+          windows.control.webContents.send('pwa:bibleBrowserCmd', { action: 'project', verse, translationId })
+        }
+        break
+      }
+      case 'bible-browser-read-chapter': {
+        if (windows.control && !windows.control.isDestroyed()) {
+          windows.control.webContents.send('pwa:bibleBrowserCmd', { action: 'read-chapter' })
+        }
+        break
+      }
+      case 'bible-browser-compare': {
+        // label is the text the PWA's own translation dropdown already showed for
+        // this id — passed through so the desktop can seed it in when its own
+        // independently-fetched translation list doesn't happen to contain this
+        // exact id (see seedTranslationLabel in the renderer's bibleApi.ts).
+        const { translationId, compareAction, label } = cmd as { translationId: string; compareAction: 'add' | 'remove'; label?: string }
+        if (windows.control && !windows.control.isDestroyed()) {
+          windows.control.webContents.send('pwa:bibleBrowserCmd', { action: 'compare', translationId, compareAction, label })
         }
         break
       }

@@ -62,6 +62,17 @@ const _translationCache = new Map<string, BibleTranslation[]>()
 // Maps bibleId → short abbreviation label (e.g. "de4e12af..." → "NIV")
 const _labelCache = new Map<string, string>()
 
+// The PWA controller fetches its own translation list independently (via the
+// main process's bibleProxy.ts), which dedupes by label separately from this
+// file's own fetch — so a translation id picked there may never have passed
+// through this file's own list-building loop above, leaving it absent from
+// _labelCache. Lets a caller (e.g. adding a PWA-picked compare translation)
+// seed the correct label in before fetching, instead of falling back to a
+// raw id fragment like "78A9F612".
+export function seedTranslationLabel(id: string, label: string): void {
+  if (id && label && !_labelCache.has(id)) _labelCache.set(id, label)
+}
+
 export async function fetchApiBibleTranslations(apiKey: string): Promise<BibleTranslation[]> {
   if (_translationCache.has(apiKey)) return _translationCache.get(apiKey)!
 

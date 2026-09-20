@@ -33,13 +33,19 @@ export function registerSlideHandlers(): void {
       windows.projection.webContents.send('slide:show', payload)
     }
 
-    // Derive lineup context first so nextLinesFromLineup uses the updated index
+    // Derive lineup context first so nextLinesFromLineup uses the updated index.
+    // Ad-hoc content (e.g. a one-off Bible Browser verse projection) has no real
+    // lineup position — lineupItemId is -1 or omitted. Only update
+    // stage.currentLineupIdx when it resolves to a real item; leaving it as-is
+    // otherwise means an ad-hoc projection doesn't masquerade as "now showing
+    // whatever the lineup index used to point at" for the next()/broadcast below.
     const lineupItemId = (payload as any).lineupItemId as number | undefined
     const slideIndex   = (payload as any).slideIndex   as number | undefined
-    if (lineupItemId !== undefined) {
-      const idx = stage.lineup.findIndex(i => i.id === lineupItemId)
-      if (idx !== -1) stage.currentLineupIdx = idx
-    }
+    const resolvedLineupIdx = lineupItemId !== undefined
+      ? stage.lineup.findIndex(i => i.id === lineupItemId)
+      : -1
+    const isRealLineupItem = resolvedLineupIdx !== -1
+    if (isRealLineupItem) stage.currentLineupIdx = resolvedLineupIdx
 
     // Augment the payload for the confidence window with next lines computed from
     // stage.lineup (the same source the stage display uses).  This guarantees
@@ -59,7 +65,18 @@ export function registerSlideHandlers(): void {
     stage.nextLabel = ''
     stage.nextItemType = null
 
-    broadcastAll({ type: 'slide', payload, lineupIdx: stage.currentLineupIdx, slideIdx: slideIndex ?? -1 })
+    // Omit lineupIdx entirely for ad-hoc content instead of sending
+    // stage.currentLineupIdx (which would just be whatever was live before this
+    // ad-hoc projection) — the PWA controller's 'slide' handler already treats a
+    // missing lineupIdx as "leave the active lineup selection alone", so this is
+    // what stops projecting a Bible Browser verse from snapping the PWA's active
+    // item (and therefore its visible panel) onto an unrelated lineup entry.
+    broadcastAll({
+      type: 'slide',
+      payload,
+      lineupIdx: isRealLineupItem ? resolvedLineupIdx : undefined,
+      slideIdx: slideIndex ?? -1,
+    })
   })
 
   ipcMain.on('slide:blank', (_event, isBlank: boolean, position?: { lineupItemId: number; slideIndex: number }) => {

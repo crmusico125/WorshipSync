@@ -296,7 +296,7 @@ function ContentLayer({
             }}
           >
             {slide.lines.map((line, i) => (
-              <div key={i}>{line || " "}</div>
+              <div key={i} style={{ whiteSpace: "nowrap" }}>{line || " "}</div>
             ))}
           </div>
         </div>

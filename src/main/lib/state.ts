@@ -116,6 +116,7 @@ export const stage: {
     compareIds: string[]
     compareResults: Record<string, { translationLabel: string; verses: BibleBrowserVerse[] } | null>
     compareLoading: string[]
+    recentScriptures: { query: string; translationId: string; translationLabel: string; reference: string }[]
     loading: boolean
     error: string | null
   } | null

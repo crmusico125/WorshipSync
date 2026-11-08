@@ -159,6 +159,12 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-
 .bw-trans{background:var(--surface2);border:1px solid var(--border);border-radius:10px;color:var(--text);font-size:13px;padding:9px 8px;outline:none;flex-shrink:0;cursor:pointer;min-width:72px}
 .bw-go{background:var(--primary);color:#fff;border:none;border-radius:10px;padding:9px 14px;font-size:13px;font-weight:700;cursor:pointer;flex-shrink:0}
 .bw-go:disabled{opacity:.45}
+.bw-recent-row{display:flex;gap:6px;overflow-x:auto;[scrollbar-width:none]}
+.bw-recent-row::-webkit-scrollbar{display:none}
+.bw-recent-chip{flex-shrink:0;display:flex;align-items:center;gap:5px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:999px;padding:5px 10px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap}
+.bw-recent-chip.active{border-color:var(--primary);background:rgba(124,58,237,.12);color:var(--primary)}
+.bw-recent-trans{font-size:10px;font-weight:700;color:var(--muted);letter-spacing:.03em}
+.bw-recent-chip.active .bw-recent-trans{color:var(--primary);opacity:.75}
 .bw-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .bw-chapter-btn{background:var(--surface2);border:1px solid var(--border);color:var(--muted);border-radius:8px;padding:6px 10px;font-size:12px;font-weight:600;cursor:pointer}
 .bw-chapter-btn:disabled{opacity:.45}
@@ -1168,6 +1174,7 @@ function renderBibleBrowserWidgetPanel(container, item) {
   const compareIds = st ? st.compareIds : []
   const compareResults = st ? st.compareResults : {}
   const compareLoading = st ? st.compareLoading : []
+  const recentScriptures = st ? st.recentScriptures : []
 
   let html = '<div style="display:flex;flex-direction:column;gap:10px;height:100%">'
     + '<form class="bw-form" onsubmit="event.preventDefault();searchBibleWidget(' + S.activeLineupIdx + ')">'
@@ -1175,6 +1182,19 @@ function renderBibleBrowserWidgetPanel(container, item) {
     + '<select class="bw-trans" id="bw-trans" onchange="W.translationId=this.value"><option value="web">WEB</option></select>'
     + '<button class="bw-go" type="submit"' + (loading ? ' disabled' : '') + '>' + (loading ? '…' : 'Search') + '</button>'
     + '</form>'
+
+  // Recent passages — reference AND translation shown together on the chip
+  // itself (not a hover title, since this is a touch UI), tapping re-searches it.
+  if (recentScriptures.length) {
+    html += '<div class="bw-recent-row">'
+      + recentScriptures.slice(0, 10).map(function(r, ri) {
+          const isActive = r.query === syncedQuery && r.translationId === translationId
+          return '<button class="bw-recent-chip' + (isActive ? ' active' : '') + '" onclick="searchRecentWidget(' + S.activeLineupIdx + ',' + ri + ')">'
+            + esc(r.reference) + '<span class="bw-recent-trans">' + esc(r.translationLabel) + '</span>'
+            + '</button>'
+        }).join('')
+      + '</div>'
+  }
 
   // Read Full Chapter / Jump to Verse — mirrors the desktop's own visibility rules
   const showReadChapter = !isChapterMode && syncedQuery.includes(':') && verses.length > 0
@@ -1292,6 +1312,19 @@ function searchBibleWidget(lineupIdx) {
   W.query = query
   W.translationId = translationId
   cmd('bible-browser-search', { lineupItemId: item.id, query: query, translationId: translationId })
+}
+
+// recentIdx into bibleBrowserState.recentScriptures — reuses the same search
+// command as the form, just with a remembered query+translation pair.
+function searchRecentWidget(lineupIdx, recentIdx) {
+  const item = S.lineup[lineupIdx]
+  const st = S.bibleBrowserState
+  if (!item || !st) return
+  const r = st.recentScriptures[recentIdx]
+  if (!r) return
+  W.query = r.query
+  W.translationId = r.translationId
+  cmd('bible-browser-search', { lineupItemId: item.id, query: r.query, translationId: r.translationId })
 }
 
 function readChapterWidget(lineupIdx) {

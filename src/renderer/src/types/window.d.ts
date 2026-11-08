@@ -396,6 +396,7 @@ declare global {
           compareIds: string[]
           compareResults: Record<string, { translationLabel: string; verses: { book_name: string; chapter: number; verse: number; text: string }[] } | null>
           compareLoading: string[]
+          recentScriptures: { query: string; translationId: string; translationLabel: string; reference: string }[]
           loading: boolean
           error: string | null
         } | null) => void

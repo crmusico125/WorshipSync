@@ -72,7 +72,7 @@ export default function ConfidenceMonitor() {
     if (!wrapper || !text || !slide || slide.itemType === "scripture" || slide.itemType === "media") return;
 
     const availableH = wrapper.clientHeight - 60; // 32px top + 28px bottom padding
-    let lo = 20, hi = 160, best = 20;
+    let lo = 20, hi = 100, best = 20;
     while (lo <= hi) {
       const mid = Math.floor((lo + hi) / 2);
       text.style.fontSize = `${mid}px`;

@@ -1470,7 +1470,7 @@ export default function PresenterDashboard({
     }
   }, [selectedSongIdx, liveSongs, sendSlide])
 
-  // Re-send the live scripture slide whenever scripture display settings change
+  // Re-send the live slide whenever scripture or song display settings change
   // so the projection updates immediately without needing to click the slide again.
   useEffect(() => {
     // Bible browser verses bypass the lineup slide system — re-project using stored ref
@@ -1479,13 +1479,13 @@ export default function PresenterDashboard({
       projectBibleVerse(verse, reference, translationId)
       return
     }
-    // Lineup scripture items: re-send via sendSlide
+    // Lineup items: re-send via sendSlide
     const liveIdx  = liveItemIdxRef.current
     const slideIdx = liveSlideIdxRef.current
     if (liveIdx < 0 || slideIdx < 0) return
     const song = liveSongs[liveIdx]
-    if (song?.itemType === 'scripture') sendSlide(liveIdx, slideIdx)
-  }, [scriptureFontSize, scriptureTextAlign, scriptureRefPosition, liveSongs, sendSlide, projectBibleVerse])
+    if (song) sendSlide(liveIdx, slideIdx)
+  }, [scriptureFontSize, scriptureTextAlign, scriptureRefPosition, projectionFontSize, liveSongs, sendSlide, projectBibleVerse])
 
   const jumpToItem = useCallback((idx: number) => {
     const item = liveSongs[idx];
@@ -2042,6 +2042,7 @@ export default function PresenterDashboard({
         ])
       ),
       compareLoading: [...bibleBrowserCompareLoadingSet],
+      recentScriptures,
       loading: bibleBrowserLoading,
       error: bibleBrowserError,
     })
@@ -2049,7 +2050,7 @@ export default function PresenterDashboard({
     liveSongs, bibleBrowserQuery, bibleBrowserResult, scriptureTranslation, availableTranslations,
     bibleBrowserProjectedRef, bibleBrowserProjectedTranslation, bibleBrowserHighlightedVerseNums,
     bibleBrowserCompareIds, bibleBrowserCompareResults, bibleBrowserCompareLoadingSet,
-    bibleBrowserLoading, bibleBrowserError,
+    recentScriptures, bibleBrowserLoading, bibleBrowserError,
   ])
 
   // Broadcast current time every second while playing so PWA progress bar stays in sync
@@ -3183,13 +3184,16 @@ export default function PresenterDashboard({
                             bibleBrowserSearch(r.query, r.translationId, bibleBrowserCompareIds);
                           }}
                           title={`${r.reference} · ${r.translationLabel}`}
-                          className={`shrink-0 h-6 px-2.5 rounded-full text-xs font-medium border transition-colors whitespace-nowrap capitalize ${
+                          className={`shrink-0 h-6 px-2.5 rounded-full text-xs font-medium border transition-colors whitespace-nowrap capitalize flex items-center gap-1.5 ${
                             isActive
                               ? 'bg-primary/15 text-primary border-primary/30'
                               : 'bg-muted/60 text-muted-foreground border-border/50 hover:text-foreground hover:bg-accent/40'
                           }`}
                         >
                           {r.reference}
+                          <span className={`text-[10px] font-bold tracking-wide ${isActive ? 'opacity-75' : 'opacity-50'}`}>
+                            {r.translationLabel}
+                          </span>
                         </button>
                       );
                     })}

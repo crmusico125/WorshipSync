@@ -191,6 +191,7 @@ export async function importPackage(zipPath: string, workspaceRoot: string): Pro
           imageScaleMode: item.imageScaleMode as 'cover' | 'contain' | 'stretch' | null,
           mediaCollection: item.mediaCollection ? rewriteMediaCollection(item.mediaCollection, rewritePath) : null,
           // musicPlayerDir is intentionally never set — it's never packaged (external, user-owned folder).
+          customText: item.customText,
         }).run()
       }
 

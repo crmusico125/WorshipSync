@@ -4,7 +4,7 @@ import {
   Radio, Eye, Music2, Calendar, Image as ImageIcon,
   Monitor, Timer, GripVertical, X, Megaphone,
   Play, Pause, SkipBack, SkipForward, Repeat, ListTodo, Layers, Check,
-  Search, Loader2, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, Folder, Shuffle,
+  Search, Loader2, ChevronDown, ChevronUp, ChevronRight, ChevronLeft, Folder, Shuffle, Type, Copy,
 } from "lucide-react"
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors,
@@ -168,6 +168,26 @@ function parseAnnouncementStyle(json: string | null | undefined): AnnouncementSt
   try { return { ...DEFAULT_ANNOUNCEMENT_STYLE, ...JSON.parse(json) } } catch { return DEFAULT_ANNOUNCEMENT_STYLE }
 }
 
+// ── Custom Text ───────────────────────────────────────────────────────────────
+
+interface CustomTextSlide {
+  id: string
+  text: string
+}
+
+function parseCustomTextSlides(raw: string | null | undefined): CustomTextSlide[] {
+  if (!raw) return []
+  try {
+    const p = JSON.parse(raw)
+    if (Array.isArray(p?.slides)) return p.slides
+  } catch {}
+  return []
+}
+
+function newCustomTextSlide(): CustomTextSlide {
+  return { id: String(Date.now() + Math.random()), text: "" }
+}
+
 function newCard(): AnnouncementCard {
   return { id: String(Date.now() + Math.random()), heading: '', day: '', time: '', location: '', description: '' }
 }
@@ -186,6 +206,7 @@ function estimateDuration(item: LineupItemWithSong, maxLinesPerSlide: number): n
     const cfg = parseMediaCollection(item.mediaCollection)
     return cfg.autoAdvance ? cfg.items.length * cfg.intervalSeconds : 0
   }
+  if (item.itemType === 'custom_text') return parseCustomTextSlides(item.customText).length * 15
   if (!item.song) return 0
   const sc = buildSlides(item.song.sections, maxLinesPerSlide).length
   return sc * 15
@@ -213,6 +234,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
     removeSongFromLineup, loadServices, selectService,
     services, reorderLineup, updateStatus, updateService,
     patchLineupItemSectionOrder, patchImageScaleMode, setMediaLoop, addSectionToLineup,
+    addCustomTextToLineup, updateCustomText,
   } = useServiceStore()
   const { loadSongs } = useSongStore()
 
@@ -236,6 +258,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
   const pendingThemeRef = useRef<Partial<ThemeStyle>>({})
   const themeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const announcementTimers = useRef<{ title?: ReturnType<typeof setTimeout>; content?: ReturnType<typeof setTimeout> }>({})
+  const customTextTimers = useRef<{ title?: ReturnType<typeof setTimeout>; slides?: ReturnType<typeof setTimeout> }>({})
   const [scripturePasteText, setScripturePasteText] = useState("")
   const [scripturePasteOpen, setScripturePasteOpen] = useState(false)
   const [bibleQuery, setBibleQuery] = useState("")
@@ -309,6 +332,8 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
   const [bgOverride, setBgOverride] = useState<string | null | undefined>(undefined)
   const [annPreviewTitle, setAnnPreviewTitle] = useState("")
   const [annCards, setAnnCards] = useState<AnnouncementCard[]>([])
+  const [customTextSlides, setCustomTextSlides] = useState<CustomTextSlide[]>([])
+  const [activeCustomTextSlideId, setActiveCustomTextSlideId] = useState<string | null>(null)
   const [pendingBgPath, setPendingBgPath] = useState<string | null | undefined>(undefined)
   const [savingBg, setSavingBg] = useState(false)
   const [arrangedSectionIds, setArrangedSectionIds] = useState<number[] | null>(null)
@@ -431,6 +456,11 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
     if (currentItem?.itemType === 'announcement') {
       setAnnPreviewTitle(currentItem.title ?? "")
       setAnnCards(parseAnnouncementCards(currentItem.scriptureRef))
+    }
+    if (currentItem?.itemType === 'custom_text') {
+      const slides = parseCustomTextSlides(currentItem.customText)
+      setCustomTextSlides(slides)
+      setActiveCustomTextSlideId(slides[0]?.id ?? null)
     }
   }, [currentItem?.id])
 
@@ -772,6 +802,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
       title: item.title ?? undefined,
       scriptureRef: item.scriptureRef ?? undefined,
       mediaPath: item.mediaPath ?? undefined,
+      customText: item.customText ?? undefined,
     }))
     const tpl: SetlistTemplate = {
       id: Date.now().toString(),
@@ -804,6 +835,12 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
         await addBibleBrowserToLineup().catch(() => {})
       } else if (item.itemType === 'music_player') {
         await addMusicPlayerToLineup().catch(() => {})
+      } else if (item.itemType === 'custom_text') {
+        const slides = parseCustomTextSlides(item.customText)
+        await addCustomTextToLineup({
+          title: item.title ?? 'Custom Text',
+          slides: slides.length ? slides : [newCustomTextSlide()],
+        }).catch(() => {})
       }
     }
     setApplyingTemplate(false)
@@ -977,6 +1014,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
                         const isAnnouncement = item.itemType === 'announcement'
                         const isBible = item.itemType === 'bible'
                         const isMusicPlayer = item.itemType === 'music_player'
+                        const isCustomText = item.itemType === 'custom_text'
                         const colorIdx = sectionColor[i] ?? 0
 
                         if (isSection) {
@@ -1029,7 +1067,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
                             isSelected={isSelected}
                             indent={underSection[i]}
                             colorIdx={underSection[i] ? colorIdx : -1}
-                            title={isCountdown ? "Countdown Timer" : isBible ? "Bible Browser" : isMusicPlayer ? "Music Player" : isScripture || isMedia || isMediaCollection || isAnnouncement ? item.title ?? "—" : item.song?.title ?? "—"}
+                            title={isCountdown ? "Countdown Timer" : isBible ? "Bible Browser" : isMusicPlayer ? "Music Player" : isScripture || isMedia || isMediaCollection || isAnnouncement || isCustomText ? item.title ?? "—" : item.song?.title ?? "—"}
                             subtitle={(() => {
                               const dur = fmtDur(estimateDuration(item, defaultMaxLines))
                               const base = isCountdown ? "Countdown"
@@ -1039,13 +1077,14 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
                                 : isMediaCollection ? "Collection"
                                 : isMusicPlayer ? (item.musicPlayerDir ? basenameOf(item.musicPlayerDir) : "No folder set")
                                 : isAnnouncement ? "Announcement"
+                                : isCustomText ? "Custom Text"
                                 : `${item.song?.artist || "Unknown"}${item.song?.key ? ` · ${item.song.key}` : ""}`
                               return dur ? `${base} · ${dur}` : base
                             })()}
                             isPast={isPast}
                             onSelect={() => setSelectedSongIdx(i)}
                             onDelete={() => {
-                              const label = isCountdown ? "Countdown Timer" : isBible ? "Bible Browser" : isMusicPlayer ? "Music Player" : isScripture || isMedia || isMediaCollection ? item.title ?? "item" : item.song?.title ?? "item"
+                              const label = isCountdown ? "Countdown Timer" : isBible ? "Bible Browser" : isMusicPlayer ? "Music Player" : isScripture || isMedia || isMediaCollection || isAnnouncement || isCustomText ? item.title ?? "item" : item.song?.title ?? "item"
                               if (confirm(`Remove "${label}" from lineup?`)) {
                                 removeSongFromLineup(item.id)
                                 if (selectedSongIdx >= lineup.length - 1)
@@ -1315,6 +1354,163 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
                               style={{ background: color, borderColor: annStyle.accentColor === color ? 'hsl(var(--primary))' : 'transparent', boxShadow: annStyle.accentColor === color ? '0 0 0 2px hsl(var(--background))' : 'none' }}
                             />
                           ))}
+                        </div>
+                      </div>
+                    )
+                  })()}
+                </div>
+              </div>
+            </>
+          ) : currentItem?.itemType === 'custom_text' ? (
+            <>
+              <div className="px-5 py-3 border-b border-border bg-card flex items-center gap-3 shrink-0">
+                <Type className="h-4 w-4 text-muted-foreground shrink-0" />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Custom Text</span>
+              </div>
+              <div className="flex-1 overflow-y-auto p-5 bg-muted/10">
+                <div className="max-w-2xl flex flex-col gap-4">
+                  {/* Item title — shown in the Run of Show only, never projected */}
+                  <div>
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1.5">Title</label>
+                    <input
+                      type="text"
+                      defaultValue={currentItem.title ?? ''}
+                      readOnly={isPast}
+                      placeholder="e.g. God Is Now Here"
+                      onChange={(e) => {
+                        const val = e.target.value
+                        clearTimeout(customTextTimers.current.title)
+                        customTextTimers.current.title = setTimeout(() => {
+                          updateCustomText(currentItem.id, { title: val })
+                        }, 400)
+                      }}
+                      className="w-full h-9 px-3 text-sm bg-background border border-border rounded-md outline-none focus:border-primary/50 transition-colors placeholder:text-muted-foreground/40"
+                    />
+                    <p className="text-[11px] text-muted-foreground/70 mt-1.5">
+                      For identification only — this title is never shown on the projected slide.
+                    </p>
+                  </div>
+
+                  {/* Slides */}
+                  {(() => {
+                    const saveSlides = (next: CustomTextSlide[]) => {
+                      setCustomTextSlides(next)
+                      updateCustomText(currentItem.id, { slides: next })
+                    }
+                    const updateSlideText = (id: string, text: string) => {
+                      const next = customTextSlides.map(s => s.id === id ? { ...s, text } : s)
+                      setCustomTextSlides(next)
+                      clearTimeout(customTextTimers.current.slides)
+                      customTextTimers.current.slides = setTimeout(() => {
+                        updateCustomText(currentItem.id, { slides: next })
+                      }, 400)
+                    }
+                    const addSlide = () => {
+                      const slide = newCustomTextSlide()
+                      saveSlides([...customTextSlides, slide])
+                      setActiveCustomTextSlideId(slide.id)
+                    }
+                    const duplicateSlide = (idx: number) => {
+                      const copy = { ...customTextSlides[idx], id: String(Date.now() + Math.random()) }
+                      const next = [...customTextSlides]
+                      next.splice(idx + 1, 0, copy)
+                      saveSlides(next)
+                      setActiveCustomTextSlideId(copy.id)
+                    }
+                    const deleteSlide = (idx: number) => {
+                      if (customTextSlides.length <= 1) return
+                      saveSlides(customTextSlides.filter((_, i) => i !== idx))
+                    }
+                    const moveSlide = (idx: number, dir: -1 | 1) => {
+                      const next = idx + dir
+                      if (next < 0 || next >= customTextSlides.length) return
+                      const arr = [...customTextSlides]
+                      ;[arr[idx], arr[next]] = [arr[next], arr[idx]]
+                      saveSlides(arr)
+                    }
+                    return (
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+                            Slides ({customTextSlides.length})
+                          </label>
+                          {!isPast && (
+                            <button
+                              onClick={addSlide}
+                              className="text-[10px] font-semibold text-primary hover:text-primary/80 flex items-center gap-0.5"
+                            >
+                              <Plus className="h-3 w-3" /> Add Slide
+                            </button>
+                          )}
+                        </div>
+                        <div className="flex flex-col gap-3">
+                          {customTextSlides.length === 0 && (
+                            <div className="text-[11px] text-muted-foreground text-center py-6 border border-dashed border-border rounded-lg">
+                              No slides yet — click "Add Slide" to get started.
+                            </div>
+                          )}
+                          {customTextSlides.map((slide, idx) => (
+                            <div
+                              key={slide.id}
+                              onClick={() => setActiveCustomTextSlideId(slide.id)}
+                              className={`bg-background border rounded-lg p-3 flex gap-3 cursor-pointer transition-colors ${
+                                activeCustomTextSlideId === slide.id ? "border-primary/50" : "border-border"
+                              }`}
+                            >
+                              <div className="flex-1 min-w-0 flex flex-col gap-2">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[10px] font-mono text-muted-foreground/60 w-4 shrink-0">{idx + 1}</span>
+                                  <textarea
+                                    value={slide.text}
+                                    readOnly={isPast}
+                                    placeholder="Slide text…"
+                                    rows={3}
+                                    onClick={(e) => e.stopPropagation()}
+                                    onChange={e => updateSlideText(slide.id, e.target.value)}
+                                    className="flex-1 text-sm bg-muted/50 border border-border rounded px-2.5 py-1.5 resize-none outline-none focus:border-primary/50 placeholder:text-muted-foreground/40"
+                                  />
+                                </div>
+                              </div>
+                              {!isPast && (
+                                <div className="flex flex-col items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                                  <button onClick={() => moveSlide(idx, -1)} disabled={idx === 0} title="Move up"
+                                    className="w-6 h-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed">
+                                    <ChevronUp className="h-3.5 w-3.5" />
+                                  </button>
+                                  <button onClick={() => moveSlide(idx, 1)} disabled={idx === customTextSlides.length - 1} title="Move down"
+                                    className="w-6 h-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-30 disabled:cursor-not-allowed">
+                                    <ChevronDown className="h-3.5 w-3.5" />
+                                  </button>
+                                  <button onClick={() => duplicateSlide(idx)} title="Duplicate slide"
+                                    className="w-6 h-6 rounded flex items-center justify-center text-muted-foreground hover:text-foreground">
+                                    <Copy className="h-3.5 w-3.5" />
+                                  </button>
+                                  <button onClick={() => deleteSlide(idx)} disabled={customTextSlides.length <= 1} title="Delete slide"
+                                    className="w-6 h-6 rounded flex items-center justify-center text-muted-foreground hover:text-destructive disabled:opacity-30 disabled:cursor-not-allowed">
+                                    <X className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })()}
+
+                  {/* Preview of the selected slide — matches projected formatting (center, white, dark) */}
+                  {(() => {
+                    const active = customTextSlides.find(s => s.id === activeCustomTextSlideId) ?? customTextSlides[0]
+                    if (!active) return null
+                    return (
+                      <div>
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block mb-1.5">Preview</label>
+                        <div className="rounded-lg overflow-hidden border border-border bg-gray-900 p-4" style={{ aspectRatio: "16/9" }}>
+                          <div className="flex items-center justify-center h-full">
+                            <p className="text-sm font-bold text-white text-center leading-relaxed whitespace-pre-wrap">
+                              {active.text || <span className="italic text-white/30">empty slide</span>}
+                            </p>
+                          </div>
                         </div>
                       </div>
                     )
@@ -2090,7 +2286,7 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
             slide={currentSlide}
             theme={effectiveTheme}
             bg={effectiveBg}
-            canCustomize={!!currentSong || currentItem?.itemType === 'scripture' || currentItem?.itemType === 'announcement'}
+            canCustomize={!!currentSong || currentItem?.itemType === 'scripture' || currentItem?.itemType === 'announcement' || currentItem?.itemType === 'custom_text'}
             annPreviewTitle={annPreviewTitle}
             annCards={annCards}
             scriptureTextAlign={scriptureTextAlign}
@@ -2157,6 +2353,11 @@ export default function BuilderScreen({ serviceId, onGoLive, projectionOpen, onR
           onAddAnnouncement={async (title, content) => {
             const prevLen = useServiceStore.getState().lineup.length
             await addAnnouncementToLineup({ title, content })
+            if (insertAfterSectionIdx !== null) await repositionAfterSection(insertAfterSectionIdx, prevLen)
+          }}
+          onAddCustomText={async (title) => {
+            const prevLen = useServiceStore.getState().lineup.length
+            await addCustomTextToLineup({ title, slides: [newCustomTextSlide()] })
             if (insertAfterSectionIdx !== null) await repositionAfterSection(insertAfterSectionIdx, prevLen)
           }}
           onAddBibleBrowser={async () => {

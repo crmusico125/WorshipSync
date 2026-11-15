@@ -71,6 +71,7 @@ export interface ServiceJsonLineupItem {
   imageScaleMode: string | null
   mediaCollection: string | null
   hasMusicPlayerDir: boolean // musicPlayerDir itself is never packaged
+  customText: string | null
 }
 
 export interface ServiceJson {

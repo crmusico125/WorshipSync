@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import {
   Plus, Pencil, Copy, Trash2, ListTodo, BookOpen, Megaphone, Timer,
-  Music2, Image as ImageIcon, Layers, GripVertical, X, Volume2,
+  Music2, Image as ImageIcon, Layers, GripVertical, X, Volume2, Type,
 } from "lucide-react"
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors,
@@ -24,6 +24,7 @@ export interface SetlistTemplateItem {
   title?: string
   scriptureRef?: string
   mediaPath?: string
+  customText?: string
 }
 
 export interface SetlistTemplate {
@@ -39,6 +40,9 @@ export function templateItemDuration(item: SetlistTemplateItem): number {
   if (item.itemType === 'scripture') {
     try { return (JSON.parse(item.scriptureRef ?? '{}').verses ?? []).length * 12 } catch { return 0 }
   }
+  if (item.itemType === 'custom_text') {
+    try { return (JSON.parse(item.customText ?? '{}').slides ?? []).length * 15 } catch { return 0 }
+  }
   return 0
 }
 
@@ -48,6 +52,7 @@ function templateItemIcon(itemType: string) {
     case 'announcement': return Megaphone
     case 'countdown': return Timer
     case 'media': return ImageIcon
+    case 'custom_text': return Type
     case 'song': default: return Music2
   }
 }

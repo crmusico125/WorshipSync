@@ -41,6 +41,7 @@ import {
   Circle,
   Loader2,
   Shuffle,
+  Type,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -76,7 +77,7 @@ interface Slide {
 
 interface LiveSong {
   lineupItemId: number;
-  itemType: "song" | "countdown" | "scripture" | "media" | "media_collection" | "announcement" | "section" | "bible" | "music_player";
+  itemType: "song" | "countdown" | "scripture" | "media" | "media_collection" | "announcement" | "section" | "bible" | "music_player" | "custom_text";
   songId: number;
   title: string;
   artist: string;
@@ -91,6 +92,7 @@ interface LiveSong {
   imageScaleMode: 'cover' | 'contain' | 'stretch' | null;
   mediaCollection: string | null;
   musicPlayerDir: string | null;
+  customText: string | null;
   slides: Slide[];
 }
 
@@ -114,6 +116,19 @@ function parseAnnouncementCards(raw: string | null | undefined): AnnouncementCar
     if (Array.isArray(p?.cards)) return p.cards
   } catch {}
   return raw.split('\n').filter(l => l.trim()).map((l, i) => ({ id: String(i), heading: l.trim() }))
+}
+
+function parseCustomTextSlides(raw: string | null | undefined): { id: string; text: string }[] {
+  if (!raw) return []
+  try {
+    const p = JSON.parse(raw)
+    if (Array.isArray(p?.slides)) return p.slides
+  } catch {}
+  return []
+}
+
+function newCustomTextSlide(): { id: string; text: string } {
+  return { id: String(Date.now() + Math.random()), text: "" }
 }
 
 const BIBLE_BOOKS = [
@@ -230,6 +245,7 @@ export default function PresenterDashboard({
     addScriptureToLineup,
     addMediaToLineup,
     addAnnouncementToLineup,
+    addCustomTextToLineup,
     addMusicPlayerToLineup,
     setMusicPlayerDir,
     reorderLineup,
@@ -859,6 +875,7 @@ export default function PresenterDashboard({
           imageScaleMode: null,
           mediaCollection: null,
           musicPlayerDir: null,
+          customText: null,
           slides: [],
         };
       }
@@ -880,6 +897,7 @@ export default function PresenterDashboard({
           imageScaleMode: null,
           mediaCollection: null,
           musicPlayerDir: null,
+          customText: null,
           slides: [],
         };
       }
@@ -902,6 +920,7 @@ export default function PresenterDashboard({
           imageScaleMode: null,
           mediaCollection: null,
           musicPlayerDir: null,
+          customText: null,
           slides: [],
         };
       }
@@ -937,6 +956,7 @@ export default function PresenterDashboard({
           imageScaleMode: null,
           mediaCollection: null,
           musicPlayerDir: null,
+          customText: null,
           slides: scriptureSlides,
         };
       }
@@ -974,6 +994,7 @@ export default function PresenterDashboard({
           imageScaleMode: null,
           mediaCollection: null,
           musicPlayerDir: null,
+          customText: null,
           slides: announcementSlides,
         };
       }
@@ -997,6 +1018,7 @@ export default function PresenterDashboard({
           imageScaleMode: (item.imageScaleMode as 'cover' | 'contain' | 'stretch') ?? 'contain',
           mediaCollection: null,
           musicPlayerDir: null,
+          customText: null,
           slides: [],
         };
       }
@@ -1020,6 +1042,7 @@ export default function PresenterDashboard({
           imageScaleMode: null,
           mediaCollection: item.mediaCollection ?? null,
           musicPlayerDir: null,
+          customText: null,
           slides: [],
         };
       }
@@ -1043,7 +1066,44 @@ export default function PresenterDashboard({
           imageScaleMode: null,
           mediaCollection: null,
           musicPlayerDir: item.musicPlayerDir ?? null,
+          customText: null,
           slides: [],
+        };
+      }
+
+      // Custom Text — ad-hoc, manually-authored slides (no library reference),
+      // same shape as scripture: each slide is exactly what was typed, no
+      // re-chunking, so editing one slide never touches the others.
+      if (item.itemType === "custom_text") {
+        const customSlidesData = parseCustomTextSlides(item.customText);
+        let globalIdx = 0;
+        const customTextSlides: Slide[] = customSlidesData.map(s => ({
+          lines: s.text.split("\n"),
+          sectionLabel: `Slide ${globalIdx + 1}`,
+          sectionType: "verse",
+          sectionId: globalIdx,
+          globalIndex: globalIdx++,
+        }));
+        customTextSlides.push({ lines: [""], sectionLabel: "Blank", sectionType: "blank", sectionId: -1, globalIndex: globalIdx });
+        return {
+          lineupItemId: item.id,
+          itemType: "custom_text" as const,
+          songId: 0,
+          title: item.title ?? "Custom Text",
+          artist: "",
+          key: null,
+          ccliNumber: null,
+          backgroundPath: item.overrideBackgroundPath ?? null,
+          mediaPath: null,
+          themeId: null,
+          styleOverrides: null,
+          notes: item.notes ?? null,
+          itemStyle: item.itemStyle ?? null,
+          imageScaleMode: null,
+          mediaCollection: null,
+          musicPlayerDir: null,
+          customText: item.customText ?? null,
+          slides: customTextSlides,
         };
       }
 
@@ -1066,6 +1126,7 @@ export default function PresenterDashboard({
           imageScaleMode: null,
           mediaCollection: null,
           musicPlayerDir: null,
+          customText: null,
           slides: [],
         };
       }
@@ -1112,6 +1173,7 @@ export default function PresenterDashboard({
         imageScaleMode: null,
         mediaCollection: null,
         musicPlayerDir: null,
+        customText: null,
         slides: buildSlidesForSong(filtered, maxLines),
       };
     });
@@ -1704,8 +1766,10 @@ export default function PresenterDashboard({
     setLiveSongs(prev => prev.map((s, i) =>
       i === selectedSongIdx ? { ...s, backgroundPath: bg } : s
     ));
-    if (song.itemType === 'scripture') {
-      // Scripture items save directly to the lineup item — no "session only" concept
+    if (song.itemType !== 'song') {
+      // Non-song items (scripture, announcement, custom text, …) have no real
+      // songId to save to — they always save directly to the lineup item, no
+      // "session only vs. song library" choice to offer.
       await window.worshipsync.lineup.setOverrideBg(song.lineupItemId, bg);
       if (selectedService) await loadLineup(selectedService.id);
       setShowBgPicker(false);
@@ -2749,6 +2813,7 @@ export default function PresenterDashboard({
             const isMediaCollection = song.itemType === "media_collection";
             const isMusicPlayer = song.itemType === "music_player";
             const isAnnouncement = song.itemType === "announcement";
+            const isCustomText = song.itemType === "custom_text";
 
             // Section headers — visual dividers with per-section add button
             if (isSection) {
@@ -2770,7 +2835,7 @@ export default function PresenterDashboard({
               );
             }
 
-            const Icon = isCountdown ? Timer : isScripture || isBible ? BookOpen : isMedia ? (isVideoItem ? Film : isAudioItem ? Volume2 : ImageIcon) : isMediaCollection ? Layers : isMusicPlayer ? Music2 : isAnnouncement ? Megaphone : Music;
+            const Icon = isCountdown ? Timer : isScripture || isBible ? BookOpen : isMedia ? (isVideoItem ? Film : isAudioItem ? Volume2 : ImageIcon) : isMediaCollection ? Layers : isMusicPlayer ? Music2 : isAnnouncement ? Megaphone : isCustomText ? Type : Music;
 
             const selectItem = () => {
               const isLiveItem = i === liveItemIdxRef.current;
@@ -2808,7 +2873,7 @@ export default function PresenterDashboard({
                     {isMedia && song.mediaPath ? basenameOf(song.mediaPath) || song.title : song.title}
                   </p>
                   <p className="text-[10px] text-muted-foreground truncate">
-                    {isCountdown ? "Countdown" : isBible ? "Bible Browser" : isScripture ? "Scripture" : isMedia ? (isVideoItem ? "Video" : isAudioItem ? "Audio" : "Image") : isMediaCollection ? `Collection · ${parseMediaCollection(song.mediaCollection).items.length} items` : isMusicPlayer ? (song.musicPlayerDir ? basenameOf(song.musicPlayerDir) : "No folder set") : isAnnouncement ? "Announcement" : song.artist || "Song"}
+                    {isCountdown ? "Countdown" : isBible ? "Bible Browser" : isScripture ? "Scripture" : isMedia ? (isVideoItem ? "Video" : isAudioItem ? "Audio" : "Image") : isMediaCollection ? `Collection · ${parseMediaCollection(song.mediaCollection).items.length} items` : isMusicPlayer ? (song.musicPlayerDir ? basenameOf(song.musicPlayerDir) : "No folder set") : isAnnouncement ? "Announcement" : isCustomText ? "Custom Text" : song.artist || "Song"}
                     {!isCountdown && !isMedia && !isMediaCollection && !isMusicPlayer && song.slides.length > 0 && (
                       <span className="ml-1 opacity-50">· {song.slides.filter(s => s.sectionType !== "blank").length} slides</span>
                     )}
@@ -4852,7 +4917,7 @@ export default function PresenterDashboard({
 
         {/* ── Zone 2: Quick Actions — context-sensitive ── */}
         <div className="px-3 pb-3 border-b border-border shrink-0">
-          {(currentSong?.itemType === "song" || currentSong?.itemType === "scripture" || currentSong?.itemType === "announcement" || currentSong?.itemType === "bible" || !currentSong) ? (
+          {(currentSong?.itemType === "song" || currentSong?.itemType === "scripture" || currentSong?.itemType === "announcement" || currentSong?.itemType === "bible" || currentSong?.itemType === "custom_text" || !currentSong) ? (
             <div className="grid grid-cols-3 gap-1.5">
               <button
                 onClick={clearText}
@@ -5276,7 +5341,7 @@ export default function PresenterDashboard({
         })()}
 
         {/* Active Background — only for text-based projectable items */}
-        {(currentSong?.itemType === "song" || currentSong?.itemType === "scripture" || currentSong?.itemType === "announcement" || !currentSong) && <div className="px-3 py-3 border-b border-border shrink-0">
+        {(currentSong?.itemType === "song" || currentSong?.itemType === "scripture" || currentSong?.itemType === "announcement" || currentSong?.itemType === "custom_text" || !currentSong) && <div className="px-3 py-3 border-b border-border shrink-0">
           <h3 className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-2">Active Background</h3>
           <div
             className="flex items-center gap-2.5 p-2 rounded-md bg-background/40 border border-border cursor-pointer hover:bg-accent/30 transition-colors"
@@ -5327,7 +5392,7 @@ export default function PresenterDashboard({
         <div className="flex-1" />
 
         {/* Next Slide button — only for slide-based items */}
-        {(currentSong?.itemType === "song" || currentSong?.itemType === "scripture") && (
+        {(currentSong?.itemType === "song" || currentSong?.itemType === "scripture" || currentSong?.itemType === "custom_text") && (
           <div className="p-3 shrink-0">
             <button
               onClick={goNextSlide}
@@ -5899,6 +5964,11 @@ export default function PresenterDashboard({
           onAddAnnouncement={async (title, content) => {
             const prevLen = useServiceStore.getState().lineup.length;
             await addAnnouncementToLineup({ title, content });
+            if (insertAfterSectionId !== null) await repositionAfterSection(insertAfterSectionId, prevLen);
+          }}
+          onAddCustomText={async (title) => {
+            const prevLen = useServiceStore.getState().lineup.length;
+            await addCustomTextToLineup({ title, slides: [newCustomTextSlide()] });
             if (insertAfterSectionId !== null) await repositionAfterSection(insertAfterSectionId, prevLen);
           }}
           excludeIds={liveSongs

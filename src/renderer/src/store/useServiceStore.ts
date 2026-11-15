@@ -1,6 +1,11 @@
 import { create } from 'zustand'
 
-export type LineupItemType = 'song' | 'scripture' | 'media' | 'media_collection' | 'countdown' | 'announcement' | 'note' | 'section' | 'bible' | 'music_player'
+export type LineupItemType = 'song' | 'scripture' | 'media' | 'media_collection' | 'countdown' | 'announcement' | 'note' | 'section' | 'bible' | 'music_player' | 'custom_text'
+
+export interface CustomTextSlide {
+  id: string
+  text: string
+}
 
 export interface LineupItem {
   id: number
@@ -20,6 +25,7 @@ export interface LineupItem {
   imageScaleMode: 'cover' | 'contain' | 'stretch' | null
   mediaCollection: string | null
   musicPlayerDir: string | null
+  customText: string | null
   song: {
     id: number
     title: string
@@ -72,6 +78,8 @@ interface ServiceStore {
   addCountdownToLineup: () => Promise<void>
   addBibleBrowserToLineup: () => Promise<void>
   addAnnouncementToLineup: (data: { title: string; content: string }) => Promise<void>
+  addCustomTextToLineup: (data: { title: string; slides: CustomTextSlide[] }) => Promise<void>
+  updateCustomText: (lineupItemId: number, data: { title?: string; slides?: CustomTextSlide[] }) => Promise<void>
   addSectionToLineup: (title: string) => Promise<void>
   removeSongFromLineup: (lineupItemId: number) => Promise<void>
   toggleSection: (lineupItemId: number, sectionId: number, included: boolean) => Promise<void>
@@ -223,6 +231,23 @@ export const useServiceStore = create<ServiceStore>((set, get) => ({
     await window.worshipsync.lineup.addAnnouncement(selectedService.id, data)
     await get().loadLineup(selectedService.id)
     if (selectedService.status === 'empty') await get().updateStatus(selectedService.id, 'in-progress')
+  },
+
+  addCustomTextToLineup: async (data: { title: string; slides: CustomTextSlide[] }) => {
+    const { selectedService } = get()
+    if (!selectedService) return
+    await window.worshipsync.lineup.addCustomText(selectedService.id, { title: data.title, customText: JSON.stringify({ slides: data.slides }) })
+    await get().loadLineup(selectedService.id)
+    if (selectedService.status === 'empty') await get().updateStatus(selectedService.id, 'in-progress')
+  },
+
+  updateCustomText: async (lineupItemId: number, data: { title?: string; slides?: CustomTextSlide[] }) => {
+    const { selectedService } = get()
+    await window.worshipsync.lineup.updateCustomText(lineupItemId, {
+      title: data.title,
+      customText: data.slides ? JSON.stringify({ slides: data.slides }) : undefined,
+    })
+    if (selectedService) await get().loadLineup(selectedService.id)
   },
 
   addSectionToLineup: async (title: string) => {

@@ -121,6 +121,37 @@ export function registerLineupHandlers(): void {
     return item
   })
 
+  ipcMain.handle('lineup:addCustomText', (_e, serviceDateId: number, data: {
+    title: string
+    customText: string
+  }) => {
+    const existing = db.select().from(lineupItems)
+      .where(eq(lineupItems.serviceDateId, serviceDateId))
+      .all()
+    const [item] = db.insert(lineupItems).values({
+      serviceDateId,
+      orderIndex: existing.length,
+      itemType: 'custom_text',
+      selectedSections: '[]',
+      title: data.title,
+      customText: data.customText,
+    }).returning().all()
+    return item
+  })
+
+  ipcMain.handle('lineup:updateCustomText', (_e, lineupItemId: number, data: {
+    title?: string
+    customText?: string
+  }) => {
+    if (data.title !== undefined) {
+      db.update(lineupItems).set({ title: data.title }).where(eq(lineupItems.id, lineupItemId)).run()
+    }
+    if (data.customText !== undefined) {
+      db.update(lineupItems).set({ customText: data.customText }).where(eq(lineupItems.id, lineupItemId)).run()
+    }
+    return true
+  })
+
   ipcMain.handle('lineup:addSection', (_e, serviceDateId: number, data: { title: string }) => {
     const existing = db.select().from(lineupItems)
       .where(eq(lineupItems.serviceDateId, serviceDateId))

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react"
-import { Search, Music2, Timer, Upload, Trash2, Check, Image as ImageIcon, Play, Volume2, Video, Calendar, BookOpen, Megaphone, Loader2, ChevronUp, ChevronDown, X } from "lucide-react"
+import { Search, Music2, Timer, Upload, Trash2, Check, Image as ImageIcon, Play, Volume2, Video, Calendar, BookOpen, Megaphone, Loader2, ChevronUp, ChevronDown, X, Type } from "lucide-react"
 import { FREE_TRANSLATIONS, type BibleTranslation, type BibleApiResult, fetchBiblePassage } from "../lib/bibleApi"
 import { toFileUrl } from "../lib/utils"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -42,6 +42,7 @@ interface Props {
   onAddMediaCollection?: (paths: string[]) => void
   onAddMusicPlayer?: () => void
   onAddAnnouncement?: (title: string, content: string) => void
+  onAddCustomText?: (title: string) => void
   excludeIds?: number[]
   availableTranslations?: BibleTranslation[]
   defaultTranslation?: string
@@ -85,7 +86,7 @@ function getBookSuggestions(query: string): string[] {
   return BIBLE_BOOKS.filter(b => b.toLowerCase().startsWith(query.toLowerCase())).slice(0, 6)
 }
 
-export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddBibleBrowser, onAddMedia, onAddMediaCollection, onAddMusicPlayer, onAddAnnouncement, excludeIds = [], availableTranslations, defaultTranslation, recentScriptures, onAddScriptureByRef, onTranslationChange, initialTab }: Props) {
+export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddBibleBrowser, onAddMedia, onAddMediaCollection, onAddMusicPlayer, onAddAnnouncement, onAddCustomText, excludeIds = [], availableTranslations, defaultTranslation, recentScriptures, onAddScriptureByRef, onTranslationChange, initialTab }: Props) {
   const [tab, setTab] = useState<string>(initialTab ?? "songs")
   const [songs, setSongs] = useState<SongRow[]>([])
   const [selectedIds, setSelectedIds] = useState<number[]>([])
@@ -530,6 +531,7 @@ export default function LibraryModal({ onClose, onAdd, onAddCountdown, onAddBibl
                   onAddBibleBrowser={() => { onAddBibleBrowser?.(); onClose() }}
                   onAddMusicPlayer={onAddMusicPlayer ? () => { onAddMusicPlayer(); onClose() } : undefined}
                   onAddAnnouncement={(title, content) => { onAddAnnouncement?.(title, content); onClose() }}
+                  onAddCustomText={onAddCustomText ? (title) => { onAddCustomText(title); onClose() } : undefined}
                 />
               ) : tab === "scriptures" ? (
                 <ScriptureTab
@@ -998,14 +1000,16 @@ function ScriptureTab({ translation, availableTranslations, recentScriptures, on
 
 // ── WidgetsTab ────────────────────────────────────────────────────────────────
 
-function WidgetsTab({ onAddCountdown, onAddBibleBrowser, onAddMusicPlayer, onAddAnnouncement }: {
+function WidgetsTab({ onAddCountdown, onAddBibleBrowser, onAddMusicPlayer, onAddAnnouncement, onAddCustomText }: {
   onAddCountdown: () => void
   onAddBibleBrowser: () => void
   onAddMusicPlayer?: () => void
   onAddAnnouncement: (title: string, content: string) => void
+  onAddCustomText?: (title: string) => void
 }) {
   const [annTitle,   setAnnTitle]   = useState("")
   const [annContent, setAnnContent] = useState("")
+  const [customTextTitle, setCustomTextTitle] = useState("")
 
   return (
     <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-6">
@@ -1086,6 +1090,35 @@ function WidgetsTab({ onAddCountdown, onAddBibleBrowser, onAddMusicPlayer, onAdd
           <Check className="h-3 w-3" />Add Announcement
         </Button>
       </div>
+
+      {/* Custom Text */}
+      {onAddCustomText && (
+        <div className="flex flex-col gap-3 p-4 rounded-xl border border-border bg-card">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-lg bg-violet-500/10 flex items-center justify-center shrink-0">
+              <Type className="h-5 w-5 text-violet-500" />
+            </div>
+            <div>
+              <p className="text-sm font-medium">Custom Text</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Project any text you type, across one or more slides</p>
+            </div>
+          </div>
+          <input
+            value={customTextTitle}
+            onChange={e => setCustomTextTitle(e.target.value)}
+            placeholder="Title (e.g. God Is Now Here)"
+            className="w-full text-xs bg-input border border-border rounded-md px-3 py-2 focus:outline-none focus:border-primary/50 placeholder:text-muted-foreground/50"
+          />
+          <Button
+            size="sm"
+            className="self-end gap-1.5 h-7 text-xs"
+            disabled={!customTextTitle.trim()}
+            onClick={() => onAddCustomText(customTextTitle.trim())}
+          >
+            <Check className="h-3 w-3" />Add Custom Text
+          </Button>
+        </div>
+      )}
     </div>
   )
 }

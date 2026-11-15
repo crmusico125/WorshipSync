@@ -1004,10 +1004,10 @@ function esc(s) {
 }
 function pad(n) { return String(n).padStart(2,'0') }
 function typeIcon(t) {
-  return {song:'♪',scripture:'✝',media:'🎬',countdown:'⏱',announcement:'📢',section:'—',music_player:'♫',bible:'✝'}[t] ?? '•'
+  return {song:'♪',scripture:'✝',media:'🎬',countdown:'⏱',announcement:'📢',section:'—',music_player:'♫',bible:'✝',custom_text:'✎'}[t] ?? '•'
 }
 function typeLabel(t) {
-  return {song:'Song',scripture:'Scripture',media:'Media',countdown:'Countdown',announcement:'Announcement',section:'Section',music_player:'Music Player',bible:'Bible Browser'}[t] ?? t
+  return {song:'Song',scripture:'Scripture',media:'Media',countdown:'Countdown',announcement:'Announcement',section:'Section',music_player:'Music Player',bible:'Bible Browser',custom_text:'Custom Text'}[t] ?? t
 }
 
 // ── Bible search ───────────────────────────────────────────────────────────

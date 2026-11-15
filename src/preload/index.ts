@@ -124,6 +124,10 @@ contextBridge.exposeInMainWorld('worshipsync', {
                         ipcRenderer.invoke('lineup:addAnnouncement', serviceDateId, data),
     addSection:      (serviceDateId: number, data: { title: string }) =>
                         ipcRenderer.invoke('lineup:addSection', serviceDateId, data),
+    addCustomText:   (serviceDateId: number, data: { title: string; customText: string }) =>
+                        ipcRenderer.invoke('lineup:addCustomText', serviceDateId, data),
+    updateCustomText: (lineupItemId: number, data: { title?: string; customText?: string }) =>
+                        ipcRenderer.invoke('lineup:updateCustomText', lineupItemId, data),
     updateAnnouncement: (lineupItemId: number, data: { title?: string; content?: string }) =>
                         ipcRenderer.invoke('lineup:updateAnnouncement', lineupItemId, data),
     updateScripture:    (lineupItemId: number, data: { title?: string; scriptureRef?: string }) =>

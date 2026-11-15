@@ -153,6 +153,7 @@ export function collectServiceContent(serviceDateId: number): CollectedContent {
       imageScaleMode: item.imageScaleMode,
       mediaCollection: item.mediaCollection,
       hasMusicPlayerDir: item.itemType === 'music_player' && !!item.musicPlayerDir,
+      customText: item.customText,
     }
   })
 

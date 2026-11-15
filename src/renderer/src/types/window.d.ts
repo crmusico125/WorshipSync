@@ -15,7 +15,7 @@ interface LineupItemWithSong {
   id: number
   serviceDateId: number
   songId: number | null
-  itemType: 'song' | 'countdown' | 'scripture' | 'media' | 'media_collection' | 'announcement' | 'note' | 'section' | 'bible' | 'music_player'
+  itemType: 'song' | 'countdown' | 'scripture' | 'media' | 'media_collection' | 'announcement' | 'note' | 'section' | 'bible' | 'music_player' | 'custom_text'
   orderIndex: number
   selectedSections: string
   overrideThemeId: number | null
@@ -29,6 +29,7 @@ interface LineupItemWithSong {
   imageScaleMode: 'cover' | 'contain' | 'stretch' | null
   mediaCollection: string | null
   musicPlayerDir: string | null
+  customText: string | null
   song: SongWithSections | null
 }
 interface Theme {
@@ -269,6 +270,8 @@ declare global {
         setSectionOrder:    (lineupItemId: number, sectionIds: number[]) => Promise<boolean>
         addAnnouncement:    (serviceDateId: number, data: { title: string; content: string }) => Promise<unknown>
         addSection:         (serviceDateId: number, data: { title: string }) => Promise<unknown>
+        addCustomText:      (serviceDateId: number, data: { title: string; customText: string }) => Promise<unknown>
+        updateCustomText:   (lineupItemId: number, data: { title?: string; customText?: string }) => Promise<boolean>
         updateAnnouncement: (lineupItemId: number, data: { title?: string; content?: string }) => Promise<boolean>
         updateScripture:    (lineupItemId: number, data: { title?: string; scriptureRef?: string }) => Promise<boolean>
         setItemStyle:       (lineupItemId: number, style: string) => Promise<boolean>

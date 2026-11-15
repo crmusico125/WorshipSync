@@ -380,5 +380,16 @@ export function runMigrations(): void {
     console.error('[db] migration error (song_usage song cascade):', e)
   }
 
+  // ── Migration: add custom_text column to lineup_items ───────────────────
+  try {
+    const colsCustomText = sqlite.prepare("PRAGMA table_info(lineup_items)").all() as { name: string }[]
+    if (!colsCustomText.some(c => c.name === 'custom_text')) {
+      sqlite.exec(`ALTER TABLE lineup_items ADD COLUMN custom_text TEXT`)
+      console.log('[db] migration: added custom_text column to lineup_items')
+    }
+  } catch (e) {
+    console.error('[db] migration error (lineup_items custom_text):', e)
+  }
+
   console.log('[db] migrations complete')
 }

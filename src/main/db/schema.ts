@@ -49,7 +49,7 @@ export const lineupItems = sqliteTable('lineup_items', {
   id:                     integer('id').primaryKey({ autoIncrement: true }),
   serviceDateId:          integer('service_date_id').notNull().references(() => serviceDates.id, { onDelete: 'cascade' }),
   songId:                 integer('song_id').references(() => songs.id, { onDelete: 'cascade' }),
-  itemType:               text('item_type', { enum: ['song', 'scripture', 'media', 'media_collection', 'countdown', 'announcement', 'note', 'section', 'bible', 'music_player'] }).notNull().default('song'),
+  itemType:               text('item_type', { enum: ['song', 'scripture', 'media', 'media_collection', 'countdown', 'announcement', 'note', 'section', 'bible', 'music_player', 'custom_text'] }).notNull().default('song'),
   orderIndex:             integer('order_index').notNull().default(0),
   selectedSections:       text('selected_sections').notNull().default('[]'),
   overrideThemeId:        integer('override_theme_id'),
@@ -65,6 +65,8 @@ export const lineupItems = sqliteTable('lineup_items', {
   mediaCollection:        text('media_collection'),
   // Folder this music player scans for audio files
   musicPlayerDir:         text('music_player_dir'),
+  // JSON: { slides: { id: string; text: string }[] } — ad-hoc multi-slide text content
+  customText:             text('custom_text'),
 })
 
 // ── Themes ────────────────────────────────────────────────────────────────────

@@ -583,6 +583,20 @@ export default function ProjectionWindow() {
       size -= 2;
       text.style.fontSize = `${size}px`;
     }
+
+    // Lyric lines render nowrap (see "Standard lyrics" below) so a longer line never
+    // silently wraps into extra visual rows. But if even the smallest font we'll shrink
+    // to still can't fit a line on one row, nowrap would push it past the window's edge
+    // and get clipped — fall back to letting it wrap instead of losing the text.
+    if (text.scrollWidth > maxW) {
+      for (const line of text.children) (line as HTMLElement).style.whiteSpace = "normal";
+      const hardFloor = 20;
+      while (size > hardFloor && text.scrollHeight > maxH) {
+        size -= 2;
+        text.style.fontSize = `${size}px`;
+      }
+    }
+
     setScaledFontSize(size);
   }, [theme.fontSize]);
 
